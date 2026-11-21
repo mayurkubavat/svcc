@@ -19,3 +19,20 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `z3_verdict`: `EquivalentUnsat`
 - **Notes**: Verified SV(1800-2023) <-> SC(1666-2023+CRAVE+FC4SC) round-trip including tolerance inside expansion, value-only CRAVE copy-ctor synthesis, UVM_NOCOMPARE preservation, RAL uvm_reg -> uvm_randomized_reg lowering, and off-by-one Z3 SAT bug detection. Isolated svlang worktree branch feature/uvir-hooks @ 9cf0d14 tested (76/76 passing).
 
+## [2026-11-21T21:45:18+00:00] `M1-sv-cpp-full-dialect-parity` — Complete SV <-> C++17 parity (enum, dist, randc, fork/disable fork, clocking #1step, RAL block maps, SVA bitmask observer + Z3 BMC, clang++ -Werror)
+- **Commit**: `71787ea` (`Darwin-arm64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)`)
+- **Command**: `./scripts/check.sh && ./target/release/uvir bench testdata/sv/{apb_timer_item,axi4_burst_env,uart_ral_sva}.sv --iters 200`
+- **Measured Metrics**:
+  - `apb4_sc2sv_us`: `301`
+  - `apb4_sv2sc_us`: `214`
+  - `axi4_sc2sv_us`: `376`
+  - `axi4_sv2sc_us`: `339`
+  - `clang_werror_verified_suites`: `3`
+  - `predictions_logged`: `8`
+  - `svlang_verified_suites`: `3`
+  - `uart_ral_sva_sc2sv_us`: `235`
+  - `uart_ral_sva_sv2sc_us`: `280`
+  - `z3_crv_unsat_classes`: `7`
+  - `z3_sva_bmc_unsat_properties`: `2`
+- **Notes**: Scoped strictly to SV (1800-2023/1800.2-2020) <-> C++17 (SystemC 3.0.3/UVM-SystemC/CRAVE/FC4SC). Every emitted C++17 header passes Apple clang++ 21 -std=c++17 -Wall -Wextra -Werror -fsyntax-only; every emitted SV file passes svlang; all CRV/Enum/Dist and pipelined SVA ##[m:n] observers proven EquivalentUnsat in Z3.
+

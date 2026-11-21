@@ -1,24 +1,22 @@
-//! Core Universal Verification Intermediate Representation (`UVIR`).
+//! Core Universal Verification Intermediate Representation (`UVIR`) for SV/UVM <-> C++17/SystemC.
 //!
-//! `uvir-ir` organizes verification semantics into six orthogonal dialects inside a
-//! cache-friendly, index-addressed [`UvirModule`] (`ExprId(u32)` arena storage, zero
-//! pointer-chasing):
+//! `uvir-ir` models IEEE 1800-2023 SystemVerilog + IEEE 1800.2-2020 UVM and
+//! IEEE 1666-2023 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC across six dialects
+//! inside an arena-indexed [`UvirModule`]:
 //!
-//! 1. **`types`**: Bit-accurate scalar/packed types, 2-state vs. 4-state tracking,
-//!    IEEE 1800 context-determined expression widths, and GC-handle vs. C++17 value/factory
-//!    ownership modes (`OwnershipMode`).
-//! 2. **`uvm`**: Class roles (`uvm_sequence_item`, `uvm_sequence`, `uvm_reg`, `uvm_component`,
-//!    etc.), IEEE 1800.2 field policy flags (`FieldOps`), phase methods, and RAL metadata.
-//! 3. **`crv`**: Solver-neutral constraint expressions (`CrvExpr` arena), `soft` weights,
-//!    implication (`->`), `unique`, and IEEE 1800-2023 `inside` set/range/tolerance items.
+//! 1. **`types`**: Bit-accurate 2-state/4-state vectors, enums (`EnumDecl`), signedness,
+//!    and GC-handle vs. C++17 RAII/TLM value-copy ownership (`OwnershipMode`).
+//! 2. **`uvm`**: Roles, IEEE 1800.2 field policies, RAL registers & `uvm_reg_block` maps,
+//!    component hierarchy, TLM ports/connections, and phases.
+//! 3. **`crv`**: Arena-allocated constraint expressions (`CrvArena`), `soft` weights,
+//!    weighted distributions (`dist { := , :/ }`), `randc` cyclic variables, implication,
+//!    `unique`, and IEEE 1800-2023 `inside` set/range/tolerance clauses.
 //! 4. **`cov`**: UCIS 1.0-isomorphic functional coverage (`CovergroupDecl`, `CoverpointDecl`,
 //!    value/range/ignore/illegal `CovBin`s, and `CrossDecl`).
-//! 5. **`sched`**: Process scheduling, `fork`/`join_any`/`disable fork` cancel-token blocks,
-//!    and SystemC 3.0.3 `SC_PRE_TIMESTEP` ↔ SV `clocking #1step` sampling barriers.
-//! 6. **`sva`**: Clocked temporal properties (`|->`, `|=>`, `##[m:n]`, `disable iff`).
-//!
-//! Third-party dialects, front-ends, passes, and code emitters plug in cleanly through
-//! [`Frontend`], [`TransformPass`], [`BackendEmitter`], and [`DialectExtension`].
+//! 5. **`sched`**: Procedural phases, sequence dispatch, `fork`/`join_any`/`disable fork`
+//!    cancel-token concurrency, and `clocking #1step` <-> `SC_PRE_TIMESTEP` sampling.
+//! 6. **`sva`**: Clocked temporal properties (`|-> ##[m:n]`, `disable iff`, `assert`/`cover`)
+//!    with cycle-accurate C++17 bitmask pipeline observer lowering.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -49,20 +47,30 @@ pub struct Provenance {
 // 1. `types` Dialect
 // ============================================================================
 
+/// Strongly typed enumeration declaration (`typedef enum bit [W-1:0] { ... } name_e` <-> `enum class`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumDecl {
+    pub name: String,
+    pub width: u32,
+    pub variants: Vec<(String, u64)>,
+}
+
 /// Fundamental verification data category.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScalarKind {
-    /// 2-state packed vector (`bit [W-1:0]`, `sc_bv<W>`, `uint*_t`, `int*_t`).
+    /// 2-state packed vector (`bit [W-1:0]`, `sc_uint<W>`, `uint*_t`, `int*_t`).
     BitVector,
     /// 4-state packed vector (`logic [W-1:0]`, `reg [W-1:0]`, `sc_lv<W>`).
     LogicVector,
+    /// Strongly typed enumeration referencing an [`EnumDecl`] by name.
+    Enum(String),
     /// Boolean predicate (`bit` / `bool`).
     Bool,
     /// Dynamic string (`string` / `std::string`).
     String,
     /// Real floating-point (`real` / `double`).
     Real,
-    /// Handle or value-embedded object of another UVM/OOP class.
+    /// Handle or pointer to another UVM/OOP class.
     ClassRef(String),
 }
 
@@ -73,13 +81,10 @@ pub enum OwnershipMode {
     Unspecified,
     /// SystemVerilog GC reference semantics (`pkt_h = new()`).
     SvGcHandle,
-    /// SystemC/UVM TLM-2.0 & `uvm_sequence_item` by-value copy semantics (requires custom copy-ctor
-    /// when `crave::crv_variable<T>` members are present).
+    /// SystemC/UVM TLM-2.0 & `uvm_sequence_item` by-value copy semantics.
     ScValueCopy,
-    /// UVM-SystemC factory heap object (`type_id::create(...)`).
+    /// UVM-SystemC factory heap component/object (`type_id::create(...)`).
     ScFactoryRawPtr,
-    /// Reference-counted shared ownership (`std::shared_ptr<T>`).
-    ScSharedPtr,
 }
 
 /// Canonical width-, sign-, and state-resolved type descriptor.
@@ -110,6 +115,15 @@ impl UvirType {
         }
     }
 
+    pub fn enum_ty(name: impl Into<String>, width: u32) -> Self {
+        Self {
+            kind: ScalarKind::Enum(name.into()),
+            width: width.max(1),
+            signed: false,
+            is_four_state: false,
+        }
+    }
+
     pub fn bool_ty() -> Self {
         Self {
             kind: ScalarKind::Bool,
@@ -121,10 +135,9 @@ impl UvirType {
 }
 
 // ============================================================================
-// 2. `uvm` Dialect
+// 2. `uvm` Dialect (Roles, Field Ops, RAL Maps, Components, TLM)
 // ============================================================================
 
-/// Semantic UVM role independent of source syntax (`extends uvm_*` vs `: public uvm::uvm_*`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UvmRole {
     PlainClass,
@@ -168,7 +181,7 @@ impl UvmRole {
     }
 }
 
-/// IEEE 1800.2 field operation policies (`UVM_ALL_ON`, `UVM_NOCOMPARE`, `do_execute_op`, etc.).
+/// IEEE 1800.2 field operation policies (`UVM_ALL_ON`, `UVM_NOCOMPARE`, `UVM_NOCOPY`, etc.).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldOps {
     pub copy: bool,
@@ -190,7 +203,7 @@ impl Default for FieldOps {
     }
 }
 
-/// Optional UVM RAL field slice metadata (for `uvm_reg` <-> `uvm_randomized_reg`).
+/// UVM RAL field slice metadata (`uvm_reg_field::configure` <-> `uvm_randomized_reg::bind_field`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RalFieldMeta {
     pub lsb: u32,
@@ -201,7 +214,54 @@ pub struct RalFieldMeta {
     pub has_reset: bool,
 }
 
-/// A class member property / `rand` variable / `crv_variable<T>`.
+/// Register instance mapped inside a `uvm_reg_block` (`default_map.add_reg(...)`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RalRegInstance {
+    pub inst_name: String,
+    pub class_name: String,
+    pub offset: u64,
+    pub rights: String,
+}
+
+/// Address map specification on a `UvmRole::RegBlock` class.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RalMapSpec {
+    pub map_name: String,
+    pub base_addr: u64,
+    pub addr_unit_bytes: u32,
+    pub registers: Vec<RalRegInstance>,
+}
+
+/// Child UVM component instantiated via `type_id::create` in `build_phase`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubComponentDecl {
+    pub name: String,
+    pub class_name: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TlmPortKind {
+    AnalysisPort,
+    AnalysisExport,
+    SeqItemPullPort,
+}
+
+/// TLM port/export member on a UVM component.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TlmPortDecl {
+    pub name: String,
+    pub kind: TlmPortKind,
+    pub item_type: String,
+}
+
+/// TLM `connect_phase` binding (`initiator.connect(target)`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TlmConnection {
+    pub initiator: String,
+    pub target: String,
+}
+
+/// A class member property / `rand` / `randc` variable / `crv_variable<T>`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldDecl {
     pub name: String,
@@ -212,7 +272,6 @@ pub struct FieldDecl {
     pub ral_meta: Option<RalFieldMeta>,
 }
 
-/// Standard UVM phase or lifecycle hook.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PhaseKind {
     Build,
@@ -228,7 +287,6 @@ pub enum PhaseKind {
     Custom,
 }
 
-/// Method / phase declaration on a [`ClassDecl`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MethodDecl {
     pub name: String,
@@ -245,15 +303,17 @@ pub struct ClassDecl {
     pub package_or_namespace: String,
     pub role: UvmRole,
     pub base_class: Option<String>,
+    /// Sequence/Driver parameterized item type when applicable (`uvm_driver #(apb_item)`).
+    pub item_type: Option<String>,
     pub ownership: OwnershipMode,
-    /// True when signed expression semantics follow IEEE 1800 (`set_sv_signedness(true)`).
     pub sv_signedness: bool,
-    /// Synthesize explicit value-only copy-ctor / `operator=` for SystemC TLM safety.
     pub needs_value_copy_ctor: bool,
-    /// Synthesize explicit `do_copy` / `do_compare` / `convert2string` hooks.
     pub synthesize_field_methods: bool,
-    /// Register width in bits when `role == UvmRole::Reg`.
     pub reg_width_bits: Option<u32>,
+    pub ral_map: Option<RalMapSpec>,
+    pub subcomponents: Vec<SubComponentDecl>,
+    pub tlm_ports: Vec<TlmPortDecl>,
+    pub tlm_connections: Vec<TlmConnection>,
     pub fields: Vec<FieldDecl>,
     pub constraints: Vec<ConstraintBlock>,
     pub covergroups: Vec<CovergroupDecl>,
@@ -262,7 +322,7 @@ pub struct ClassDecl {
 }
 
 // ============================================================================
-// 3. `crv` Dialect (Arena-Allocated Constraint AST)
+// 3. `crv` Dialect (Arena-Allocated Constraint & Distribution AST)
 // ============================================================================
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -295,7 +355,7 @@ pub enum CrvBinaryOp {
     Iff,
 }
 
-/// Element of an IEEE 1800-2023 `inside { ... }` or CRAVE `inside(...)` set.
+/// Element of an IEEE 1800-2023 `inside { ... }` or `dist { ... }` set.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InsideElem {
     Single(ExprId),
@@ -313,6 +373,23 @@ pub enum InsideElem {
         center: ExprId,
         pct: ExprId,
     },
+}
+
+/// IEEE 1800 `:=` (weight per value in range) vs `:/` (weight divided across range).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DistWeightKind {
+    /// `:=` — each value in the range receives `weight`.
+    PerValue,
+    /// `:/` — `weight` is divided across the range cardinality.
+    SplitRange,
+}
+
+/// Weighted distribution item inside `CrvExpr::Dist`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DistItem {
+    pub elem: InsideElem,
+    pub kind: DistWeightKind,
+    pub weight: u32,
 }
 
 /// Solver-neutral constraint AST node stored in [`CrvArena`].
@@ -337,6 +414,10 @@ pub enum CrvExpr {
     Inside {
         target: ExprId,
         elems: Vec<InsideElem>,
+    },
+    Dist {
+        target: ExprId,
+        items: Vec<DistItem>,
     },
     Unique {
         vars: Vec<String>,
@@ -377,7 +458,6 @@ impl CrvArena {
     }
 }
 
-/// Single hard or soft constraint clause within a [`ConstraintBlock`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConstraintClause {
     pub expr: ExprId,
@@ -385,7 +465,6 @@ pub struct ConstraintClause {
     pub soft_weight: Option<u32>,
 }
 
-/// Named constraint block (`constraint c_valid { ... }` <-> `crv_constraint c_valid { ... }`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConstraintBlock {
     pub name: String,
@@ -432,8 +511,18 @@ pub struct CovergroupDecl {
 }
 
 // ============================================================================
-// 5. `sched` Dialect (Process Concurrency & Clocking Barriers)
+// 5. `sched` Dialect (Clocking `#1step`, `fork`/`disable fork`, & Phases)
 // ============================================================================
+
+/// Clocking block (`clocking cb @(posedge clk); default input #1step; ... endclocking`)
+/// mapped to SystemC 3.0.3 `SC_PRE_TIMESTEP` pre-edge snapshot sampler.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClockingDecl {
+    pub name: String,
+    pub clock_signal: String,
+    pub input_1step_signals: Vec<String>,
+    pub output_signals: Vec<String>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JoinKind {
@@ -450,7 +539,7 @@ pub enum SchedOp {
     WaitDelayNs {
         ns: u64,
     },
-    /// Maps SV `clocking cb @(posedge clk); input #1step ...` <-> SystemC 3.0.3 `SC_PRE_TIMESTEP`.
+    /// `@(cb)` — advances to clocking event and latches `#1step` preponed inputs (`SC_PRE_TIMESTEP`).
     SamplePreTimestep {
         clocking_name: String,
     },
@@ -459,10 +548,31 @@ pub enum SchedOp {
         branches: Vec<Vec<SchedOp>>,
         cancel_on_exit: bool,
     },
+    /// Standalone `disable fork;` cancelling sibling spawned processes in enclosing scope.
+    DisableFork,
+    /// `wait fork;` barrier waiting on all spawned children in current scope.
+    WaitFork,
+    StartItem {
+        item_var: String,
+    },
+    RandomizeItem {
+        item_var: String,
+    },
+    FinishItem {
+        item_var: String,
+    },
+    AnalysisWrite {
+        port: String,
+        expr: String,
+    },
     Assign {
         lhs: String,
         rhs: String,
         nonblocking: bool,
+    },
+    Repeat {
+        count: u32,
+        body: Vec<SchedOp>,
     },
     Call {
         stmt: String,
@@ -470,34 +580,39 @@ pub enum SchedOp {
 }
 
 // ============================================================================
-// 6. `sva` Dialect (Temporal Assertions)
+// 6. `sva` Dialect (Clocked Temporal Assertions & Covers)
 // ============================================================================
 
+/// Clocked bounded-delay implication property:
+/// `assert/cover property (@(posedge clk) [disable iff (rst)] antecedent |-> ##[min:max] consequent)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SvaPropertyDecl {
     pub name: String,
     pub clock_signal: String,
+    /// Active-high reset disable expression (e.g. `!rst_n` or `rst`).
     pub disable_iff: Option<String>,
     pub antecedent: String,
+    /// `0` for overlapping `|->`, `1` for `|=>`, or `m` in `|-> ##[m:n]`.
     pub min_delay: u32,
-    pub max_delay: Option<u32>,
+    /// `max_delay >= min_delay` (bounded window up to 63 cycles for 64-bit O(1) shift pipeline).
+    pub max_delay: u32,
     pub consequent: String,
     pub is_cover: bool,
 }
 
 // ============================================================================
-// Top-Level `UvirModule` & Extension Architecture
+// Top-Level `UvirModule` & SV <-> C++17 Capability Architecture
 // ============================================================================
 
-/// Complete compilation unit in `UVIR`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UvirModule {
     pub name: String,
     pub crv_arena: CrvArena,
+    pub enums: Vec<EnumDecl>,
+    pub clockings: Vec<ClockingDecl>,
     pub classes: Vec<ClassDecl>,
     pub standalone_covergroups: Vec<CovergroupDecl>,
     pub properties: Vec<SvaPropertyDecl>,
-    /// Vendor/research dialect extensions keyed by namespace (e.g. `"ams"`, `"formal"`, `"mcp"`).
     pub extensions: BTreeMap<String, serde_json::Value>,
 }
 
@@ -512,9 +627,12 @@ impl UvirModule {
     pub fn find_class(&self, name: &str) -> Option<&ClassDecl> {
         self.classes.iter().find(|c| c.name == name)
     }
+
+    pub fn find_enum(&self, name: &str) -> Option<&EnumDecl> {
+        self.enums.iter().find(|e| e.name == name)
+    }
 }
 
-/// Structured error across front-ends, passes, equivalence checkers, and emitters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UvirError {
     pub stage: &'static str,
@@ -538,7 +656,6 @@ impl fmt::Display for UvirError {
 
 impl std::error::Error for UvirError {}
 
-/// Timing and size telemetry from a front-end parse + lower run.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FrontendMetrics {
     pub frontend: String,
@@ -547,9 +664,9 @@ pub struct FrontendMetrics {
     pub classes_lowered: usize,
     pub constraints_lowered: usize,
     pub covergroups_lowered: usize,
+    pub properties_lowered: usize,
 }
 
-/// Per-pass execution telemetry.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PassStats {
     pub pass_name: String,
@@ -557,7 +674,6 @@ pub struct PassStats {
     pub items_modified: usize,
 }
 
-/// Pluggable language front-end lowering source text into [`UvirModule`].
 pub trait Frontend: Send + Sync {
     fn name(&self) -> &'static str;
     fn lower_str(
@@ -567,85 +683,59 @@ pub trait Frontend: Send + Sync {
     ) -> Result<(UvirModule, FrontendMetrics), UvirError>;
 }
 
-/// Pluggable IR transformation / normalization pass.
 pub trait TransformPass: Send + Sync {
     fn name(&self) -> &'static str;
     fn run(&self, module: &mut UvirModule) -> Result<PassStats, UvirError>;
 }
 
-/// Pluggable target code emitter (`SystemC/UVM`, `SV/UVM`, `Python/pyuvm`, `PSS`, `Rust`, etc.).
 pub trait BackendEmitter: Send + Sync {
     fn target_name(&self) -> &'static str;
     fn capabilities(&self) -> TargetCapabilities;
     fn emit(&self, module: &UvirModule) -> Result<String, UvirError>;
 }
 
-/// Pluggable custom dialect extension validator for [`UvirModule::extensions`].
 pub trait DialectExtension: Send + Sync {
     fn namespace(&self) -> &'static str;
     fn validate(&self, payload: &serde_json::Value) -> Result<(), String>;
 }
 
 // ============================================================================
-// Multi-Language Hub-and-Spoke Capability & Legalization Model
+// Capability & Legalization Model (Scoped to SV/UVM & C++17/SystemC)
 // ============================================================================
 
-/// Target language memory/lifetime model used by `TargetLegalizerPass` & `OwnershipPass`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemoryModel {
-    /// Garbage-collected handles (`SystemVerilog`, `Python/pyuvm`, `Chisel/Scala`).
+    /// SystemVerilog garbage-collected class handles.
     GarbageCollected,
-    /// Deterministic RAII + explicit value/smart-pointer semantics (`C++17/SystemC`, `Rust`).
+    /// C++17 RAII + explicit TLM value-copy / factory pointer ownership.
     ValueAndRaii,
-    /// Declarative action/flow graph without heap pointers (`IEEE 1800.1 PSS`).
-    DeclarativeGraph,
-    /// Statically elaborated processes & shared variables/protected types (`VHDL-2019/OSVVM`).
-    StaticElaborated,
 }
 
-/// Target concurrency model for lowering `sched` dialect primitives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConcurrencyModel {
-    /// Native `fork` / `join_any` / `disable fork` (`SystemVerilog`).
+    /// Native IEEE 1800 `fork` / `join_any` / `disable fork`.
     StructuredForkJoin,
-    /// Dynamic process spawn + cooperative cancel tokens (`SystemC sc_spawn`).
+    /// IEEE 1666 `sc_core::sc_spawn` + `sc_event_or_list` + cooperative cancel token.
     SpawnWithCancelToken,
-    /// Stackless `async`/`await` coroutines (`Python cocotb`, `Rust async`).
-    AsyncCoroutines,
-    /// Declarative parallel/schedule blocks (`IEEE 1800.1 PSS`).
-    ActivitySchedule,
-    /// Static `process` blocks + barrier synchronization (`VHDL OSVVM`).
-    StaticProcesses,
 }
 
-/// How the target language executes `crv` constraints.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SolverModel {
-    /// Language-native solver (`SystemVerilog randomize() with`).
+    /// IEEE 1800 built-in `randomize()` constraint solver.
     LanguageBuiltin,
-    /// Embedded expression-template / decorator library (`C++ CRAVE`, `Python PyVSC`).
+    /// C++17 CRAVE expression-template + SMT backend (`crv_constraint`, `crv_soft_constraint`, `dist`).
     EmbeddedLibraryAst,
-    /// Direct SMT-LIB2 / C-API solver call synthesized by `uvir` (`Rust`, `VHDL`, bare `C++`).
-    SynthesizedSmtCall,
 }
 
-/// How the target language checks `sva` temporal assertions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TemporalModel {
-    /// Native IEEE 1800 SVA (`assert property`).
+    /// Native IEEE 1800 SVA (`assert property` / `cover property`).
     NativeSva,
-    /// Native IEEE 1850 PSL (`VHDL-2008/2019`).
-    NativePsl,
-    /// Lowered by `uvir` into a cycle-accurate observer state machine in `sched` (`SystemC`, `Python`, `Rust`).
+    /// Cycle-accurate C++17 `sc_module` bitmask shift-window observer automaton.
     LoweredAutomaton,
 }
 
-/// Declarative capability profile enabling $O(N)$ multi-language target legalization.
-///
-/// Instead of writing $N \times (N-1)$ pairwise converters, every target backend declares
-/// its [`TargetCapabilities`]. The shared middle-end legalizer lowers unsupported high-level
-/// `UVIR` constructs (e.g., 4-state `logic`, tolerance `inside`, SVA properties, `disable fork`,
-/// GC handles) into primitives the target natively supports prior to code emission.
+/// Declarative capability profile driving `PassPipeline::for_target`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetCapabilities {
     pub language_id: String,
@@ -655,6 +745,7 @@ pub struct TargetCapabilities {
     pub temporal_model: TemporalModel,
     pub native_four_state: bool,
     pub native_inside_tolerance: bool,
+    pub native_randc: bool,
     pub native_covergroups: bool,
     pub ieee_1800_context_widths: bool,
 }
@@ -670,12 +761,13 @@ impl TargetCapabilities {
             temporal_model: TemporalModel::NativeSva,
             native_four_state: true,
             native_inside_tolerance: true,
+            native_randc: true,
             native_covergroups: true,
             ieee_1800_context_widths: true,
         }
     }
 
-    /// IEEE 1666-2023 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC.
+    /// IEEE 1666-2023 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC (C++17).
     pub fn sc_uvm_crave_fc4sc() -> Self {
         Self {
             language_id: "sc-uvm".into(),
@@ -685,58 +777,14 @@ impl TargetCapabilities {
             temporal_model: TemporalModel::LoweredAutomaton,
             native_four_state: true,
             native_inside_tolerance: false,
+            native_randc: false,
             native_covergroups: true,
-            ieee_1800_context_widths: false,
-        }
-    }
-
-    /// Future spoke: Python `cocotb 2.0` + `pyuvm` + `PyVSC`.
-    pub fn python_cocotb_pyuvm() -> Self {
-        Self {
-            language_id: "py-uvm".into(),
-            memory_model: MemoryModel::GarbageCollected,
-            concurrency_model: ConcurrencyModel::AsyncCoroutines,
-            solver_model: SolverModel::EmbeddedLibraryAst,
-            temporal_model: TemporalModel::LoweredAutomaton,
-            native_four_state: false,
-            native_inside_tolerance: false,
-            native_covergroups: true,
-            ieee_1800_context_widths: false,
-        }
-    }
-
-    /// Future spoke: Accellera IEEE 1800.1 Portable Stimulus (`PSS 3.0`).
-    pub fn pss_1800_1() -> Self {
-        Self {
-            language_id: "pss".into(),
-            memory_model: MemoryModel::DeclarativeGraph,
-            concurrency_model: ConcurrencyModel::ActivitySchedule,
-            solver_model: SolverModel::LanguageBuiltin,
-            temporal_model: TemporalModel::LoweredAutomaton,
-            native_four_state: false,
-            native_inside_tolerance: false,
-            native_covergroups: true,
-            ieee_1800_context_widths: false,
-        }
-    }
-
-    /// Future spoke: Rust native verification / Verilator / Arcilator testbench.
-    pub fn rust_verilator() -> Self {
-        Self {
-            language_id: "rust-dv".into(),
-            memory_model: MemoryModel::ValueAndRaii,
-            concurrency_model: ConcurrencyModel::AsyncCoroutines,
-            solver_model: SolverModel::SynthesizedSmtCall,
-            temporal_model: TemporalModel::LoweredAutomaton,
-            native_four_state: false,
-            native_inside_tolerance: false,
-            native_covergroups: false,
             ieee_1800_context_widths: false,
         }
     }
 }
 
-/// Dynamic hub-and-spoke registry of language front-ends, emitters, and dialect extensions.
+/// Registry of active language front-ends, emitters, and dialect extensions.
 #[derive(Default)]
 pub struct LanguageRegistry {
     frontends: BTreeMap<String, Box<dyn Frontend>>,
@@ -783,7 +831,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn crv_arena_roundtrips_json_cleanly() {
+    fn crv_arena_and_dist_roundtrip_json_cleanly() {
         let mut m = UvirModule::new("unit");
         let v = m.crv_arena.alloc(CrvExpr::Var("addr".into()));
         let lo = m.crv_arena.alloc(CrvExpr::Const {
@@ -796,13 +844,16 @@ mod tests {
             width: 32,
             signed: false,
         });
-        let inside = m.crv_arena.alloc(CrvExpr::Inside {
+        let dist = m.crv_arena.alloc(CrvExpr::Dist {
             target: v,
-            elems: vec![InsideElem::Range { low: lo, high: hi }],
+            items: vec![DistItem {
+                elem: InsideElem::Range { low: lo, high: hi },
+                kind: DistWeightKind::SplitRange,
+                weight: 80,
+            }],
         });
-        assert_eq!(m.crv_arena.len(), 4);
         let json = serde_json::to_string(&m).expect("serialize");
         let back: UvirModule = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.crv_arena.get(inside), m.crv_arena.get(inside));
+        assert_eq!(back.crv_arena.get(dist), m.crv_arena.get(dist));
     }
 }

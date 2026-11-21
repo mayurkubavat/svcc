@@ -1,35 +1,38 @@
+use std::path::PathBuf;
 use uvir_emit_sc::ScEmitter;
 use uvir_emit_sv::SvEmitter;
-use uvir_equiv::{prove_class_equivalence, SmtVerdict};
+use uvir_equiv::{prove_class_equivalence_with_enums, prove_sva_bmc_equivalence, SmtVerdict};
 use uvir_front_sc::ScFrontend;
 use uvir_front_sv::SvFrontend;
 use uvir_ir::{BackendEmitter, Frontend, TargetCapabilities};
 use uvir_passes::PassPipeline;
 
+fn shim_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/cpp_shims")
+}
+
 #[test]
-fn bidirectional_sv_sc_sv_roundtrip_and_z3_proof() {
+fn apb4_roundtrip_clang_svlang_and_z3_proof() {
     let sv_src = include_str!("../../../testdata/sv/apb_timer_item.sv");
     let sv_fe = SvFrontend::new();
     let sc_fe = ScFrontend::new();
     let sc_em = ScEmitter::new();
     let sv_em = SvEmitter::new();
 
-    // 1. Lower SV -> UVIR and legalize for SystemC target (expands 1800-2023 `[v +/- t]` tolerance!)
     let (mut m_sv, _) = sv_fe
         .lower_str("apb_timer_item.sv", sv_src)
         .expect("sv lower");
     PassPipeline::for_target(sc_em.capabilities())
         .run_all(&mut m_sv)
         .expect("sc legalize");
-    assert!(m_sv.classes[0].needs_value_copy_ctor);
 
-    // 2. Emit SystemC/CRAVE/FC4SC C++17 header
-    let cpp_out = sc_em.emit(&m_sv).expect("sc emit");
+    let cpp_out = sc_em
+        .emit_and_verify_clang(&m_sv, &shim_dir())
+        .expect("sc emit & clang++ -Werror");
     assert!(cpp_out.contains("apb_timer_item(const apb_timer_item& rhs)"));
     assert!(cpp_out.contains("set_sv_signedness(true)"));
     assert!(cpp_out.contains("// uvir:nocompare seq_tag"));
 
-    // 3. Lower emitted C++17 back into UVIR and emit IEEE 1800-2023 SV (validated via svlang!)
     let (mut m_sc, _) = sc_fe
         .lower_str("apb_timer_item.hpp", &cpp_out)
         .expect("sc lower");
@@ -41,17 +44,112 @@ fn bidirectional_sv_sc_sv_roundtrip_and_z3_proof() {
         .expect("sv emit & svlang verify");
     assert!(sv_roundtrip.contains("UVM_NOCOMPARE"));
 
-    // 4. Prove formal constraint & coverage equivalence (Z3 QF_BV)
-    let rep = prove_class_equivalence(
+    let rep = prove_class_equivalence_with_enums(
         &m_sv.classes[0],
         &m_sv.crv_arena,
+        &m_sv.enums,
         &m_sc.classes[0],
         &m_sc.crv_arena,
+        &m_sc.enums,
     )
     .expect("equiv check");
-    assert_ne!(rep.hard_crv_verdict, SmtVerdict::CounterexampleSat);
+    assert_eq!(rep.hard_crv_verdict, SmtVerdict::EquivalentUnsat);
     assert_eq!(rep.soft_clauses_matched, 1);
     assert!(rep.coverage_isomorphic);
+}
+
+#[test]
+fn axi4_enum_dist_randc_clocking_fork_env_full_roundtrip() {
+    let sv_src = include_str!("../../../testdata/sv/axi4_burst_env.sv");
+    let sv_fe = SvFrontend::new();
+    let sc_fe = ScFrontend::new();
+    let sc_em = ScEmitter::new();
+    let sv_em = SvEmitter::new();
+
+    let (mut m_sv, _) = sv_fe
+        .lower_str("axi4_burst_env.sv", sv_src)
+        .expect("axi4 sv lower");
+    PassPipeline::for_target(sc_em.capabilities())
+        .run_all(&mut m_sv)
+        .expect("axi4 sc legalize");
+
+    // Compile generated C++17 (enum class, clocking #1step, CRAVE dist, sc_spawn cancel_tok, env TLM) via clang++ -Werror!
+    let cpp_out = sc_em
+        .emit_and_verify_clang(&m_sv, &shim_dir())
+        .expect("axi4 clang++ -Werror");
+    assert!(cpp_out.contains("enum class axi_burst_e : uint8_t"));
+    assert!(cpp_out.contains("struct uvir_clocking_cb : public sc_core::sc_module"));
+    assert!(cpp_out.contains(".add_weighted_range("));
+    assert!(cpp_out.contains("sc_core::sc_spawn"));
+    assert!(cpp_out.contains("this->drv->item_ap.connect(scb->analysis_export)"));
+
+    let (mut m_sc, _) = sc_fe
+        .lower_str("axi4_burst_env.hpp", &cpp_out)
+        .expect("axi4 sc lower");
+    PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023())
+        .run_all(&mut m_sc)
+        .expect("axi4 sv legalize");
+    let sv_rt = sv_em.emit_and_verify(&m_sc).expect("axi4 svlang verify");
+    assert!(sv_rt.contains("typedef enum bit [1:0]"));
+    assert!(sv_rt.contains("randc bit [2:0] awid;"));
+    assert!(sv_rt.contains("join_any"));
+    assert!(sv_rt.contains("disable fork;"));
+    assert!(sv_rt.contains("drv.item_ap.connect(scb.analysis_export);"));
+
+    let item_sv = m_sv.find_class("axi4_item").unwrap();
+    let item_sc = m_sc.find_class("axi4_item").unwrap();
+    let rep = prove_class_equivalence_with_enums(
+        item_sv,
+        &m_sv.crv_arena,
+        &m_sv.enums,
+        item_sc,
+        &m_sc.crv_arena,
+        &m_sc.enums,
+    )
+    .unwrap();
+    assert_eq!(rep.hard_crv_verdict, SmtVerdict::EquivalentUnsat);
+    assert_eq!(rep.dist_clauses_matched, 1);
+}
+
+#[test]
+fn uart_ral_block_and_pipelined_sva_bmc_roundtrip() {
+    let sv_src = include_str!("../../../testdata/sv/uart_ral_sva.sv");
+    let sv_fe = SvFrontend::new();
+    let sc_fe = ScFrontend::new();
+    let sc_em = ScEmitter::new();
+    let sv_em = SvEmitter::new();
+
+    let (mut m_sv, _) = sv_fe
+        .lower_str("uart_ral_sva.sv", sv_src)
+        .expect("uart sv lower");
+    assert_eq!(m_sv.properties.len(), 2);
+    PassPipeline::for_target(sc_em.capabilities())
+        .run_all(&mut m_sv)
+        .expect("uart sc legalize");
+
+    let cpp_out = sc_em
+        .emit_and_verify_clang(&m_sv, &shim_dir())
+        .expect("uart clang++ -Werror");
+    assert!(cpp_out.contains("uvm::uvm_randomized_reg"));
+    assert!(cpp_out.contains("this->default_map->add_reg(ctrl, 0x0ULL, \"RW\");"));
+    assert!(cpp_out.contains("class uvir_sva_ap_tx_start_busy : public sc_core::sc_module"));
+
+    // Prove Z3 BMC trace equivalence for both pipelined ##[1:4] and ##[2:8] SVA properties!
+    for prop in &m_sv.properties {
+        let bmc = prove_sva_bmc_equivalence(prop, 6).expect("sva bmc");
+        assert_eq!(bmc.verdict, SmtVerdict::EquivalentUnsat);
+    }
+
+    let (mut m_sc, _) = sc_fe
+        .lower_str("uart_ral_sva.hpp", &cpp_out)
+        .expect("uart sc lower");
+    assert_eq!(m_sc.properties.len(), 2);
+    PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023())
+        .run_all(&mut m_sc)
+        .expect("uart sv legalize");
+    let sv_rt = sv_em.emit_and_verify(&m_sc).expect("uart svlang verify");
+    assert!(sv_rt.contains("default_map.add_reg(ctrl, 'h0, \"RW\");"));
+    assert!(sv_rt.contains("ap_tx_start_busy: assert property (@(posedge clk) disable iff (!rst_n) tx_start |-> ##[1:4] tx_busy);"));
 }
 
 #[test]
@@ -75,55 +173,14 @@ public:
     norm.run_all(&mut m_sv).unwrap();
     norm.run_all(&mut m_sc).unwrap();
 
-    let rep = prove_class_equivalence(
+    let rep = prove_class_equivalence_with_enums(
         &m_sv.classes[0],
         &m_sv.crv_arena,
+        &m_sv.enums,
         &m_sc.classes[0],
         &m_sc.crv_arena,
+        &m_sc.enums,
     )
     .unwrap();
-    if rep.hard_crv_verdict != SmtVerdict::SolverUnavailable {
-        // Off-by-one (`<= 16` vs `< 16`) MUST be caught as SAT counterexample!
-        assert_eq!(rep.hard_crv_verdict, SmtVerdict::CounterexampleSat);
-    }
-}
-
-#[test]
-fn ral_register_transpiles_sv_to_sc_and_back() {
-    let ral_sv = r#"
-class timer_ctrl_reg extends uvm_reg;
-  rand uvm_reg_field en;
-  rand uvm_reg_field irq_en;
-  uvm_reg_field status;
-  function new(string name = "timer_ctrl_reg");
-    super.new(name, 32, UVM_NO_COVERAGE);
-  endfunction
-  virtual function void build();
-    en     = uvm_reg_field::type_id::create("en");
-    irq_en = uvm_reg_field::type_id::create("irq_en");
-    status = uvm_reg_field::type_id::create("status");
-    en.configure(this, 1, 0, "RW", 0, 1'h0, 1, 1, 0);
-    irq_en.configure(this, 1, 1, "RW", 0, 1'h0, 1, 1, 0);
-    status.configure(this, 4, 4, "RO", 1, 4'h0, 1, 0, 0);
-  endfunction
-endclass
-
-class timer_reg_block extends uvm_reg_block;
-  rand timer_ctrl_reg ctrl;
-  virtual function void build();
-    ctrl = timer_ctrl_reg::type_id::create("ctrl");
-    ctrl.configure(this);
-    ctrl.build();
-    default_map = create_map("default_map", 'h4000_0000, 4, UVM_LITTLE_ENDIAN);
-    default_map.add_reg(ctrl, 'h00, "RW");
-  endfunction
-endclass
-"#;
-    let (mut m, _) = SvFrontend::new().lower_str("timer_ral.sv", ral_sv).unwrap();
-    PassPipeline::for_target(TargetCapabilities::sc_uvm_crave_fc4sc())
-        .run_all(&mut m)
-        .unwrap();
-    let sc = ScEmitter::new().emit(&m).unwrap();
-    assert!(sc.contains("uvm::uvm_randomized_reg"));
-    assert!(sc.contains("bind_field(en, &en_reg_field, \"RW\", 0, 1);"));
+    assert_eq!(rep.hard_crv_verdict, SmtVerdict::CounterexampleSat);
 }

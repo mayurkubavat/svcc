@@ -2,29 +2,30 @@
 //!
 //! Powered by the pinned pure-Rust [`svlang`] + [`svlang_model`] SDK:
 //! 1. Parses and semantically analyzes SV/UVM compilation units via [`svlang::Compilation`].
-//! 2. Lifts OOP/UVM hierarchy (`UvmKind`, `PhaseKind`, `Property`, `Method`, `MacroUse`) via
-//!    [`svlang_model::Design::from_sv`].
-//! 3. Extracts UVM RAL register/field specifications via [`svlang_model::ral::extract_ral_blocks`].
-//! 4. Walks the lossless [`svlang::syntax::Tree`] CST (`ConstraintDecl`, `ConstraintItem`,
-//!    `CovergroupDecl`, `Coverpoint`, `Cross`) to populate `crv` and `cov` dialects.
+//! 2. Lifts `typedef enum`, `clocking #1step`, and concurrent SVA (`assert/cover property`) items.
+//! 3. Lifts OOP/UVM hierarchy (`UvmKind`, `PhaseKind`, `Property`, `Method`, `SubComponentDecl`,
+//!    `TlmPortDecl`, `TlmConnection`) + RAL `uvm_reg` and `uvm_reg_block` maps.
+//! 4. Walks lossless CST nodes for `ConstraintDecl` (`inside`, `dist`, `soft`, `unique`),
+//!    `CovergroupDecl` (`Coverpoint`, `Cross`), and procedural task bodies (`ParBlock` `fork/join`,
+//!    `disable fork`, `wait fork`, `@(cb)`, `#delay`, sequence item dispatch).
 
 pub mod crv_parser;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use svlang::{Compilation, NodeId, Severity, SyntaxKind, Tree};
 use svlang_model::ral::extract_ral_blocks;
 use svlang_model::{Design as SvModelDesign, PhaseKind as SvPhaseKind, UvmKind};
 use uvir_ir::{
-    BinKind, ClassDecl, ConstraintBlock, CovBin, CovergroupDecl, CoverpointDecl, CrossDecl,
-    CrvArena, FieldDecl, FieldOps, Frontend, FrontendMetrics, MethodDecl, OwnershipMode, PhaseKind,
-    Provenance, RalFieldMeta, ScalarKind, SourceLang, UvirError, UvirModule, UvirType, UvmRole,
+    BinKind, ClassDecl, ClockingDecl, ConstraintBlock, CovBin, CovergroupDecl, CoverpointDecl,
+    CrossDecl, CrvArena, EnumDecl, FieldDecl, FieldOps, Frontend, FrontendMetrics, JoinKind,
+    MethodDecl, OwnershipMode, PhaseKind, Provenance, RalFieldMeta, RalMapSpec, RalRegInstance,
+    ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl, TlmConnection, TlmPortDecl,
+    TlmPortKind, UvirError, UvirModule, UvirType, UvmRole,
 };
 
-/// IEEE 1800-2023 SystemVerilog / UVM front-end.
 #[derive(Clone, Debug, Default)]
 pub struct SvFrontend {
-    /// Fail when `svlang` reports syntax errors.
     pub fail_on_syntax_error: bool,
 }
 
@@ -83,7 +84,9 @@ impl Frontend for SvFrontend {
         let t_lower = Instant::now();
         let ral_blocks = extract_ral_blocks(trees);
         let mut ral_regs_by_class = HashMap::new();
+        let mut ral_blocks_by_class = HashMap::new();
         for blk in &ral_blocks {
+            ral_blocks_by_class.insert(blk.name.clone(), blk.clone());
             for reg in &blk.registers {
                 ral_regs_by_class.insert(reg.class_name.clone(), reg.clone());
             }
@@ -93,33 +96,91 @@ impl Frontend for SvFrontend {
         let mut total_constraints = 0usize;
         let mut total_covergroups = 0usize;
 
-        // Index CST ClassDecl nodes by name, and collect standalone CovergroupDecl nodes outside classes
         let mut cst_classes: HashMap<String, (&Tree, NodeId)> = HashMap::new();
+        let mut named_sva_props: HashMap<String, String> = HashMap::new();
         for tree in trees {
             collect_top_cst_items(
                 tree,
                 tree.root,
                 &mut cst_classes,
+                &mut module.enums,
+                &mut module.clockings,
+                &mut named_sva_props,
+                &mut module.properties,
                 &mut module.standalone_covergroups,
                 &mut total_covergroups,
             );
         }
 
+        let enum_widths: HashMap<String, u32> = module
+            .enums
+            .iter()
+            .map(|e| (e.name.clone(), e.width))
+            .collect();
+        let enum_consts: Vec<(String, u64, u32)> = module
+            .enums
+            .iter()
+            .flat_map(|e| {
+                e.variants
+                    .iter()
+                    .map(move |(vn, vv)| (vn.clone(), *vv, e.width))
+            })
+            .collect();
+        let clocking_names: HashSet<String> =
+            module.clockings.iter().map(|c| c.name.clone()).collect();
+
+        // Collect all user class names & roles first so component children resolve even if forward/external
+        let mut known_component_classes: HashSet<String> = HashSet::new();
         for cls in sv_design.classes() {
-            if cls.is_library {
+            if cls.is_library || cls.is_interface {
                 continue;
             }
             let cst_entry = cst_classes.get(&cls.name).copied();
-            let effective_base = if !cls.base_name.is_empty() {
+            let eff_base = if !cls.base_name.is_empty() {
                 cls.base_name.clone()
             } else if let Some((tree, cls_node)) = cst_entry {
-                extract_cst_extends(tree, cls_node).unwrap_or_default()
+                extract_cst_extends(tree, cls_node).0.unwrap_or_default()
             } else {
                 String::new()
+            };
+            if map_uvm_role(cls.uvm, &eff_base).is_component() {
+                known_component_classes.insert(cls.name.clone());
+            }
+        }
+
+        for cls in sv_design.classes() {
+            if cls.is_library || cls.is_interface {
+                continue;
+            }
+            let cst_entry = cst_classes.get(&cls.name).copied();
+            let (cst_base, item_type) = if let Some((tree, cls_node)) = cst_entry {
+                extract_cst_extends(tree, cls_node)
+            } else {
+                (None, None)
+            };
+            let effective_base = if !cls.base_name.is_empty() {
+                cls.base_name.clone()
+            } else {
+                cst_base.unwrap_or_default()
             };
 
             let role = map_uvm_role(cls.uvm, &effective_base);
             let ral_reg = ral_regs_by_class.get(&cls.name);
+            let ral_map = ral_blocks_by_class.get(&cls.name).map(|blk| RalMapSpec {
+                map_name: "default_map".into(),
+                base_addr: blk.base_addr,
+                addr_unit_bytes: blk.addr_unit_bytes,
+                registers: blk
+                    .registers
+                    .iter()
+                    .map(|r| RalRegInstance {
+                        inst_name: r.name.clone(),
+                        class_name: r.class_name.clone(),
+                        offset: r.offset,
+                        rights: r.rights.clone(),
+                    })
+                    .collect(),
+            });
 
             let mut covergroups = Vec::new();
             if let Some((tree, cls_node)) = cst_entry {
@@ -134,6 +195,9 @@ impl Frontend for SvFrontend {
             }
 
             let mut fields = Vec::new();
+            let mut subcomponents = Vec::new();
+            let mut tlm_ports = Vec::new();
+
             if let Some(reg_spec) = ral_reg {
                 for rf in &reg_spec.fields {
                     fields.push(FieldDecl {
@@ -152,19 +216,39 @@ impl Frontend for SvFrontend {
                         }),
                     });
                 }
-            } else {
+            } else if role != UvmRole::RegBlock {
                 for prop in &cls.properties {
-                    if prop.ty.trim() == "uvm_reg_field"
+                    let resolved_ty = if prop.ty.trim() == "<error>" {
+                        written_property_type(cst_entry, &prop.name)
+                            .unwrap_or_else(|| prop.ty.clone())
+                    } else {
+                        prop.ty.clone()
+                    };
+                    let pty = resolved_ty.trim();
+                    if pty == "uvm_reg_field"
+                        || prop.is_virtual_interface
                         || covergroups.iter().any(|cg| cg.name == prop.name)
                     {
                         continue;
                     }
-                    let ty = parse_sv_property_type(&prop.ty);
+                    if let Some(port) = parse_tlm_port_decl(&prop.name, pty) {
+                        tlm_ports.push(port);
+                        continue;
+                    }
+                    let base_ty = pty.split('#').next().unwrap_or(pty).trim();
+                    if role.is_component() && known_component_classes.contains(base_ty) {
+                        subcomponents.push(SubComponentDecl {
+                            name: prop.name.clone(),
+                            class_name: base_ty.to_string(),
+                        });
+                        continue;
+                    }
+                    let ty = parse_sv_property_type(pty, &enum_widths);
                     let is_randc = source_property_is_randc(cst_entry, &prop.name);
                     fields.push(FieldDecl {
                         name: prop.name.clone(),
                         ty,
-                        is_rand: prop.is_rand,
+                        is_rand: prop.is_rand || is_randc,
                         is_randc,
                         ops: FieldOps::default(),
                         ral_meta: None,
@@ -174,21 +258,17 @@ impl Frontend for SvFrontend {
 
             apply_uvm_field_macros_from_source(source, &cls.name, &mut fields);
 
-            let field_widths: Vec<(String, u32, bool)> = fields
-                .iter()
-                .map(|f| (f.name.clone(), f.ty.width, f.ty.signed))
-                .collect();
-
             let mut constraints = Vec::new();
             if let Some((tree, cls_node)) = cst_entry {
-                constraints = extract_class_constraints(
-                    tree,
-                    cls_node,
-                    &mut module.crv_arena,
-                    &field_widths,
-                )?;
+                constraints =
+                    extract_class_constraints(tree, cls_node, &mut module.crv_arena, &enum_consts)?;
                 total_constraints += constraints.len();
             }
+
+            let tlm_connections = extract_tlm_connections_from_source(source, &cls.name);
+            let cst_method_bodies = cst_entry
+                .map(|(tree, cls_node)| extract_cst_method_bodies(tree, cls_node, &clocking_names))
+                .unwrap_or_default();
 
             let methods = cls
                 .methods
@@ -199,7 +279,7 @@ impl Frontend for SvFrontend {
                     phase: map_phase_kind(&m.name, m.phase),
                     is_task: m.is_task,
                     is_virtual: m.is_virtual,
-                    body_ops: Vec::new(),
+                    body_ops: cst_method_bodies.get(&m.name).cloned().unwrap_or_default(),
                 })
                 .collect();
 
@@ -209,6 +289,7 @@ impl Frontend for SvFrontend {
                 package_or_namespace: cls.scope.clone(),
                 role,
                 base_class: (!effective_base.is_empty()).then_some(effective_base),
+                item_type,
                 ownership: OwnershipMode::SvGcHandle,
                 sv_signedness: true,
                 needs_value_copy_ctor: false,
@@ -216,6 +297,10 @@ impl Frontend for SvFrontend {
                 reg_width_bits: ral_reg
                     .map(|r| r.n_bits)
                     .or_else(|| (role == UvmRole::Reg).then_some(32)),
+                ral_map,
+                subcomponents,
+                tlm_ports,
+                tlm_connections,
                 fields,
                 constraints,
                 covergroups,
@@ -237,15 +322,21 @@ impl Frontend for SvFrontend {
             classes_lowered: module.classes.len(),
             constraints_lowered: total_constraints,
             covergroups_lowered: total_covergroups,
+            properties_lowered: module.properties.len(),
         };
         Ok((module, metrics))
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_top_cst_items<'a>(
     tree: &'a Tree,
     node: NodeId,
     cst_classes: &mut HashMap<String, (&'a Tree, NodeId)>,
+    enums: &mut Vec<EnumDecl>,
+    clockings: &mut Vec<ClockingDecl>,
+    named_props: &mut HashMap<String, String>,
+    sva_props: &mut Vec<SvaPropertyDecl>,
     standalone_cgs: &mut Vec<CovergroupDecl>,
     total_cgs: &mut usize,
 ) {
@@ -253,6 +344,26 @@ fn collect_top_cst_items<'a>(
         SyntaxKind::ClassDecl => {
             if let Some(nm) = tree.child(node, SyntaxKind::Name) {
                 cst_classes.insert(tree.bare_text(nm).trim().to_string(), (tree, node));
+            }
+        }
+        SyntaxKind::TypedefDecl => {
+            if let Some(en) = parse_typedef_enum(&tree.text(node)) {
+                enums.push(en);
+            }
+        }
+        SyntaxKind::ClockingDecl => {
+            if let Some(cb) = parse_clocking_decl(tree, node) {
+                clockings.push(cb);
+            }
+        }
+        SyntaxKind::PropertyDecl => {
+            if let Some((pname, body)) = parse_named_property_decl(tree, node) {
+                named_props.insert(pname, body);
+            }
+        }
+        SyntaxKind::ConcurrentAssert => {
+            if let Some(prop) = parse_concurrent_assert(tree, node, named_props, sva_props.len()) {
+                sva_props.push(prop);
             }
         }
         SyntaxKind::CovergroupDecl => {
@@ -263,8 +374,535 @@ fn collect_top_cst_items<'a>(
         }
         _ => {
             for ch in tree.children(node) {
-                collect_top_cst_items(tree, ch, cst_classes, standalone_cgs, total_cgs);
+                collect_top_cst_items(
+                    tree,
+                    ch,
+                    cst_classes,
+                    enums,
+                    clockings,
+                    named_props,
+                    sva_props,
+                    standalone_cgs,
+                    total_cgs,
+                );
             }
+        }
+    }
+}
+
+fn parse_typedef_enum(raw: &str) -> Option<EnumDecl> {
+    if !raw.contains("enum") {
+        return None;
+    }
+    let lb = raw.find('{')?;
+    let rb = raw.rfind('}')?;
+    let header = &raw[..lb];
+    let name = raw[rb + 1..]
+        .trim()
+        .trim_end_matches(';')
+        .trim()
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let width = if let (Some(bl), Some(br)) = (header.find('['), header.find(']')) {
+        let rng = &header[bl + 1..br];
+        if let Some((m, l)) = rng.split_once(':') {
+            let msb = m.trim().parse::<i64>().unwrap_or(1);
+            let lsb = l.trim().parse::<i64>().unwrap_or(0);
+            ((msb - lsb).unsigned_abs() as u32) + 1
+        } else {
+            32
+        }
+    } else {
+        32
+    };
+
+    let mut variants = Vec::new();
+    let mut next_val = 0u64;
+    for item in raw[lb + 1..rb].split(',') {
+        let it = item.trim();
+        if it.is_empty() {
+            continue;
+        }
+        if let Some((vname, vexpr)) = it.split_once('=') {
+            let val = crv_parser::parse_sv_literal(vexpr.trim())
+                .map(|t| t.0 as u64)
+                .unwrap_or(next_val);
+            variants.push((vname.trim().to_string(), val));
+            next_val = val + 1;
+        } else {
+            variants.push((it.to_string(), next_val));
+            next_val += 1;
+        }
+    }
+    Some(EnumDecl {
+        name,
+        width,
+        variants,
+    })
+}
+
+fn parse_clocking_decl(tree: &Tree, node: NodeId) -> Option<ClockingDecl> {
+    let raw = tree.text(node);
+    let name = tree
+        .child(node, SyntaxKind::Name)
+        .map(|n| tree.bare_text(n).trim().to_string())
+        .unwrap_or_else(|| "cb".into());
+    let mut clock_signal = "clk".to_string();
+    if let Some(at_idx) = raw.find("@(") {
+        if let Some(end_p) = raw[at_idx + 2..].find(')') {
+            let ev = raw[at_idx + 2..at_idx + 2 + end_p].trim();
+            clock_signal = ev
+                .trim_start_matches("posedge")
+                .trim_start_matches("negedge")
+                .trim()
+                .to_string();
+        }
+    }
+
+    let mut input_1step = Vec::new();
+    let mut outputs = Vec::new();
+    for line in raw.lines() {
+        let l = line.trim().trim_end_matches(';');
+        if l.starts_with("default ") {
+            continue;
+        }
+        if let Some(rest) = l.strip_prefix("input") {
+            let clean = rest.trim().trim_start_matches("#1step").trim();
+            for sig in clean.split(',') {
+                let s = sig.split_whitespace().last().unwrap_or("").trim();
+                if !s.is_empty() {
+                    input_1step.push(s.to_string());
+                }
+            }
+        } else if let Some(rest) = l.strip_prefix("output") {
+            let clean = rest
+                .trim()
+                .trim_start_matches("#0")
+                .trim_start_matches("#1")
+                .trim();
+            for sig in clean.split(',') {
+                let s = sig.split_whitespace().last().unwrap_or("").trim();
+                if !s.is_empty() {
+                    outputs.push(s.to_string());
+                }
+            }
+        }
+    }
+    Some(ClockingDecl {
+        name,
+        clock_signal,
+        input_1step_signals: input_1step,
+        output_signals: outputs,
+    })
+}
+
+fn parse_named_property_decl(tree: &Tree, node: NodeId) -> Option<(String, String)> {
+    let name = tree
+        .child(node, SyntaxKind::Name)
+        .map(|n| tree.bare_text(n).trim().to_string())?;
+    let raw = tree.text(node);
+    let (_, after_semi) = raw.split_once(';')?;
+    let body = after_semi
+        .rsplit_once("endproperty")
+        .map(|(b, _)| b.trim().trim_end_matches(';').trim().to_string())?;
+    Some((name, body))
+}
+
+fn parse_concurrent_assert(
+    tree: &Tree,
+    node: NodeId,
+    named_props: &HashMap<String, String>,
+    idx: usize,
+) -> Option<SvaPropertyDecl> {
+    let raw = tree.text(node);
+    let trimmed = raw.trim();
+    let (label, rest) = if let Some(lbl) = tree.child(node, SyntaxKind::StmtLabel) {
+        let l = tree.bare_text(lbl).trim().trim_end_matches(':').to_string();
+        let after = trimmed
+            .split_once(':')
+            .map(|x| x.1.trim())
+            .unwrap_or(trimmed);
+        (l, after)
+    } else {
+        (format!("sva_prop_{idx}"), trimmed)
+    };
+
+    let is_cover = rest.starts_with("cover ");
+    let lp = rest.find('(')?;
+    // Extract outer `property ( ... )` balanced parens
+    let mut depth = 0usize;
+    let mut rp = None;
+    for (i, ch) in rest[lp..].char_indices() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            depth -= 1;
+            if depth == 0 {
+                rp = Some(lp + i);
+                break;
+            }
+        }
+    }
+    let inner_raw = rest[lp + 1..rp?].trim();
+    let spec = named_props
+        .get(inner_raw)
+        .map(String::as_str)
+        .unwrap_or(inner_raw);
+    parse_sva_property_body(label, is_cover, spec)
+}
+
+pub fn parse_sva_property_body(
+    name: String,
+    is_cover: bool,
+    spec: &str,
+) -> Option<SvaPropertyDecl> {
+    let mut rem = spec.trim();
+    let mut clock_signal = "clk".to_string();
+    if let Some(after_at) = rem.strip_prefix("@(") {
+        let end_p = after_at.find(')')?;
+        let ev = after_at[..end_p].trim();
+        clock_signal = ev
+            .trim_start_matches("posedge")
+            .trim_start_matches("negedge")
+            .trim()
+            .to_string();
+        rem = after_at[end_p + 1..].trim();
+    }
+
+    let mut disable_iff = None;
+    if let Some(after_dis) = rem.strip_prefix("disable iff") {
+        let after_dis = after_dis.trim();
+        if let Some(after_lp) = after_dis.strip_prefix('(') {
+            let mut depth = 1usize;
+            let mut end_d = 0usize;
+            for (i, ch) in after_lp.char_indices() {
+                if ch == '(' {
+                    depth += 1;
+                } else if ch == ')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_d = i;
+                        break;
+                    }
+                }
+            }
+            disable_iff = Some(after_lp[..end_d].trim().to_string());
+            rem = after_lp[end_d + 1..].trim();
+        }
+    }
+
+    let (antecedent, default_min, rhs_raw) = if let Some((a, b)) = rem.split_once("|->") {
+        (a.trim().to_string(), 0u32, b.trim())
+    } else if let Some((a, b)) = rem.split_once("|=>") {
+        (a.trim().to_string(), 1u32, b.trim())
+    } else {
+        return None;
+    };
+
+    let (min_delay, max_delay, consequent) = if let Some(after_h) = rhs_raw.strip_prefix("##[") {
+        let rb = after_h.find(']')?;
+        let rng = &after_h[..rb];
+        let (lo_s, hi_s) = rng.split_once(':')?;
+        let lo = lo_s.trim().parse::<u32>().unwrap_or(default_min) + default_min;
+        let hi = hi_s.trim().parse::<u32>().unwrap_or(lo) + default_min;
+        (lo, hi, after_h[rb + 1..].trim().to_string())
+    } else if let Some(after_h) = rhs_raw.strip_prefix("##") {
+        let num_end = after_h
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(after_h.len());
+        let d = after_h[..num_end].parse::<u32>().unwrap_or(0) + default_min;
+        (d, d, after_h[num_end..].trim().to_string())
+    } else {
+        (default_min, default_min, rhs_raw.to_string())
+    };
+
+    Some(SvaPropertyDecl {
+        name,
+        clock_signal,
+        disable_iff,
+        antecedent,
+        min_delay,
+        max_delay,
+        consequent,
+        is_cover,
+    })
+}
+
+fn parse_tlm_port_decl(name: &str, pty: &str) -> Option<TlmPortDecl> {
+    let item_ty = if let (Some(lp), Some(rp)) = (pty.find('('), pty.rfind(')')) {
+        pty[lp + 1..rp]
+            .split(',')
+            .next()
+            .unwrap_or("uvm_sequence_item")
+            .trim()
+            .to_string()
+    } else {
+        "uvm_sequence_item".into()
+    };
+
+    if pty.starts_with("uvm_analysis_port") {
+        Some(TlmPortDecl {
+            name: name.to_string(),
+            kind: TlmPortKind::AnalysisPort,
+            item_type: item_ty,
+        })
+    } else if pty.starts_with("uvm_analysis_imp") || pty.starts_with("uvm_analysis_export") {
+        Some(TlmPortDecl {
+            name: name.to_string(),
+            kind: TlmPortKind::AnalysisExport,
+            item_type: item_ty,
+        })
+    } else if pty.starts_with("uvm_seq_item_pull_port") {
+        Some(TlmPortDecl {
+            name: name.to_string(),
+            kind: TlmPortKind::SeqItemPullPort,
+            item_type: item_ty,
+        })
+    } else {
+        None
+    }
+}
+
+fn extract_tlm_connections_from_source(source: &str, class_name: &str) -> Vec<TlmConnection> {
+    let mut out = Vec::new();
+    let marker = format!("class {class_name}");
+    let Some(start) = source.find(&marker) else {
+        return out;
+    };
+    let body = source[start..].split("endclass").next().unwrap_or("");
+    for line in body.lines() {
+        let l = line
+            .split("//")
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_end_matches(';');
+        if let Some((lhs, rhs)) = l.split_once(".connect(") {
+            if let Some(target) = rhs.strip_suffix(')') {
+                out.push(TlmConnection {
+                    initiator: lhs.trim().to_string(),
+                    target: target.trim().to_string(),
+                });
+            }
+        }
+    }
+    out
+}
+
+fn extract_cst_method_bodies(
+    tree: &Tree,
+    cls_node: NodeId,
+    clocking_names: &HashSet<String>,
+) -> HashMap<String, Vec<SchedOp>> {
+    let mut map = HashMap::new();
+    for ch in tree.children(cls_node) {
+        let k = tree.kind(ch);
+        if matches!(k, SyntaxKind::FunctionDecl | SyntaxKind::TaskDecl) {
+            let Some(nm) = tree.child(ch, SyntaxKind::Name) else {
+                continue;
+            };
+            let mname = tree.bare_text(nm).trim().to_string();
+            if matches!(
+                mname.as_str(),
+                "new" | "build" | "build_phase" | "connect_phase" | "do_copy" | "do_compare"
+            ) {
+                continue;
+            }
+            if let Some(body_node) = tree.child(ch, SyntaxKind::Body) {
+                let ops = lower_stmt_children(tree, body_node, clocking_names);
+                if !ops.is_empty() {
+                    map.insert(mname, ops);
+                }
+            }
+        }
+    }
+    map
+}
+
+fn lower_stmt_children(
+    tree: &Tree,
+    container: NodeId,
+    clocking_names: &HashSet<String>,
+) -> Vec<SchedOp> {
+    let mut ops = Vec::new();
+    for stmt in tree.children(container) {
+        lower_single_stmt(tree, stmt, clocking_names, &mut ops);
+    }
+    // Fold `Fork { JoinAny, .. }` immediately followed by `DisableFork` into `cancel_on_exit = true`
+    let mut folded: Vec<SchedOp> = Vec::with_capacity(ops.len());
+    for op in ops {
+        if matches!(op, SchedOp::DisableFork) {
+            if let Some(SchedOp::Fork { cancel_on_exit, .. }) = folded.last_mut() {
+                *cancel_on_exit = true;
+                continue;
+            }
+        }
+        folded.push(op);
+    }
+    folded
+}
+
+fn lower_single_stmt(
+    tree: &Tree,
+    stmt: NodeId,
+    clocking_names: &HashSet<String>,
+    out: &mut Vec<SchedOp>,
+) {
+    match tree.kind(stmt) {
+        SyntaxKind::SeqBlock | SyntaxKind::Body => {
+            for ch in tree.children(stmt) {
+                lower_single_stmt(tree, ch, clocking_names, out);
+            }
+        }
+        SyntaxKind::ParBlock => {
+            let full = tree.text(stmt);
+            let join = if full.trim_end().ends_with("join_any") {
+                JoinKind::JoinAny
+            } else if full.trim_end().ends_with("join_none") {
+                JoinKind::JoinNone
+            } else {
+                JoinKind::JoinAll
+            };
+            let mut branches = Vec::new();
+            for ch in tree.children(stmt) {
+                let mut b_ops = Vec::new();
+                lower_single_stmt(tree, ch, clocking_names, &mut b_ops);
+                if !b_ops.is_empty() {
+                    branches.push(b_ops);
+                }
+            }
+            out.push(SchedOp::Fork {
+                join,
+                branches,
+                cancel_on_exit: false,
+            });
+        }
+        SyntaxKind::DisableStmt => {
+            let txt = tree.text(stmt);
+            if txt.contains("fork") {
+                out.push(SchedOp::DisableFork);
+            }
+        }
+        SyntaxKind::WaitStmt => {
+            let txt = tree.text(stmt);
+            if txt.contains("wait fork") {
+                out.push(SchedOp::WaitFork);
+            }
+        }
+        SyntaxKind::TimedStmt => {
+            if let Some(tc) = tree.child(stmt, SyntaxKind::TimingControl) {
+                lower_timing_control(&tree.text(tc), clocking_names, out);
+            }
+            for ch in tree.children(stmt) {
+                if tree.kind(ch) != SyntaxKind::TimingControl {
+                    lower_single_stmt(tree, ch, clocking_names, out);
+                }
+            }
+        }
+        SyntaxKind::TimingControl => {
+            lower_timing_control(&tree.text(stmt), clocking_names, out);
+        }
+        SyntaxKind::LoopStmt => {
+            let raw = tree.text(stmt);
+            let trimmed = raw.trim();
+            if let Some(rest) = trimmed.strip_prefix("repeat") {
+                if let (Some(lp), Some(rp)) = (rest.find('('), rest.find(')')) {
+                    let count = rest[lp + 1..rp].trim().parse::<u32>().unwrap_or(1);
+                    let mut body = Vec::new();
+                    for ch in tree.children(stmt) {
+                        lower_single_stmt(tree, ch, clocking_names, &mut body);
+                    }
+                    out.push(SchedOp::Repeat { count, body });
+                }
+            }
+        }
+        SyntaxKind::ExprStmt => {
+            let txt = tree
+                .text(stmt)
+                .trim()
+                .trim_end_matches(';')
+                .trim()
+                .to_string();
+            if txt.is_empty() {
+                return;
+            }
+            if let Some(inner) = txt
+                .strip_prefix("start_item(")
+                .and_then(|s| s.strip_suffix(')'))
+            {
+                out.push(SchedOp::StartItem {
+                    item_var: inner.trim().to_string(),
+                });
+            } else if let Some(inner) = txt
+                .strip_prefix("finish_item(")
+                .and_then(|s| s.strip_suffix(')'))
+            {
+                out.push(SchedOp::FinishItem {
+                    item_var: inner.trim().to_string(),
+                });
+            } else if txt.contains(".randomize()") {
+                let var = txt
+                    .split(".randomize()")
+                    .next()
+                    .unwrap_or("")
+                    .rsplit(['(', ' ', '!'])
+                    .next()
+                    .unwrap_or("req")
+                    .trim();
+                out.push(SchedOp::RandomizeItem {
+                    item_var: var.to_string(),
+                });
+            } else if let Some((port, rest)) = txt.split_once(".write(") {
+                if let Some(arg) = rest.strip_suffix(')') {
+                    out.push(SchedOp::AnalysisWrite {
+                        port: port.trim().to_string(),
+                        expr: arg.trim().to_string(),
+                    });
+                }
+            } else if let Some((lhs, rhs)) = txt.split_once("<=") {
+                out.push(SchedOp::Assign {
+                    lhs: lhs.trim().to_string(),
+                    rhs: rhs.trim().to_string(),
+                    nonblocking: true,
+                });
+            } else if let Some((lhs, rhs)) = txt.split_once('=') {
+                if !lhs.ends_with('=') && !lhs.ends_with('!') {
+                    out.push(SchedOp::Assign {
+                        lhs: lhs.trim().to_string(),
+                        rhs: rhs.trim().to_string(),
+                        nonblocking: false,
+                    });
+                }
+            } else {
+                out.push(SchedOp::Call { stmt: txt });
+            }
+        }
+        _ => {}
+    }
+}
+
+fn lower_timing_control(raw: &str, clocking_names: &HashSet<String>, out: &mut Vec<SchedOp>) {
+    let t = raw.trim();
+    if let Some(delay_s) = t.strip_prefix('#') {
+        let digits: String = delay_s.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(ns) = digits.parse::<u64>() {
+            out.push(SchedOp::WaitDelayNs { ns });
+        }
+    } else if let Some(ev_s) = t.strip_prefix("@(").and_then(|s| s.strip_suffix(')')) {
+        let ev = ev_s.trim();
+        if clocking_names.contains(ev) || ev.ends_with(".cb") || ev == "cb" {
+            out.push(SchedOp::SamplePreTimestep {
+                clocking_name: ev.to_string(),
+            });
+        } else {
+            let sig = ev
+                .trim_start_matches("posedge")
+                .trim_start_matches("negedge")
+                .trim()
+                .to_string();
+            out.push(SchedOp::WaitPosEdge { signal: sig });
         }
     }
 }
@@ -295,8 +933,6 @@ fn map_uvm_role(uvm: UvmKind, base_name: &str) -> UvmRole {
     match b {
         "uvm_sequence_item" => UvmRole::SequenceItem,
         "uvm_sequence" | "uvm_sequence_base" => UvmRole::Sequence,
-        "uvm_reg" => UvmRole::Reg,
-        "uvm_reg_block" => UvmRole::RegBlock,
         "uvm_driver" => UvmRole::Driver,
         "uvm_monitor" => UvmRole::Monitor,
         "uvm_sequencer" => UvmRole::Sequencer,
@@ -330,10 +966,11 @@ fn map_phase_kind(name: &str, sv_phase: SvPhaseKind) -> PhaseKind {
     }
 }
 
-/// Resolves SV property type text (`bit [31:0]`, `logic signed [15:0]`, `int unsigned`, `byte`, etc.)
-/// into a canonical [`UvirType`].
-pub fn parse_sv_property_type(raw_ty: &str) -> UvirType {
+pub fn parse_sv_property_type(raw_ty: &str, enum_widths: &HashMap<String, u32>) -> UvirType {
     let t = raw_ty.trim();
+    if let Some(&ew) = enum_widths.get(t) {
+        return UvirType::enum_ty(t, ew);
+    }
     if t == "string" {
         return UvirType {
             kind: ScalarKind::String,
@@ -423,17 +1060,57 @@ fn source_property_is_randc(cst_cls: Option<(&Tree, NodeId)>, prop_name: &str) -
     false
 }
 
-fn extract_cst_extends(tree: &Tree, cls_node: NodeId) -> Option<String> {
+fn written_property_type(cst_cls: Option<(&Tree, NodeId)>, prop_name: &str) -> Option<String> {
+    let (tree, cls_node) = cst_cls?;
+    for ch in tree.children(cls_node) {
+        if tree.kind(ch) == SyntaxKind::DataDecl {
+            let txt = tree.text(ch);
+            if let Some(dt) = tree.child(ch, SyntaxKind::DataType) {
+                // Verify one of the declarators matches `prop_name`
+                let matches_decl = tree
+                    .children(ch)
+                    .filter(|&n| tree.kind(n) == SyntaxKind::Declarator)
+                    .any(|d| {
+                        tree.child(d, SyntaxKind::Name)
+                            .is_some_and(|nm| tree.bare_text(nm).trim() == prop_name)
+                    });
+                if matches_decl || txt.contains(prop_name) {
+                    return Some(tree.text(dt).trim().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Returns `(base_class_name, optional_parameter_item_type)` from `class X extends Base #(Item);`.
+fn extract_cst_extends(tree: &Tree, cls_node: NodeId) -> (Option<String>, Option<String>) {
     let raw = tree.text(cls_node);
-    let header = raw.split(';').next()?;
-    let (_, after) = header.split_once("extends")?;
+    let Some(header) = raw.split(';').next() else {
+        return (None, None);
+    };
+    let Some((_, after)) = header.split_once("extends") else {
+        return (None, None);
+    };
     let base = after
         .trim()
         .split(['#', '(', ' ', '\n', '\t'])
-        .next()?
+        .next()
+        .unwrap_or("")
         .trim()
         .to_string();
-    (!base.is_empty()).then_some(base)
+    let item = if let (Some(lp), Some(rp)) = (after.find("#("), after.rfind(')')) {
+        let param = after[lp + 2..rp]
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        (!param.is_empty()).then_some(param)
+    } else {
+        None
+    };
+    ((!base.is_empty()).then_some(base), item)
 }
 
 fn apply_uvm_field_macros_from_source(source: &str, class_name: &str, fields: &mut [FieldDecl]) {
@@ -473,7 +1150,7 @@ fn extract_class_constraints(
     tree: &Tree,
     cls_node: NodeId,
     arena: &mut CrvArena,
-    field_widths: &[(String, u32, bool)],
+    enum_consts: &[(String, u64, u32)],
 ) -> Result<Vec<ConstraintBlock>, UvirError> {
     let mut blocks = Vec::new();
     for ch in tree.children(cls_node) {
@@ -486,7 +1163,7 @@ fn extract_class_constraints(
             .unwrap_or_else(|| format!("c_{}", blocks.len()));
         let mut clauses = Vec::new();
         if let Some(cblock) = tree.child(ch, SyntaxKind::ConstraintBlock) {
-            collect_constraint_clauses(tree, cblock, arena, field_widths, &mut clauses)?;
+            collect_constraint_clauses(tree, cblock, arena, enum_consts, &mut clauses)?;
         }
         blocks.push(ConstraintBlock {
             name: cname,
@@ -500,7 +1177,7 @@ fn collect_constraint_clauses(
     tree: &Tree,
     block_node: NodeId,
     arena: &mut CrvArena,
-    field_widths: &[(String, u32, bool)],
+    enum_consts: &[(String, u64, u32)],
     out: &mut Vec<uvir_ir::ConstraintClause>,
 ) -> Result<(), UvirError> {
     for item in tree.children(block_node) {
@@ -510,14 +1187,13 @@ fn collect_constraint_clauses(
         if let Some(nested) = tree.child(item, SyntaxKind::ConstraintBlock) {
             let item_txt = tree.text(item);
             let trimmed = item_txt.trim();
-            // If it's a pure `{ ... }` grouping without `if` or `->`, recurse; otherwise parse whole item.
             if trimmed.starts_with('{') {
-                collect_constraint_clauses(tree, nested, arena, field_widths, out)?;
+                collect_constraint_clauses(tree, nested, arena, enum_consts, out)?;
                 continue;
             }
         }
         let raw = tree.text(item);
-        if let Some(clause) = crv_parser::lower_sv_constraint_item(&raw, arena, field_widths)? {
+        if let Some(clause) = crv_parser::lower_sv_constraint_item(&raw, arena, enum_consts)? {
             out.push(clause);
         }
     }
@@ -686,59 +1362,75 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lowers_sv_uvm_sequence_item_constraints_and_covergroup() {
+    fn lowers_enum_dist_fork_clocking_and_sva() {
         let sv = r#"
-class apb_item extends uvm_sequence_item;
-  rand bit [31:0] addr;
-  rand bit [7:0]  len;
-  rand bit        write;
-  bit [31:0]      tag;
+typedef enum bit [1:0] { AXI_FIXED = 0, AXI_INCR = 1, AXI_WRAP = 2 } burst_e;
 
-  `uvm_object_utils_begin(apb_item)
-    `uvm_field_int(addr, UVM_ALL_ON)
-    `uvm_field_int(tag, UVM_NOCOMPARE)
-  `uvm_object_utils_end
+interface axi_if(input logic clk, input logic rst_n);
+  logic req;
+  logic ack;
+  clocking cb @(posedge clk);
+    default input #1step output #0;
+    input ack;
+    output req;
+  endclocking
+  ap_handshake: assert property (@(posedge clk) disable iff (!rst_n) req |-> ##[1:3] ack);
+endinterface
 
-  constraint c_align {
-    (addr & 32'h3) == 32'h0;
-    addr inside {[32'h1000 : 32'h1FFF]};
-    write -> (len <= 8'd16);
-    soft len == 8'd4;
+class axi_item extends uvm_sequence_item;
+  rand burst_e burst;
+  randc bit [2:0] id;
+  rand bit [7:0] len;
+  constraint c_burst {
+    burst dist { AXI_FIXED := 10, [AXI_INCR : AXI_WRAP] :/ 90 };
   }
+endclass
 
-  covergroup cg_apb;
-    cp_addr: coverpoint addr {
-      bins low_page = {[32'h1000:32'h17FF]};
-      bins high_page = {[32'h1800:32'h1FFF]};
-    }
-    cp_write: coverpoint write {
-      bins rd = {0};
-      bins wr = {1};
-    }
-    cx_rw_addr: cross cp_addr, cp_write;
-  endgroup
+class axi_driver extends uvm_driver #(axi_item);
+  uvm_analysis_port #(axi_item) ap;
+  virtual task run_phase(uvm_phase phase);
+    fork
+      begin
+        @(cb);
+      end
+      begin
+        #100ns;
+      end
+    join_any
+    disable fork;
+  endtask
 endclass
 "#;
-        let fe = SvFrontend::new();
-        let (m, metrics) = fe.lower_str("apb_item.sv", sv).expect("lower sv");
-        assert_eq!(metrics.classes_lowered, 1);
-        assert_eq!(metrics.constraints_lowered, 1);
-        assert_eq!(metrics.covergroups_lowered, 1);
+        let (m, metrics) = SvFrontend::new().lower_str("axi.sv", sv).expect("lower");
+        assert_eq!(m.enums.len(), 1);
+        assert_eq!(m.clockings.len(), 1);
+        assert_eq!(metrics.properties_lowered, 1);
+        assert_eq!(m.properties[0].min_delay, 1);
+        assert_eq!(m.properties[0].max_delay, 3);
 
-        let cls = &m.classes[0];
-        assert_eq!(cls.role, UvmRole::SequenceItem);
-        assert_eq!(cls.fields.len(), 4);
+        let item = m.find_class("axi_item").unwrap();
         assert!(
-            !cls.fields
+            item.fields
                 .iter()
-                .find(|f| f.name == "tag")
+                .find(|f| f.name == "id")
                 .unwrap()
-                .ops
-                .compare
+                .is_randc
         );
-        assert_eq!(cls.constraints[0].clauses.len(), 4);
-        assert!(cls.constraints[0].clauses[3].is_soft);
-        assert_eq!(cls.covergroups[0].coverpoints.len(), 2);
-        assert_eq!(cls.covergroups[0].crosses.len(), 1);
+
+        let drv = m.find_class("axi_driver").unwrap();
+        assert_eq!(drv.tlm_ports.len(), 1);
+        assert_eq!(drv.methods[0].body_ops.len(), 1);
+        match &drv.methods[0].body_ops[0] {
+            SchedOp::Fork {
+                join,
+                branches,
+                cancel_on_exit,
+            } => {
+                assert_eq!(*join, JoinKind::JoinAny);
+                assert_eq!(branches.len(), 2);
+                assert!(*cancel_on_exit);
+            }
+            other => panic!("expected Fork, got {other:?}"),
+        }
     }
 }

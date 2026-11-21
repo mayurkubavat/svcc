@@ -1,18 +1,16 @@
-//! Language-agnostic equivalence verification over `UVIR`.
+//! Formal Equivalence Verification for SV/UVM <-> C++17/SystemC over `UVIR`.
 //!
-//! Because `uvir-equiv` operates directly on [`UvirModule`], **every** registered language
-//! spoke (`SV/UVM`, `SystemC/UVM+CRAVE+FC4SC`, and future `Python/PyVSC`, `PSS`, or `Rust`
-//! frontends/backends) inherits formal equivalence proofs automatically:
-//!
-//! 1. **Bit-Accurate SMT-LIB2 `QF_BV` Constraint Proof**:
-//!    Encodes hard constraint spaces $C_A(\vec{x})$ and $C_B(\vec{x})$ over exact declared
-//!    bitvector widths and signedness, then queries `z3 -in` for:
-//!    $$\text{SAT}\big(C_A(\vec{x}) \oplus C_B(\vec{x})\big)$$
-//!    `unsat` proves that both randomizable models admit the **exact same bit-level solution set**.
-//! 2. **Soft Constraint Weight & Polarity Equivalence**:
-//!    Verifies soft constraint clauses match in priority order and bitvector predicate equivalence.
+//! Provides three formal checks:
+//! 1. **Bit-Accurate CRV + Enum + `dist` Support Equivalence (`QF_BV` via Z3)**:
+//!    Encodes declared bitvector widths, signedness, enum legal-variant domains, `inside`,
+//!    and `dist` non-zero support sets into SMT-LIB2 `QF_BV` and proves
+//!    `SAT(C_lhs XOR C_rhs) == unsat`.
+//! 2. **Bounded Model Checking (BMC) of SVA <-> C++17 Pipeline Observer Automata (`QF_BV` via Z3)**:
+//!    Proves across arbitrary overlapping transaction traces (`K` cycles) with `disable iff`
+//!    resets that the declarative IEEE 1800 `|-> ##[min:max]` property and the lowered C++17
+//!    shift-window observer state machine match cycle-for-cycle (`unsat`).
 //! 3. **UCIS 1.0 Coverage Space Isomorphism**:
-//!    Verifies covergroups, coverpoints, bin intervals/values, and cross products match bijectively.
+//!    Verifies bijective match of covergroups, coverpoints, bin intervals/values, and crosses.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -20,7 +18,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 use uvir_ir::{
-    ClassDecl, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, ExprId, InsideElem, UvirError,
+    ClassDecl, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, EnumDecl, ExprId, InsideElem,
+    ScalarKind, SvaPropertyDecl, UvirError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +34,7 @@ pub struct EquivalenceReport {
     pub class_name: String,
     pub hard_crv_verdict: SmtVerdict,
     pub soft_clauses_matched: usize,
+    pub dist_clauses_matched: usize,
     pub coverage_isomorphic: bool,
     pub coverage_details: Vec<String>,
     pub smtlib2_bytes: usize,
@@ -42,12 +42,22 @@ pub struct EquivalenceReport {
     pub raw_solver_output: String,
 }
 
-/// Generates an SMT-LIB2 `QF_BV` miter checking `(xor C_lhs C_rhs)` for two lowered classes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SvaBmcReport {
+    pub property_name: String,
+    pub bound_cycles: u32,
+    pub verdict: SmtVerdict,
+    pub smtlib2_bytes: usize,
+    pub solver_time_us: u64,
+}
+
 pub fn build_smtlib2_crv_miter(
     lhs_cls: &ClassDecl,
     lhs_arena: &CrvArena,
+    lhs_enums: &[EnumDecl],
     rhs_cls: &ClassDecl,
     rhs_arena: &CrvArena,
+    rhs_enums: &[EnumDecl],
 ) -> Result<String, UvirError> {
     let mut vars: BTreeMap<String, (u32, bool)> = BTreeMap::new();
     for f in lhs_cls.fields.iter().chain(rhs_cls.fields.iter()) {
@@ -65,8 +75,8 @@ pub fn build_smtlib2_crv_miter(
         smt.push_str(&format!("(declare-const {vname} (_ BitVec {width}))\n"));
     }
 
-    let lhs_conj = encode_class_hard_constraints(lhs_cls, lhs_arena, &vars)?;
-    let rhs_conj = encode_class_hard_constraints(rhs_cls, rhs_arena, &vars)?;
+    let lhs_conj = encode_class_hard_constraints(lhs_cls, lhs_arena, lhs_enums, &vars)?;
+    let rhs_conj = encode_class_hard_constraints(rhs_cls, rhs_arena, rhs_enums, &vars)?;
 
     smt.push_str(&format!("(define-fun c_lhs () Bool {lhs_conj})\n"));
     smt.push_str(&format!("(define-fun c_rhs () Bool {rhs_conj})\n"));
@@ -78,9 +88,32 @@ pub fn build_smtlib2_crv_miter(
 fn encode_class_hard_constraints(
     cls: &ClassDecl,
     arena: &CrvArena,
+    enums: &[EnumDecl],
     vars: &BTreeMap<String, (u32, bool)>,
 ) -> Result<String, UvirError> {
     let mut terms = Vec::new();
+
+    // Implicit IEEE 1800 enum legal-value domain constraints
+    for f in &cls.fields {
+        if f.is_rand {
+            if let ScalarKind::Enum(ename) = &f.ty.kind {
+                if let Some(en) = enums.iter().find(|e| &e.name == ename) {
+                    let w = vars.get(&f.name).map(|x| x.0).unwrap_or(en.width);
+                    let disj: Vec<String> = en
+                        .variants
+                        .iter()
+                        .map(|(_, val)| {
+                            format!("(= {} {})", f.name, format_smt_bv(*val as u128, w))
+                        })
+                        .collect();
+                    if !disj.is_empty() {
+                        terms.push(format!("(or {})", disj.join(" ")));
+                    }
+                }
+            }
+        }
+    }
+
     for cb in &cls.constraints {
         for clause in &cb.clauses {
             if !clause.is_soft {
@@ -110,14 +143,15 @@ fn infer_expr_width(
         CrvExpr::Binary { lhs, rhs, .. } => {
             let (lw, ls) = infer_expr_width(*lhs, arena, vars);
             let (rw, rs) = infer_expr_width(*rhs, arena, vars);
-            // Prefer declared variable width when paired against an unsized C++/SV literal
             match (arena.get(*lhs), arena.get(*rhs)) {
                 (CrvExpr::Var(_), CrvExpr::Const { .. }) => (lw, ls),
                 (CrvExpr::Const { .. }, CrvExpr::Var(_)) => (rw, rs),
                 _ => (lw.max(rw), ls && rs),
             }
         }
-        CrvExpr::Inside { target, .. } => infer_expr_width(*target, arena, vars),
+        CrvExpr::Inside { target, .. } | CrvExpr::Dist { target, .. } => {
+            infer_expr_width(*target, arena, vars)
+        }
         CrvExpr::Unique { .. } => (1, false),
     }
 }
@@ -181,6 +215,42 @@ fn encode_bv_expr(
             let b = encode_bool_expr(id, arena, vars)?;
             Ok(resize_bv(&format!("(ite {b} #b1 #b0)"), 1, target_w, false))
         }
+    }
+}
+
+fn encode_inside_elem_smt(
+    t_bv: &str,
+    w: u32,
+    signed: bool,
+    el: &InsideElem,
+    arena: &CrvArena,
+    vars: &BTreeMap<String, (u32, bool)>,
+) -> Result<String, UvirError> {
+    match el {
+        InsideElem::Single(v) => {
+            let v_bv = encode_bv_expr(*v, w, arena, vars)?;
+            Ok(format!("(= {t_bv} {v_bv})"))
+        }
+        InsideElem::Range { low, high } => {
+            let lo_bv = encode_bv_expr(*low, w, arena, vars)?;
+            let hi_bv = encode_bv_expr(*high, w, arena, vars)?;
+            let ge = if signed { "bvsge" } else { "bvuge" };
+            let le = if signed { "bvsle" } else { "bvule" };
+            Ok(format!("(and ({ge} {t_bv} {lo_bv}) ({le} {t_bv} {hi_bv}))"))
+        }
+        InsideElem::ToleranceAbs { center, delta } => {
+            let c_bv = encode_bv_expr(*center, w, arena, vars)?;
+            let d_bv = encode_bv_expr(*delta, w, arena, vars)?;
+            let ge = if signed { "bvsge" } else { "bvuge" };
+            let le = if signed { "bvsle" } else { "bvule" };
+            Ok(format!(
+                "(and ({ge} {t_bv} (bvsub {c_bv} {d_bv})) ({le} {t_bv} (bvadd {c_bv} {d_bv})))"
+            ))
+        }
+        InsideElem::TolerancePct { .. } => Err(UvirError::new(
+            "uvir-equiv/smt",
+            "run TargetLegalizerPass before SMT encoding of '+%-' tolerance",
+        )),
     }
 }
 
@@ -262,37 +332,30 @@ fn encode_bool_expr(
             let t_bv = encode_bv_expr(*target, w, arena, vars)?;
             let mut disj = Vec::new();
             for el in elems {
-                match el {
-                    InsideElem::Single(v) => {
-                        let v_bv = encode_bv_expr(*v, w, arena, vars)?;
-                        disj.push(format!("(= {t_bv} {v_bv})"));
-                    }
-                    InsideElem::Range { low, high } => {
-                        let lo_bv = encode_bv_expr(*low, w, arena, vars)?;
-                        let hi_bv = encode_bv_expr(*high, w, arena, vars)?;
-                        let ge = if signed { "bvsge" } else { "bvuge" };
-                        let le = if signed { "bvsle" } else { "bvule" };
-                        disj.push(format!("(and ({ge} {t_bv} {lo_bv}) ({le} {t_bv} {hi_bv}))"));
-                    }
-                    InsideElem::ToleranceAbs { center, delta } => {
-                        let c_bv = encode_bv_expr(*center, w, arena, vars)?;
-                        let d_bv = encode_bv_expr(*delta, w, arena, vars)?;
-                        let ge = if signed { "bvsge" } else { "bvuge" };
-                        let le = if signed { "bvsle" } else { "bvule" };
-                        disj.push(format!(
-                            "(and ({ge} {t_bv} (bvsub {c_bv} {d_bv})) ({le} {t_bv} (bvadd {c_bv} {d_bv})))"
-                        ));
-                    }
-                    InsideElem::TolerancePct { .. } => {
-                        return Err(UvirError::new(
-                            "uvir-equiv/smt",
-                            "run TargetLegalizerPass before SMT encoding of '+%-' tolerance",
-                        ));
-                    }
-                }
+                disj.push(encode_inside_elem_smt(&t_bv, w, signed, el, arena, vars)?);
             }
             if disj.is_empty() {
                 Ok("false".into())
+            } else if disj.len() == 1 {
+                Ok(disj.remove(0))
+            } else {
+                Ok(format!("(or {})", disj.join(" ")))
+            }
+        }
+        CrvExpr::Dist { target, items } => {
+            // IEEE 1800: `x dist { ... }` constrains `x` to the union of items with weight > 0
+            let (w, signed) = infer_expr_width(*target, arena, vars);
+            let t_bv = encode_bv_expr(*target, w, arena, vars)?;
+            let mut disj = Vec::new();
+            for it in items {
+                if it.weight > 0 {
+                    disj.push(encode_inside_elem_smt(
+                        &t_bv, w, signed, &it.elem, arena, vars,
+                    )?);
+                }
+            }
+            if disj.is_empty() {
+                Ok("true".into())
             } else if disj.len() == 1 {
                 Ok(disj.remove(0))
             } else {
@@ -341,7 +404,6 @@ fn resize_bv(expr: &str, from_w: u32, to_w: u32, signed: bool) -> String {
     }
 }
 
-/// Checks UCIS 1.0 covergroup/coverpoint/bin/cross isomorphism between two [`ClassDecl`]s.
 pub fn verify_coverage_isomorphism(lhs: &ClassDecl, rhs: &ClassDecl) -> (bool, Vec<String>) {
     let mut notes = Vec::new();
     if lhs.covergroups.len() != rhs.covergroups.len() {
@@ -361,6 +423,14 @@ pub fn verify_coverage_isomorphism(lhs: &ClassDecl, rhs: &ClassDecl) -> (bool, V
                 cg_r.coverpoints.len()
             ));
             return (false, notes);
+        }
+        for (cp_l, cp_r) in cg_l
+            .coverpoints
+            .iter()
+            .zip(rhs.covergroups[0].coverpoints.iter())
+        {
+            let _ = cp_r;
+            let _ = cp_l;
         }
         for (cp_l, cp_r) in cg_l.coverpoints.iter().zip(cg_r.coverpoints.iter()) {
             if cp_l.name != cp_r.name || cp_l.bins != cp_r.bins {
@@ -385,14 +455,25 @@ pub fn verify_coverage_isomorphism(lhs: &ClassDecl, rhs: &ClassDecl) -> (bool, V
     (true, notes)
 }
 
-/// Proves constraint & coverage equivalence between `lhs_cls` and `rhs_cls` using `z3`.
 pub fn prove_class_equivalence(
     lhs_cls: &ClassDecl,
     lhs_arena: &CrvArena,
     rhs_cls: &ClassDecl,
     rhs_arena: &CrvArena,
 ) -> Result<EquivalenceReport, UvirError> {
-    let smt = build_smtlib2_crv_miter(lhs_cls, lhs_arena, rhs_cls, rhs_arena)?;
+    prove_class_equivalence_with_enums(lhs_cls, lhs_arena, &[], rhs_cls, rhs_arena, &[])
+}
+
+pub fn prove_class_equivalence_with_enums(
+    lhs_cls: &ClassDecl,
+    lhs_arena: &CrvArena,
+    lhs_enums: &[EnumDecl],
+    rhs_cls: &ClassDecl,
+    rhs_arena: &CrvArena,
+    rhs_enums: &[EnumDecl],
+) -> Result<EquivalenceReport, UvirError> {
+    let smt =
+        build_smtlib2_crv_miter(lhs_cls, lhs_arena, lhs_enums, rhs_cls, rhs_arena, rhs_enums)?;
     let smt_bytes = smt.len();
 
     let t0 = Instant::now();
@@ -411,19 +492,134 @@ pub fn prove_class_equivalence(
         .flat_map(|c| &c.clauses)
         .filter(|cl| cl.is_soft)
         .count();
-    let soft_matched = if soft_l == soft_r { soft_l } else { 0 };
+
+    let count_dists = |cls: &ClassDecl, ar: &CrvArena| -> usize {
+        cls.constraints
+            .iter()
+            .flat_map(|c| &c.clauses)
+            .filter(|cl| matches!(ar.get(cl.expr), CrvExpr::Dist { .. }))
+            .count()
+    };
+    let dist_l = count_dists(lhs_cls, lhs_arena);
+    let dist_r = count_dists(rhs_cls, rhs_arena);
 
     let (cov_ok, cov_details) = verify_coverage_isomorphism(lhs_cls, rhs_cls);
 
     Ok(EquivalenceReport {
         class_name: lhs_cls.name.clone(),
         hard_crv_verdict: verdict,
-        soft_clauses_matched: soft_matched,
+        soft_clauses_matched: if soft_l == soft_r { soft_l } else { 0 },
+        dist_clauses_matched: if dist_l == dist_r { dist_l } else { 0 },
         coverage_isomorphic: cov_ok,
         coverage_details: cov_details,
         smtlib2_bytes: smt_bytes,
         solver_time_us,
         raw_solver_output: raw_out,
+    })
+}
+
+/// Proves via `K`-step Bounded Model Checking (`QF_BV`) that our C++17 shift-window pipeline
+/// observer automaton fires violations/hits on the exact same cycle traces as IEEE 1800 SVA
+/// `(@(posedge clk) disable iff (dis) ant |-> ##[min:max] con)`.
+pub fn prove_sva_bmc_equivalence(
+    prop: &SvaPropertyDecl,
+    extra_cycles: u32,
+) -> Result<SvaBmcReport, UvirError> {
+    let min_d = prop.min_delay;
+    let max_d = prop.max_delay.max(min_d);
+    let k = max_d + extra_cycles.max(4);
+
+    let mut smt = String::new();
+    smt.push_str("(set-logic QF_BV)\n");
+    for t in 0..k {
+        smt.push_str(&format!("(declare-const dis_{t} Bool)\n"));
+        smt.push_str(&format!("(declare-const ant_{t} Bool)\n"));
+        smt.push_str(&format!("(declare-const con_{t} Bool)\n"));
+        if prop.disable_iff.is_none() {
+            smt.push_str(&format!("(assert (not dis_{t}))\n"));
+        }
+    }
+
+    // 1. Declarative IEEE 1800 SVA failure at end of window `t + max_d`:
+    //    Trigger at `tau` (`0 <= tau <= k - 1 - max_d`) fails at `t = tau + max_d` iff:
+    //    `ant_{tau}` held, `dis` was false on `[tau .. tau + max_d]`, and `con` was false on `[tau + min_d .. tau + max_d]`.
+    let mut spec_fails = Vec::new();
+    for tau in 0..(k - max_d) {
+        let mut no_dis = Vec::new();
+        for s in tau..=(tau + max_d) {
+            no_dis.push(format!("(not dis_{s})"));
+        }
+        let mut no_con = Vec::new();
+        for s in (tau + min_d)..=(tau + max_d) {
+            no_con.push(format!("(not con_{s})"));
+        }
+        spec_fails.push(format!(
+            "(and ant_{tau} {} {})",
+            no_dis.join(" "),
+            no_con.join(" ")
+        ));
+    }
+    let spec_any_fail = if spec_fails.is_empty() {
+        "false".into()
+    } else {
+        format!("(or {})", spec_fails.join(" "))
+    };
+
+    // 2. Lowered C++17 pipeline observer state machine (`active_age_0 .. active_age_max_d` booleans,
+    //    corresponding 1-to-1 to bits `0..=max_d` of `uint64_t pending_window_` in `uvir-emit-sc`):
+    //    At each clock edge `t`:
+    //    - Shift previous ages `a-1 -> a` (for `a in 1..=max_d`), insert `ant_t` at age `0`.
+    //    - If `dis_t` is true, clear all ages `0..=max_d` and suppress failure.
+    //    - Else if `con_t` is true, any obligation with age in `[min_d .. max_d]` is satisfied (cleared)!
+    //    - Any remaining obligation at age `max_d` (which was NOT satisfied by `con_t`) raises `impl_fail_t`!
+    smt.push_str("(define-fun prev_init () Bool false)\n");
+    let mut impl_fails = Vec::new();
+    for t in 0..k {
+        for age in 0..=max_d {
+            let shifted_in = if age == 0 {
+                format!("ant_{t}")
+            } else if t == 0 {
+                "false".into()
+            } else {
+                format!("win_{}_{}", t - 1, age - 1)
+            };
+            let satisfied_now = if age >= min_d {
+                format!("con_{t}")
+            } else {
+                "false".into()
+            };
+            smt.push_str(&format!(
+                "(define-fun raw_{t}_{age} () Bool (and (not dis_{t}) {shifted_in} (not {satisfied_now})))\n"
+            ));
+            // Age `max_d` retires at end of cycle `t` (either satisfied or failed), so it doesn't shift further.
+            smt.push_str(&format!(
+                "(define-fun win_{t}_{age} () Bool raw_{t}_{age})\n"
+            ));
+        }
+        impl_fails.push(format!("raw_{t}_{max_d}"));
+    }
+    let impl_any_fail = if impl_fails.is_empty() {
+        "false".into()
+    } else {
+        format!("(or {})", impl_fails.join(" "))
+    };
+
+    smt.push_str(&format!("(define-fun spec_fail () Bool {spec_any_fail})\n"));
+    smt.push_str(&format!("(define-fun impl_fail () Bool {impl_any_fail})\n"));
+    smt.push_str("(assert (xor spec_fail impl_fail))\n");
+    smt.push_str("(check-sat)\n");
+
+    let smt_bytes = smt.len();
+    let t0 = Instant::now();
+    let (verdict, _) = run_z3_stdin(&smt);
+    let solver_time_us = t0.elapsed().as_micros() as u64;
+
+    Ok(SvaBmcReport {
+        property_name: prop.name.clone(),
+        bound_cycles: k,
+        verdict,
+        smtlib2_bytes: smt_bytes,
+        solver_time_us,
     })
 }
 

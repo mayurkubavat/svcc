@@ -1,16 +1,18 @@
-//! `uvir` command-line compiler, round-trip verifier, and benchmark driver.
+//! `uvir` command-line compiler, clang++/svlang verifier, Z3 prover, and benchmark driver
+//! focused on IEEE 1800-2023 SystemVerilog/UVM <-> C++17 SystemC/UVM+CRAVE+FC4SC.
 
 use serde::Serialize;
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 use uvir_emit_sc::ScEmitter;
 use uvir_emit_sv::SvEmitter;
-use uvir_equiv::{prove_class_equivalence, SmtVerdict};
+use uvir_equiv::{prove_class_equivalence_with_enums, prove_sva_bmc_equivalence, SmtVerdict};
 use uvir_front_sc::ScFrontend;
 use uvir_front_sv::SvFrontend;
-use uvir_ir::{LanguageRegistry, TargetCapabilities, UvirError};
+use uvir_ir::{BackendEmitter, LanguageRegistry, TargetCapabilities, UvirError};
 use uvir_passes::PassPipeline;
 
 fn build_registry() -> LanguageRegistry {
@@ -75,10 +77,11 @@ fn run_cli() -> Result<(), UvirError> {
             cmd_transpile(&reg, &from, &to, &input, out_path.as_deref())
         }
         "roundtrip-check" => {
-            let input = args
-                .get(1)
-                .ok_or_else(|| UvirError::new("cli", "usage: uvir roundtrip-check <in.sv>"))?;
-            cmd_roundtrip_check(&reg, input)
+            let input = args.get(1).ok_or_else(|| {
+                UvirError::new("cli", "usage: uvir roundtrip-check <in.sv> [--shims <dir>]")
+            })?;
+            let shim_dir = parse_opt_flag(&args[2..], "--shims");
+            cmd_roundtrip_check(&reg, input, shim_dir.as_deref())
         }
         "prove-equiv" => {
             if args.len() < 3 {
@@ -107,16 +110,15 @@ fn run_cli() -> Result<(), UvirError> {
 
 fn print_usage() {
     println!(
-        "uvir 0.1.0 — Multi-Language Verification IR & Bidirectional Compiler\n\
+        "uvir 0.2.0 — Bidirectional IEEE 1800-2023 SV/UVM <-> C++17 SystemC/UVM Compiler\n\
          \n\
          USAGE:\n\
-         \x20 uvir targets                                      List active & planned language spokes\n\
-         \x20 uvir sv2sc <in.sv> [-o <out.hpp>]                 Transpile SV/UVM -> SystemC/UVM+CRAVE+FC4SC\n\
-         \x20 uvir sc2sv <in.hpp> [-o <out.sv>]                 Transpile SystemC/UVM -> IEEE 1800-2023 SV/UVM\n\
-         \x20 uvir transpile --from <L1> --to <L2> <in> [-o f]  Generic hub-and-spoke transpilation\n\
-         \x20 uvir roundtrip-check <in.sv>                      SV -> SC -> SV + svlang check + Z3 QF_BV proof\n\
-         \x20 uvir prove-equiv <lhs> <rhs>                      Prove Z3 SMT-LIB2 & UCIS equivalence\n\
-         \x20 uvir bench <in.sv> [--iters 50]                   Emit JSON latency & equivalence telemetry"
+         \x20 uvir targets                                      List SV/C++ capability profiles\n\
+         \x20 uvir sv2sc <in.sv> [-o <out.hpp>]                 Transpile SV/UVM -> C++17 SystemC/UVM+CRAVE+FC4SC\n\
+         \x20 uvir sc2sv <in.hpp> [-o <out.sv>]                 Transpile C++17 SystemC/UVM -> IEEE 1800-2023 SV/UVM\n\
+         \x20 uvir roundtrip-check <in.sv> [--shims <dir>]      SV -> C++17 (clang++ -Werror) -> SV (svlang) + Z3 proofs\n\
+         \x20 uvir prove-equiv <lhs> <rhs>                      Prove Z3 QF_BV CRV/Enum/Dist & UCIS equivalence\n\
+         \x20 uvir bench <in.sv> [--iters 50]                   Emit JSON latency & formal equivalence telemetry"
     );
 }
 
@@ -140,22 +142,18 @@ fn positional_args(args: &[String]) -> Vec<String> {
 
 fn cmd_targets(reg: &LanguageRegistry) -> Result<(), UvirError> {
     let profiles = [
-        ("active", TargetCapabilities::sv_uvm_1800_2023()),
-        ("active", TargetCapabilities::sc_uvm_crave_fc4sc()),
-        ("roadmap-spoke", TargetCapabilities::python_cocotb_pyuvm()),
-        ("roadmap-spoke", TargetCapabilities::pss_1800_1()),
-        ("roadmap-spoke", TargetCapabilities::rust_verilator()),
+        TargetCapabilities::sv_uvm_1800_2023(),
+        TargetCapabilities::sc_uvm_crave_fc4sc(),
     ];
     println!("Registered Frontends : {:?}", reg.registered_frontends());
     println!("Registered Backends  : {:?}\n", reg.registered_backends());
     println!(
-        "{:<14} {:<10} {:<18} {:<22} {:<20} {:<16}",
-        "STATUS", "LANG_ID", "MEMORY_MODEL", "CONCURRENCY", "SOLVER", "TEMPORAL"
+        "{:<10} {:<18} {:<22} {:<20} {:<18}",
+        "LANG_ID", "MEMORY_MODEL", "CONCURRENCY", "SOLVER", "TEMPORAL"
     );
-    for (status, cap) in profiles {
+    for cap in profiles {
         println!(
-            "{:<14} {:<10} {:<18?} {:<22?} {:<20?} {:<16?}",
-            status,
+            "{:<10} {:<18?} {:<22?} {:<20?} {:<18?}",
             cap.language_id,
             cap.memory_model,
             cap.concurrency_model,
@@ -183,8 +181,7 @@ fn cmd_transpile(
         .ok_or_else(|| UvirError::new("cli", format!("unknown backend '{to}'")))?;
 
     let (mut module, _) = fe.lower_str(input_path, &src)?;
-    let pipeline = PassPipeline::for_target(be.capabilities());
-    let _ = pipeline.run_all(&mut module)?;
+    PassPipeline::for_target(be.capabilities()).run_all(&mut module)?;
 
     let emitted = if to == "sv-uvm" {
         SvEmitter::new().emit_and_verify(&module)?
@@ -201,26 +198,38 @@ fn cmd_transpile(
     Ok(())
 }
 
-fn cmd_roundtrip_check(reg: &LanguageRegistry, input_path: &str) -> Result<(), UvirError> {
+fn cmd_roundtrip_check(
+    reg: &LanguageRegistry,
+    input_path: &str,
+    shim_dir: Option<&str>,
+) -> Result<(), UvirError> {
     let src = fs::read_to_string(input_path)
         .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
     let sv_fe = reg.frontend("sv-uvm").unwrap();
     let sc_fe = reg.frontend("sc-uvm").unwrap();
-    let sc_be = reg.backend("sc-uvm").unwrap();
+    let sc_em = ScEmitter::new();
+    let sc_caps = TargetCapabilities::sc_uvm_crave_fc4sc();
 
-    // 1. SV -> UVIR -> SC
+    // 1. SV -> UVIR -> C++17 (verified via clang++ -Werror when shim directory exists)
     let (mut m_sv, _) = sv_fe.lower_str(input_path, &src)?;
-    PassPipeline::for_target(sc_be.capabilities()).run_all(&mut m_sv)?;
-    let sc_code = sc_be.emit(&m_sv)?;
+    PassPipeline::for_target(sc_caps.clone()).run_all(&mut m_sv)?;
+    let default_shims = Path::new("testdata/cpp_shims");
+    let sc_code = if let Some(dir) = shim_dir {
+        sc_em.emit_and_verify_clang(&m_sv, Path::new(dir))?
+    } else if default_shims.is_dir() {
+        sc_em.emit_and_verify_clang(&m_sv, default_shims)?
+    } else {
+        sc_em.emit(&m_sv)?
+    };
 
-    // 2. SC -> UVIR -> SV (verified with svlang)
+    // 2. C++17 -> UVIR -> SV (verified via svlang)
     let (mut m_sc, _) = sc_fe.lower_str("roundtrip.hpp", &sc_code)?;
     PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023()).run_all(&mut m_sc)?;
     let sv_roundtrip = SvEmitter::new().emit_and_verify(&m_sc)?;
 
-    // 3. Re-parse emitted SV and prove formal Z3 QF_BV + UCIS equivalence against original!
+    // 3. Re-parse SV and prove Z3 QF_BV CRV/Enum/Dist + UCIS isomorphism
     let (mut m_sv2, _) = sv_fe.lower_str("roundtrip.sv", &sv_roundtrip)?;
-    PassPipeline::for_target(sc_be.capabilities()).run_all(&mut m_sv2)?;
+    PassPipeline::for_target(sc_caps).run_all(&mut m_sv2)?;
 
     if m_sv.classes.len() != m_sv2.classes.len() {
         return Err(UvirError::new(
@@ -234,26 +243,47 @@ fn cmd_roundtrip_check(reg: &LanguageRegistry, input_path: &str) -> Result<(), U
     }
 
     for (orig, rt) in m_sv.classes.iter().zip(m_sv2.classes.iter()) {
-        let rep = prove_class_equivalence(orig, &m_sv.crv_arena, rt, &m_sv2.crv_arena)?;
+        let rep = prove_class_equivalence_with_enums(
+            orig,
+            &m_sv.crv_arena,
+            &m_sv.enums,
+            rt,
+            &m_sv2.crv_arena,
+            &m_sv2.enums,
+        )?;
         println!(
-            "[PASS] class '{}': CRV={:?} (z3 {} us, {} B SMT-LIB2), soft_matched={}, cov_isomorphic={}",
+            "[PASS] class '{}': CRV={:?} (z3 {} us, {} B), soft={}, dist={}, cov_iso={}",
             rep.class_name,
             rep.hard_crv_verdict,
             rep.solver_time_us,
             rep.smtlib2_bytes,
             rep.soft_clauses_matched,
+            rep.dist_clauses_matched,
             rep.coverage_isomorphic
         );
         if rep.hard_crv_verdict == SmtVerdict::CounterexampleSat || !rep.coverage_isomorphic {
             return Err(UvirError::new(
                 "roundtrip",
-                format!(
-                    "equivalence mismatch in '{}': {}",
-                    rep.class_name, rep.raw_solver_output
-                ),
+                format!("equivalence mismatch in '{}'", rep.class_name),
             ));
         }
     }
+
+    // 4. Prove SVA <-> C++17 pipeline observer BMC trace equivalence for every property
+    for prop in &m_sv.properties {
+        let bmc = prove_sva_bmc_equivalence(prop, 6)?;
+        println!(
+            "[PASS] sva   '{}': BMC({} cycles)={:?} (z3 {} us, {} B)",
+            bmc.property_name, bmc.bound_cycles, bmc.verdict, bmc.solver_time_us, bmc.smtlib2_bytes
+        );
+        if bmc.verdict == SmtVerdict::CounterexampleSat {
+            return Err(UvirError::new(
+                "roundtrip/sva",
+                format!("SVA observer BMC mismatch in '{}'", prop.name),
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -273,7 +303,6 @@ fn cmd_prove_equiv(
     let (mut m_l, _) = lhs_fe.lower_str(lhs_path, &lhs_src)?;
     let (mut m_r, _) = rhs_fe.lower_str(rhs_path, &rhs_src)?;
 
-    // Normalize both sides through canonical solver-legalized form
     let norm = PassPipeline::for_target(TargetCapabilities::sc_uvm_crave_fc4sc());
     norm.run_all(&mut m_l)?;
     norm.run_all(&mut m_r)?;
@@ -285,7 +314,14 @@ fn cmd_prove_equiv(
                 format!("class '{}' missing in {rhs_path}", cls_l.name),
             )
         })?;
-        let rep = prove_class_equivalence(cls_l, &m_l.crv_arena, cls_r, &m_r.crv_arena)?;
+        let rep = prove_class_equivalence_with_enums(
+            cls_l,
+            &m_l.crv_arena,
+            &m_l.enums,
+            cls_r,
+            &m_r.crv_arena,
+            &m_r.enums,
+        )?;
         println!("{}", serde_json::to_string_pretty(&rep).unwrap());
         if rep.hard_crv_verdict == SmtVerdict::CounterexampleSat || !rep.coverage_isomorphic {
             return Err(UvirError::new("equiv", "equivalence check failed"));
@@ -303,9 +339,13 @@ struct BenchReport {
     emitted_sc_bytes: usize,
     emitted_sv_bytes: usize,
     classes: usize,
+    enums: usize,
+    clockings: usize,
+    sva_properties: usize,
     crv_nodes: usize,
-    z3_verdict: SmtVerdict,
-    z3_solver_us: u64,
+    z3_crv_verdict: SmtVerdict,
+    z3_sva_bmc_verdict: SmtVerdict,
+    z3_total_solver_us: u64,
     coverage_isomorphic: bool,
 }
 
@@ -342,12 +382,36 @@ fn cmd_bench(reg: &LanguageRegistry, input_path: &str, iters: usize) -> Result<(
 
     let m_sv = last_sv_mod.unwrap();
     let m_sc = last_sc_mod.unwrap();
-    let eq = prove_class_equivalence(
-        &m_sv.classes[0],
-        &m_sv.crv_arena,
-        &m_sc.classes[0],
-        &m_sc.crv_arena,
-    )?;
+
+    let mut z3_total_us = 0u64;
+    let mut crv_verdict = SmtVerdict::EquivalentUnsat;
+    let mut cov_iso = true;
+    for cls_sv in &m_sv.classes {
+        if let Some(cls_sc) = m_sc.find_class(&cls_sv.name) {
+            let eq = prove_class_equivalence_with_enums(
+                cls_sv,
+                &m_sv.crv_arena,
+                &m_sv.enums,
+                cls_sc,
+                &m_sc.crv_arena,
+                &m_sc.enums,
+            )?;
+            z3_total_us += eq.solver_time_us;
+            if eq.hard_crv_verdict != SmtVerdict::EquivalentUnsat {
+                crv_verdict = eq.hard_crv_verdict;
+            }
+            cov_iso &= eq.coverage_isomorphic;
+        }
+    }
+
+    let mut sva_verdict = SmtVerdict::EquivalentUnsat;
+    for prop in &m_sv.properties {
+        let bmc = prove_sva_bmc_equivalence(prop, 6)?;
+        z3_total_us += bmc.solver_time_us;
+        if bmc.verdict != SmtVerdict::EquivalentUnsat {
+            sva_verdict = bmc.verdict;
+        }
+    }
 
     let report = BenchReport {
         input_file: input_path.to_string(),
@@ -357,10 +421,14 @@ fn cmd_bench(reg: &LanguageRegistry, input_path: &str, iters: usize) -> Result<(
         emitted_sc_bytes: sc_code.len(),
         emitted_sv_bytes: sv_code.len(),
         classes: m_sv.classes.len(),
+        enums: m_sv.enums.len(),
+        clockings: m_sv.clockings.len(),
+        sva_properties: m_sv.properties.len(),
         crv_nodes: m_sv.crv_arena.len(),
-        z3_verdict: eq.hard_crv_verdict,
-        z3_solver_us: eq.solver_time_us,
-        coverage_isomorphic: eq.coverage_isomorphic,
+        z3_crv_verdict: crv_verdict,
+        z3_sva_bmc_verdict: sva_verdict,
+        z3_total_solver_us: z3_total_us,
+        coverage_isomorphic: cov_iso,
     };
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     Ok(())

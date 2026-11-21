@@ -3,13 +3,15 @@
 //! Supports IEEE 1800-2023 constraint expressions:
 //! - `soft <expr>`
 //! - `unique { a, b, c }`
-//! - Implication `a -> b` and equivalence `a <-> b`
+//! - Implication `a -> b`, `if (a) b`, and equivalence `a <-> b`
 //! - `x inside { v, [lo:hi], [center +/- delta], [center +%- pct] }`
+//! - `x dist { v := w, [lo:hi] :/ w }`
+//! - Enum enumerator resolution (`AXI_INCR` -> typed constant)
 //! - Logical, bitwise, relational, shift, and arithmetic operators with IEEE 1800 precedence
-//! - Sized and unsized SV literals (`32'h1000`, `8'b1010_0101`, `16'shFF`, `'0`, `42`)
 
 use uvir_ir::{
-    ConstraintClause, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, ExprId, InsideElem, UvirError,
+    ConstraintClause, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, DistItem, DistWeightKind, ExprId,
+    InsideElem, UvirError,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,10 +30,12 @@ enum Tok {
     RBracket,
     Comma,
     Colon,
-    PlusMinus, // +/-
-    PlusPct,   // +%-
-    Arrow,     // ->
-    Iff,       // <->
+    DistPerVal, // :=
+    DistSplit,  // :/
+    PlusMinus,  // +/-
+    PlusPct,    // +%-
+    Arrow,      // ->
+    Iff,        // <->
     OrOr,
     AndAnd,
     EqEq,
@@ -63,7 +67,12 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
             i += 1;
             continue;
         }
-        // Multi-char operators first
+        if src[i..].starts_with("//") {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
         if src[i..].starts_with("<->") {
             out.push(Tok::Iff);
             i += 3;
@@ -77,6 +86,16 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
         if src[i..].starts_with("+%-") {
             out.push(Tok::PlusPct);
             i += 3;
+            continue;
+        }
+        if src[i..].starts_with(":=") {
+            out.push(Tok::DistPerVal);
+            i += 2;
+            continue;
+        }
+        if src[i..].starts_with(":/") {
+            out.push(Tok::DistSplit);
+            i += 2;
             continue;
         }
         if src[i..].starts_with("->") {
@@ -223,8 +242,19 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
             c if c.is_ascii_alphabetic() || c == b'_' => {
                 let start = i;
                 while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'.')
+                    && (bytes[i].is_ascii_alphanumeric()
+                        || bytes[i] == b'_'
+                        || bytes[i] == b'.'
+                        || bytes[i] == b':')
                 {
+                    // Stop before `:=` or `:/` or single `:`
+                    if bytes[i] == b':' && src.as_bytes().get(i + 1) != Some(&b':') {
+                        break;
+                    }
+                    if bytes[i] == b':' {
+                        i += 2;
+                        continue;
+                    }
                     i += 1;
                 }
                 out.push(Tok::Ident(src[start..i].to_string()));
@@ -293,7 +323,7 @@ struct Parser<'a> {
     toks: &'a [Tok],
     pos: usize,
     arena: &'a mut CrvArena,
-    field_widths: &'a [(String, u32, bool)],
+    enum_consts: &'a [(String, u64, u32)],
 }
 
 impl<'a> Parser<'a> {
@@ -315,6 +345,35 @@ impl<'a> Parser<'a> {
             true
         } else {
             false
+        }
+    }
+
+    fn parse_inside_elem(&mut self) -> Result<InsideElem, UvirError> {
+        if self.eat(&Tok::LBracket) {
+            let a = self.parse_add()?;
+            let elem = if self.eat(&Tok::Colon) {
+                let b = self.parse_add()?;
+                InsideElem::Range { low: a, high: b }
+            } else if self.eat(&Tok::PlusMinus) {
+                let d = self.parse_add()?;
+                InsideElem::ToleranceAbs {
+                    center: a,
+                    delta: d,
+                }
+            } else if self.eat(&Tok::PlusPct) {
+                let p = self.parse_add()?;
+                InsideElem::TolerancePct { center: a, pct: p }
+            } else {
+                return Err(UvirError::new(
+                    "uvir-front-sv/crv",
+                    "expected ':', '+/-', or '+%-' in [...] range",
+                ));
+            };
+            let _ = self.eat(&Tok::RBracket);
+            Ok(elem)
+        } else {
+            let single = self.parse_add()?;
+            Ok(InsideElem::Single(single))
         }
     }
 
@@ -356,7 +415,6 @@ impl<'a> Parser<'a> {
                 soft_weight: None,
             });
         }
-        // `if (cond) body` -> `cond -> body`
         if matches!(self.peek(), Some(Tok::Ident(s)) if s == "if") {
             self.bump();
             let _ = self.eat(&Tok::LParen);
@@ -520,36 +578,41 @@ impl<'a> Parser<'a> {
                     if *t == Tok::RBrace {
                         break;
                     }
-                    if self.eat(&Tok::LBracket) {
-                        let a = self.parse_add()?;
-                        let elem = if self.eat(&Tok::Colon) {
-                            let b = self.parse_add()?;
-                            InsideElem::Range { low: a, high: b }
-                        } else if self.eat(&Tok::PlusMinus) {
-                            let d = self.parse_add()?;
-                            InsideElem::ToleranceAbs {
-                                center: a,
-                                delta: d,
-                            }
-                        } else if self.eat(&Tok::PlusPct) {
-                            let p = self.parse_add()?;
-                            InsideElem::TolerancePct { center: a, pct: p }
-                        } else {
-                            return Err(UvirError::new(
-                                "uvir-front-sv/crv",
-                                "expected ':', '+/-', or '+%-' in inside [...] range",
-                            ));
-                        };
-                        let _ = self.eat(&Tok::RBracket);
-                        elems.push(elem);
-                    } else {
-                        let single = self.parse_add()?;
-                        elems.push(InsideElem::Single(single));
-                    }
+                    elems.push(self.parse_inside_elem()?);
                     let _ = self.eat(&Tok::Comma);
                 }
                 let _ = self.eat(&Tok::RBrace);
                 lhs = self.arena.alloc(CrvExpr::Inside { target: lhs, elems });
+            } else if matches!(self.peek(), Some(Tok::Ident(s)) if s == "dist") {
+                self.bump();
+                if !self.eat(&Tok::LBrace) {
+                    return Err(UvirError::new(
+                        "uvir-front-sv/crv",
+                        "expected '{' after dist",
+                    ));
+                }
+                let mut items = Vec::new();
+                while let Some(t) = self.peek() {
+                    if *t == Tok::RBrace {
+                        break;
+                    }
+                    let elem = self.parse_inside_elem()?;
+                    let kind = if self.eat(&Tok::DistPerVal) {
+                        DistWeightKind::PerValue
+                    } else if self.eat(&Tok::DistSplit) {
+                        DistWeightKind::SplitRange
+                    } else {
+                        DistWeightKind::PerValue
+                    };
+                    let weight = match self.bump() {
+                        Some(Tok::Lit { value, .. }) => *value as u32,
+                        _ => 1,
+                    };
+                    items.push(DistItem { elem, kind, weight });
+                    let _ = self.eat(&Tok::Comma);
+                }
+                let _ = self.eat(&Tok::RBrace);
+                lhs = self.arena.alloc(CrvExpr::Dist { target: lhs, items });
             } else if self.eat(&Tok::Le) {
                 let rhs = self.parse_shift()?;
                 lhs = self.arena.alloc(CrvExpr::Binary {
@@ -703,7 +766,14 @@ impl<'a> Parser<'a> {
             Some(Tok::Ident(s)) if s == "true" => Ok(self.arena.alloc(CrvExpr::BoolConst(true))),
             Some(Tok::Ident(s)) if s == "false" => Ok(self.arena.alloc(CrvExpr::BoolConst(false))),
             Some(Tok::Ident(name)) => {
-                let _ = self.field_widths;
+                let short = name.rsplit("::").next().unwrap_or(name);
+                if let Some(&(_, val, w)) = self.enum_consts.iter().find(|(n, _, _)| n == short) {
+                    return Ok(self.arena.alloc(CrvExpr::Const {
+                        value: val as u128,
+                        width: w,
+                        signed: false,
+                    }));
+                }
                 Ok(self.arena.alloc(CrvExpr::Var(name.clone())))
             }
             other => Err(UvirError::new(
@@ -718,7 +788,7 @@ impl<'a> Parser<'a> {
 pub fn lower_sv_constraint_item(
     raw_item: &str,
     arena: &mut CrvArena,
-    field_widths: &[(String, u32, bool)],
+    enum_consts: &[(String, u64, u32)],
 ) -> Result<Option<ConstraintClause>, UvirError> {
     let trimmed = raw_item.trim().trim_end_matches(';').trim();
     if trimmed.is_empty() || trimmed.starts_with("solve ") || trimmed.starts_with("disable ") {
@@ -732,7 +802,7 @@ pub fn lower_sv_constraint_item(
         toks: &toks,
         pos: 0,
         arena,
-        field_widths,
+        enum_consts,
     };
     parser.parse_clause().map(Some)
 }

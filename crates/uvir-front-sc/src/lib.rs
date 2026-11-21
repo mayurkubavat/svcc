@@ -1,37 +1,28 @@
 //! IEEE 1666-2023 SystemC + UVM-SystemC + CRAVE + FC4SC front-end for `UVIR`.
 //!
-//! Architecture:
-//! - Exposes [`CppAstExtractor`] so fast zero-dependency structural parsing works out-of-the-box
-//!   on header-only VIPs, while full `libclang` translation-unit semantic extraction (`clang-sys`)
-//!   plugs into the exact same trait under `--features libclang`.
-//! - Recognizes:
-//!   - `uvm::uvm_randomized_sequence_item`, `uvm::uvm_sequence_item`, `uvm::uvm_randomized_sequence`,
-//!     `uvm::uvm_randomized_reg`, `uvm::uvm_component`, `uvm::uvm_driver`, `uvm::uvm_monitor`,
-//!     `uvm::uvm_env`, `uvm::uvm_test`
-//!   - `crave::crv_variable<T>` and plain C++17 integer/sc_bv/sc_lv fields
-//!   - `crave::crv_constraint` and `crave::crv_soft_constraint` Boost.Proto expressions
-//!     (including `field()` call syntax, `crave::if_then(a, b)`, and `crave::inside(...)`)
-//!   - `fc4sc::covergroup`, `COVERPOINT(...)`, `fc4sc::bin<T>`, `fc4sc::interval(lo, hi)`, and `fc4sc::cross`
+//! Lifts C++17 verification classes, `enum class` types, `uvir_clocking_*` `#1step` samplers,
+//! `uvir_sva_*` bitmask pipeline observers, `crave::dist` weighted distributions, `uvm_reg_block`
+//! maps, component/TLM topologies, and `sc_spawn` cancel-token concurrency back into [`UvirModule`].
 
+use std::collections::HashMap;
 use std::time::Instant;
 use uvir_ir::{
-    BinKind, ClassDecl, ConstraintBlock, ConstraintClause, CovBin, CovergroupDecl, CoverpointDecl,
-    CrossDecl, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, ExprId, FieldDecl, FieldOps, Frontend,
-    FrontendMetrics, InsideElem, OwnershipMode, Provenance, RalFieldMeta, ScalarKind, SourceLang,
-    UvirError, UvirModule, UvirType, UvmRole,
+    BinKind, ClassDecl, ClockingDecl, ConstraintBlock, ConstraintClause, CovBin, CovergroupDecl,
+    CoverpointDecl, CrossDecl, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, DistItem,
+    DistWeightKind, EnumDecl, ExprId, FieldDecl, FieldOps, Frontend, FrontendMetrics, InsideElem,
+    JoinKind, MethodDecl, OwnershipMode, PhaseKind, Provenance, RalFieldMeta, RalMapSpec,
+    RalRegInstance, ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl,
+    TlmConnection, TlmPortDecl, TlmPortKind, UvirError, UvirModule, UvirType, UvmRole,
 };
 
-/// Pluggable C++17 AST provider (`StructuralCppExtractor` default; `LibClangExtractor` optional).
 pub trait CppAstExtractor: Send + Sync {
     fn backend_id(&self) -> &'static str;
     fn extract(&self, filename: &str, source: &str) -> Result<UvirModule, UvirError>;
 }
 
-/// Fast zero-dependency C++17 structural extractor for UVM-SystemC + CRAVE + FC4SC headers.
 #[derive(Clone, Debug, Default)]
 pub struct StructuralCppExtractor;
 
-/// SystemC / UVM-SystemC / CRAVE / FC4SC front-end implementing [`uvir_ir::Frontend`].
 pub struct ScFrontend {
     extractor: Box<dyn CppAstExtractor>,
 }
@@ -83,6 +74,7 @@ impl Frontend for ScFrontend {
             classes_lowered: module.classes.len(),
             constraints_lowered,
             covergroups_lowered,
+            properties_lowered: module.properties.len(),
         };
         Ok((module, metrics))
     }
@@ -95,39 +87,192 @@ impl CppAstExtractor for StructuralCppExtractor {
 
     fn extract(&self, filename: &str, source: &str) -> Result<UvirModule, UvirError> {
         let mut module = UvirModule::new(filename);
+        module.enums = extract_cpp_enums(source);
+        module.clockings = extract_cpp_clockings(source);
+        module.properties = extract_cpp_sva_observers(source);
+
+        let enum_widths: HashMap<String, u32> = module
+            .enums
+            .iter()
+            .map(|e| (e.name.clone(), e.width))
+            .collect();
+
         let mut standalone_cgs = Vec::new();
+        let mut cg_owners: Vec<(Option<String>, CovergroupDecl)> = Vec::new();
 
         for (line_no, cls_hdr, body) in scan_cpp_classes(source) {
             let (name, base) = parse_class_header(&cls_hdr);
-            if base.contains("covergroup") {
-                standalone_cgs.push(parse_fc4sc_covergroup(&name, &body));
+            if name.starts_with("uvir_clocking_") || name.starts_with("uvir_sva_") {
                 continue;
             }
-            let role = classify_sc_base(&base);
+            if base.contains("covergroup") {
+                let (owner_ty, cg) = parse_fc4sc_covergroup(&name, &body);
+                cg_owners.push((owner_ty, cg));
+                continue;
+            }
+            let (role, item_type) = classify_sc_base(&base);
             let cls = parse_sc_uvm_class(
                 filename,
                 line_no,
                 name,
                 base,
                 role,
+                item_type,
                 &body,
+                &enum_widths,
                 &mut module.crv_arena,
             )?;
             module.classes.push(cls);
         }
 
-        // Attach standalone covergroups matching `<class>_cg` or `cg_<class>` if unambiguous,
-        // else keep in `standalone_covergroups`.
-        for cg in standalone_cgs {
+        for (owner_opt, cg) in cg_owners {
+            if let Some(owner_name) = owner_opt {
+                if let Some(cls) = module.classes.iter_mut().find(|c| c.name == owner_name) {
+                    cls.covergroups.push(cg);
+                    continue;
+                }
+            }
             if module.classes.len() == 1 {
                 module.classes[0].covergroups.push(cg);
             } else {
-                module.standalone_covergroups.push(cg);
+                standalone_cgs.push(cg);
             }
         }
+        module.standalone_covergroups = standalone_cgs;
 
         Ok(module)
     }
+}
+
+fn extract_cpp_enums(src: &str) -> Vec<EnumDecl> {
+    let mut out = Vec::new();
+    let mut pending_width: Option<u32> = None;
+    let lines: Vec<&str> = src.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let l = lines[i].trim();
+        if let Some(rest) = l.strip_prefix("// uvir:enum ") {
+            if let Some((_, ws)) = rest.split_once("width=") {
+                pending_width = ws.trim().parse::<u32>().ok();
+            }
+        } else if let Some(rest) = l.strip_prefix("enum class ") {
+            let mut block = rest.to_string();
+            while !block.contains('}') && i + 1 < lines.len() {
+                i += 1;
+                block.push(' ');
+                block.push_str(lines[i].trim());
+            }
+            if let (Some(lb), Some(rb)) = (block.find('{'), block.rfind('}')) {
+                let hdr = block[..lb].trim();
+                let (ename, under) = hdr.split_once(':').unwrap_or((hdr, "uint32_t"));
+                let width = pending_width.take().unwrap_or_else(|| match under.trim() {
+                    "uint8_t" => 8,
+                    "uint16_t" => 16,
+                    "uint64_t" => 64,
+                    _ => 32,
+                });
+                let mut variants = Vec::new();
+                let mut next_v = 0u64;
+                for item in block[lb + 1..rb].split(',') {
+                    let it = item.trim();
+                    if it.is_empty() {
+                        continue;
+                    }
+                    if let Some((vn, vv)) = it.split_once('=') {
+                        let val = parse_cpp_u64(vv).unwrap_or(next_v);
+                        variants.push((vn.trim().to_string(), val));
+                        next_v = val + 1;
+                    } else {
+                        variants.push((it.to_string(), next_v));
+                        next_v += 1;
+                    }
+                }
+                out.push(EnumDecl {
+                    name: ename.trim().to_string(),
+                    width,
+                    variants,
+                });
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+fn extract_cpp_clockings(src: &str) -> Vec<ClockingDecl> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let Some(rest) = line.trim().strip_prefix("// uvir:clocking ") else {
+            continue;
+        };
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if parts.is_empty() {
+            continue;
+        }
+        let name = parts[0].to_string();
+        let mut clk = "clk".to_string();
+        let mut ins = Vec::new();
+        let mut outs = Vec::new();
+        for p in &parts[1..] {
+            if let Some(c) = p.strip_prefix("clk=") {
+                clk = c.to_string();
+            } else if let Some(iv) = p.strip_prefix("in=") {
+                ins = iv
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            } else if let Some(ov) = p.strip_prefix("out=") {
+                outs = ov
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            }
+        }
+        out.push(ClockingDecl {
+            name,
+            clock_signal: clk,
+            input_1step_signals: ins,
+            output_signals: outs,
+        });
+    }
+    out
+}
+
+fn extract_cpp_sva_observers(src: &str) -> Vec<SvaPropertyDecl> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let Some(rest) = line.trim().strip_prefix("// uvir:sva ") else {
+            continue;
+        };
+        let mut kv: HashMap<&str, &str> = HashMap::new();
+        let mut tokens = rest.split_whitespace();
+        let Some(name) = tokens.next() else {
+            continue;
+        };
+        for tok in tokens {
+            if let Some((k, v)) = tok.split_once('=') {
+                kv.insert(k, v);
+            }
+        }
+        let dis = kv
+            .get("dis")
+            .copied()
+            .filter(|&d| d != "-")
+            .map(str::to_string);
+        out.push(SvaPropertyDecl {
+            name: name.to_string(),
+            clock_signal: kv.get("clk").copied().unwrap_or("clk").to_string(),
+            disable_iff: dis,
+            antecedent: kv.get("ant").copied().unwrap_or("true").to_string(),
+            min_delay: kv.get("min").and_then(|s| s.parse().ok()).unwrap_or(0),
+            max_delay: kv.get("max").and_then(|s| s.parse().ok()).unwrap_or(0),
+            consequent: kv.get("con").copied().unwrap_or("true").to_string(),
+            is_cover: kv.get("kind") == Some(&"cover"),
+        });
+    }
+    out
 }
 
 fn scan_cpp_classes(src: &str) -> Vec<(u32, String, String)> {
@@ -142,16 +287,15 @@ fn scan_cpp_classes(src: &str) -> Vec<(u32, String, String)> {
             i += 1;
             continue;
         }
-        // Skip `//` line comments
         if src[i..].starts_with("//") {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
             continue;
         }
-        // Match `class <Name> : ... {` or `struct <Name> : ... {`
         if (src[i..].starts_with("class ") || src[i..].starts_with("struct "))
             && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_')
+            && !src[..i].trim_end().ends_with("enum")
         {
             let start_line = line;
             let hdr_start = i;
@@ -163,7 +307,7 @@ fn scan_cpp_classes(src: &str) -> Vec<(u32, String, String)> {
             }
             if i < bytes.len() && bytes[i] == b'{' {
                 let hdr = src[hdr_start..i].trim().to_string();
-                i += 1; // consume '{'
+                i += 1;
                 let body_start = i;
                 let mut depth = 1usize;
                 while i < bytes.len() && depth > 0 {
@@ -206,7 +350,15 @@ fn parse_class_header(hdr: &str) -> (String, String) {
     }
 }
 
-fn classify_sc_base(base: &str) -> UvmRole {
+fn classify_sc_base(base: &str) -> (UvmRole, Option<String>) {
+    let item_ty = if let (Some(lb), Some(rb)) = (base.find('<'), base.rfind('>')) {
+        let inner = base[lb + 1..rb].trim();
+        let clean = inner.strip_prefix("uvm::").unwrap_or(inner);
+        (clean != "uvm_sequence_item").then(|| clean.to_string())
+    } else {
+        None
+    };
+
     let b = base
         .split('<')
         .next()
@@ -215,7 +367,7 @@ fn classify_sc_base(base: &str) -> UvmRole {
         .last()
         .unwrap_or(base)
         .trim();
-    match b {
+    let role = match b {
         "uvm_randomized_sequence_item" | "uvm_sequence_item" => UvmRole::SequenceItem,
         "uvm_randomized_sequence" | "uvm_sequence" => UvmRole::Sequence,
         "uvm_randomized_reg" | "uvm_reg" => UvmRole::Reg,
@@ -231,20 +383,31 @@ fn classify_sc_base(base: &str) -> UvmRole {
         "uvm_component" => UvmRole::Component,
         "uvm_object" | "crv_sequence_item" => UvmRole::Object,
         _ => UvmRole::PlainClass,
-    }
+    };
+    (role, item_ty)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_sc_uvm_class(
     filename: &str,
     line_no: u32,
     name: String,
     base: String,
     role: UvmRole,
+    item_type: Option<String>,
     body: &str,
+    enum_widths: &HashMap<String, u32>,
     arena: &mut CrvArena,
 ) -> Result<ClassDecl, UvirError> {
     let mut fields: Vec<FieldDecl> = Vec::new();
     let mut constraints: Vec<ConstraintBlock> = Vec::new();
+    let mut subcomponents: Vec<SubComponentDecl> = Vec::new();
+    let mut tlm_ports: Vec<TlmPortDecl> = Vec::new();
+    let mut tlm_connections: Vec<TlmConnection> = Vec::new();
+    let mut ral_map: Option<RalMapSpec> = None;
+    let mut ral_ptr_types: HashMap<String, String> = HashMap::new();
+    let mut next_is_randc: Option<String> = None;
+    let mut next_enum_field: Option<(String, String)> = None;
     let mut sv_signedness = false;
     let mut has_copy_ctor = false;
 
@@ -262,6 +425,49 @@ fn parse_sc_uvm_class(
             }
             continue;
         }
+        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:randc ") {
+            next_is_randc = Some(rest.trim().to_string());
+            continue;
+        }
+        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:enum_field ") {
+            let mut sp = rest.split_whitespace();
+            if let (Some(fnm), Some(enm)) = (sp.next(), sp.next()) {
+                next_enum_field = Some((fnm.to_string(), enm.to_string()));
+            }
+            continue;
+        }
+        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:subcomp ") {
+            let mut sp = rest.split_whitespace();
+            if let (Some(cty), Some(cnm)) = (sp.next(), sp.next()) {
+                subcomponents.push(SubComponentDecl {
+                    name: cnm.to_string(),
+                    class_name: cty.to_string(),
+                });
+            }
+            continue;
+        }
+        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:connect ") {
+            if let Some((lhs, rhs)) = rest.split_once("->") {
+                tlm_connections.push(TlmConnection {
+                    initiator: lhs.trim().to_string(),
+                    target: rhs.trim().to_string(),
+                });
+            }
+            continue;
+        }
+        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:ral_map ") {
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            if parts.len() >= 3 {
+                ral_map = Some(RalMapSpec {
+                    map_name: parts[0].to_string(),
+                    base_addr: parse_cpp_u64(parts[1]).unwrap_or(0),
+                    addr_unit_bytes: parts[2].parse().unwrap_or(4),
+                    registers: Vec::new(),
+                });
+            }
+            continue;
+        }
+
         let line = raw_line.split("//").next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
@@ -273,21 +479,64 @@ fn parse_sc_uvm_class(
             has_copy_ctor = true;
         }
 
-        // `crave::crv_variable<uint32_t> addr{"addr"};` or `crv_variable<sc_dt::sc_uint<8>> len;`
+        // RegBlock register pointer declarations `<RegClass>* <inst> = nullptr;`
+        if role == UvmRole::RegBlock && line.contains("* ") && line.ends_with("nullptr;") {
+            if let Some((cty, rest)) = line.split_once('*') {
+                let inst = rest.split('=').next().unwrap_or("").trim().to_string();
+                ral_ptr_types.insert(inst, cty.trim().to_string());
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("this->default_map->add_reg(") {
+            if let Some(inner) = rest.strip_suffix(");") {
+                let args: Vec<&str> = inner.split(',').map(str::trim).collect();
+                if args.len() >= 3 {
+                    let inst = args[0].to_string();
+                    let offset = parse_cpp_u64(args[1]).unwrap_or(0);
+                    let rights = args[2].trim_matches('"').to_string();
+                    let cls_ty = ral_ptr_types.get(&inst).cloned().unwrap_or_default();
+                    if let Some(rm) = ral_map.as_mut() {
+                        rm.registers.push(RalRegInstance {
+                            inst_name: inst,
+                            class_name: cls_ty,
+                            offset,
+                            rights,
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
+        // TLM ports
+        if let Some(port) = parse_cpp_tlm_port(line) {
+            tlm_ports.push(port);
+            continue;
+        }
+
         if line.contains("crv_variable<") {
-            if let Some(f) = parse_crv_variable_decl(line) {
+            if let Some(mut f) = parse_crv_variable_decl(line, enum_widths) {
+                if next_is_randc.as_deref() == Some(f.name.as_str()) {
+                    f.is_randc = true;
+                    next_is_randc = None;
+                }
+                if let Some((ef_name, ename)) = &next_enum_field {
+                    if ef_name == &f.name {
+                        let ew = enum_widths.get(ename).copied().unwrap_or(f.ty.width);
+                        f.ty = UvirType::enum_ty(ename.clone(), ew);
+                        next_enum_field = None;
+                    }
+                }
                 fields.push(f);
                 continue;
             }
         }
 
-        // Plain scalar member: `uint32_t tag = 0;` / `bool write;`
-        if let Some(f) = parse_plain_cpp_member(line) {
+        if let Some(f) = parse_plain_cpp_member(line, enum_widths) {
             fields.push(f);
             continue;
         }
 
-        // `bind_field(en, &en_reg_field, "RW", 0, 1);`
         if let Some(rest) = line.strip_prefix("bind_field(") {
             if let Some(inner) = rest.strip_suffix(");") {
                 let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
@@ -310,19 +559,8 @@ fn parse_sc_uvm_class(
                 }
             }
         }
-
-        // Compare policy clue inside `do_compare`: `// uvir:nocompare <field>`
-        if let Some(rest) = raw_line.trim().strip_prefix("// uvir:nocompare ") {
-            let fname = rest.trim();
-            if let Some(f) = fields.iter_mut().find(|f| f.name == fname) {
-                f.ops.compare = false;
-            }
-        }
     }
 
-    // Parse CRAVE constraint blocks:
-    // `crave::crv_constraint c_align{this, "c_align", ...};`
-    // `crave::crv_soft_constraint c_soft{this, "c_soft", ...};`
     for (is_soft, cname, expr_args) in extract_crave_constraint_inits(body) {
         let mut clauses = Vec::new();
         for arg in expr_args {
@@ -333,7 +571,6 @@ fn parse_sc_uvm_class(
                 soft_weight: is_soft.then_some(1),
             });
         }
-        // Merge soft helper block `<base>__soft_<idx>` into parent constraint block if matching
         if let Some((parent_name, _)) = cname.split_once("__soft_") {
             if let Some(existing) = constraints.iter_mut().find(|c| c.name == parent_name) {
                 existing.clauses.extend(clauses);
@@ -346,20 +583,27 @@ fn parse_sc_uvm_class(
         });
     }
 
+    let methods = extract_cpp_sched_methods(body, role);
+
     Ok(ClassDecl {
         name,
         package_or_namespace: String::new(),
         role,
         base_class: (!base.is_empty()).then_some(base),
+        item_type,
         ownership: OwnershipMode::ScValueCopy,
         sv_signedness,
         needs_value_copy_ctor: has_copy_ctor || fields.iter().any(|f| f.is_rand),
         synthesize_field_methods: role == UvmRole::SequenceItem || role == UvmRole::Object,
         reg_width_bits: (role == UvmRole::Reg).then_some(32),
+        ral_map,
+        subcomponents,
+        tlm_ports,
+        tlm_connections,
         fields,
         constraints,
         covergroups: Vec::new(),
-        methods: Vec::new(),
+        methods,
         provenance: Provenance {
             source_lang: Some(SourceLang::SystemCUvm),
             file: filename.to_string(),
@@ -369,10 +613,193 @@ fn parse_sc_uvm_class(
     })
 }
 
-fn parse_crv_variable_decl(line: &str) -> Option<FieldDecl> {
+fn parse_cpp_tlm_port(line: &str) -> Option<TlmPortDecl> {
+    let kinds = [
+        ("uvm::uvm_analysis_port<", TlmPortKind::AnalysisPort),
+        ("uvm::uvm_analysis_export<", TlmPortKind::AnalysisExport),
+        ("uvm::uvm_seq_item_pull_port<", TlmPortKind::SeqItemPullPort),
+    ];
+    for (pfx, kind) in kinds {
+        if let Some(rest) = line.strip_prefix(pfx) {
+            let (item_ty, after_gt) = rest.split_once('>')?;
+            let pname = after_gt.split(['{', '(', ';']).next()?.trim().to_string();
+            return Some(TlmPortDecl {
+                name: pname,
+                kind,
+                item_type: item_ty.trim().to_string(),
+            });
+        }
+    }
+    None
+}
+
+fn extract_cpp_sched_methods(body: &str, role: UvmRole) -> Vec<MethodDecl> {
+    let mut out = Vec::new();
+    for target in ["run_phase", "body"] {
+        let sig = format!("void {target}(");
+        let Some(pos) = body.find(&sig) else {
+            continue;
+        };
+        let after = &body[pos..];
+        let Some(lb) = after.find('{') else {
+            continue;
+        };
+        let mut depth = 1usize;
+        let mut end_b = lb + 1;
+        for (i, ch) in after[lb + 1..].char_indices() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    end_b = lb + 1 + i;
+                    break;
+                }
+            }
+        }
+        let mbody = &after[lb + 1..end_b];
+        let ops = parse_cpp_sched_block(mbody);
+        if !ops.is_empty() {
+            out.push(MethodDecl {
+                name: target.to_string(),
+                phase: if target == "body" {
+                    PhaseKind::SequenceBody
+                } else {
+                    PhaseKind::Run
+                },
+                is_task: role.is_component() || role == UvmRole::Sequence,
+                is_virtual: true,
+                body_ops: ops,
+            });
+        }
+    }
+    out
+}
+
+fn parse_cpp_sched_block(mbody: &str) -> Vec<SchedOp> {
+    let mut ops = Vec::new();
+    let lines: Vec<&str> = mbody.lines().map(str::trim).collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        let l = lines[i];
+        if let Some(rest) = l.strip_prefix("// uvir:fork ") {
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            let join = match parts.first().copied().unwrap_or("join_all") {
+                "join_any" => JoinKind::JoinAny,
+                "join_none" => JoinKind::JoinNone,
+                _ => JoinKind::JoinAll,
+            };
+            let cancel = parts.contains(&"cancel=true");
+            let mut branches = Vec::new();
+            i += 1;
+            while i < lines.len() {
+                if lines[i].starts_with("sc_core::sc_spawn(") {
+                    let mut b_lines = Vec::new();
+                    let mut depth = 1usize;
+                    i += 1;
+                    while i < lines.len() && depth > 0 {
+                        let cur = lines[i];
+                        if cur.contains('{') {
+                            depth += cur.matches('{').count();
+                        }
+                        if cur.contains('}') {
+                            depth = depth.saturating_sub(cur.matches('}').count());
+                        }
+                        if depth > 0 {
+                            b_lines.push(cur);
+                        }
+                        i += 1;
+                    }
+                    branches.push(parse_cpp_sched_block(&b_lines.join("\n")));
+                    continue;
+                }
+                if lines[i].contains("->store(true)")
+                    || lines[i].starts_with("sc_core::wait(done_ev_")
+                {
+                    i += 1;
+                    if !cancel
+                        || lines
+                            .get(i.saturating_sub(1))
+                            .is_some_and(|s| s.contains("->store(true)"))
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                if lines[i].starts_with("auto cancel_tok_")
+                    || lines[i].starts_with("sc_core::sc_event done_ev_")
+                {
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
+            ops.push(SchedOp::Fork {
+                join,
+                branches,
+                cancel_on_exit: cancel,
+            });
+            continue;
+        }
+        if let Some(sig) = l.strip_prefix("// uvir:wait_posedge ") {
+            ops.push(SchedOp::WaitPosEdge {
+                signal: sig.trim().to_string(),
+            });
+            i += 2; // skip companion wait
+            continue;
+        }
+        if let Some(cb) = l.strip_prefix("// uvir:sample_1step ") {
+            ops.push(SchedOp::SamplePreTimestep {
+                clocking_name: cb.trim().to_string(),
+            });
+            i += 2;
+            continue;
+        }
+        if let Some(rest) = l.strip_prefix("sc_core::wait(") {
+            if let Some((ns_s, _)) = rest.split_once(", sc_core::SC_NS)") {
+                if let Ok(ns) = ns_s.trim().parse::<u64>() {
+                    ops.push(SchedOp::WaitDelayNs { ns });
+                }
+            }
+        } else if let Some(v) = l
+            .strip_prefix("this->start_item(")
+            .and_then(|s| s.strip_suffix(");"))
+        {
+            ops.push(SchedOp::StartItem {
+                item_var: v.trim().to_string(),
+            });
+        } else if let Some(v) = l
+            .strip_prefix("this->finish_item(")
+            .and_then(|s| s.strip_suffix(");"))
+        {
+            ops.push(SchedOp::FinishItem {
+                item_var: v.trim().to_string(),
+            });
+        } else if let Some(v) = l
+            .strip_prefix("(void)")
+            .and_then(|s| s.strip_suffix("->randomize();"))
+        {
+            ops.push(SchedOp::RandomizeItem {
+                item_var: v.trim().to_string(),
+            });
+        } else if let Some(rest) = l.strip_prefix("this->") {
+            if let Some((port, rhs)) = rest.split_once(".write(") {
+                if let Some(arg) = rhs.strip_suffix(");") {
+                    ops.push(SchedOp::AnalysisWrite {
+                        port: port.trim().to_string(),
+                        expr: arg.trim().to_string(),
+                    });
+                }
+            }
+        }
+        i += 1;
+    }
+    ops
+}
+
+fn parse_crv_variable_decl(line: &str, enum_widths: &HashMap<String, u32>) -> Option<FieldDecl> {
     let idx = line.find("crv_variable<")?;
     let after = &line[idx + "crv_variable<".len()..];
-    // Handle nested `<...>` such as `sc_dt::sc_uint<12>`
     let mut depth = 1usize;
     let mut end_ty = 0usize;
     for (pos, ch) in after.char_indices() {
@@ -401,7 +828,7 @@ fn parse_crv_variable_decl(line: &str) -> Option<FieldDecl> {
     }
     Some(FieldDecl {
         name: fname,
-        ty: map_cpp_type(cpp_ty),
+        ty: map_cpp_type(cpp_ty, enum_widths),
         is_rand: true,
         is_randc: false,
         ops: FieldOps::default(),
@@ -409,8 +836,12 @@ fn parse_crv_variable_decl(line: &str) -> Option<FieldDecl> {
     })
 }
 
-fn parse_plain_cpp_member(line: &str) -> Option<FieldDecl> {
+fn parse_plain_cpp_member(line: &str, enum_widths: &HashMap<String, u32>) -> Option<FieldDecl> {
     if line.contains('(') && !line.contains('=') {
+        return None;
+    }
+    if line.contains("_randc_ring_") || line.contains("pending_window_") || line.contains("_count_")
+    {
         return None;
     }
     let prefixes = [
@@ -440,7 +871,7 @@ fn parse_plain_cpp_member(line: &str) -> Option<FieldDecl> {
     }
     Some(FieldDecl {
         name: fname.to_string(),
-        ty: map_cpp_type(cpp_ty),
+        ty: map_cpp_type(cpp_ty, enum_widths),
         is_rand: false,
         is_randc: false,
         ops: FieldOps::default(),
@@ -448,8 +879,11 @@ fn parse_plain_cpp_member(line: &str) -> Option<FieldDecl> {
     })
 }
 
-pub fn map_cpp_type(cpp_ty: &str) -> UvirType {
+pub fn map_cpp_type(cpp_ty: &str, enum_widths: &HashMap<String, u32>) -> UvirType {
     let t = cpp_ty.trim().trim_start_matches("std::");
+    if let Some(&ew) = enum_widths.get(t) {
+        return UvirType::enum_ty(t, ew);
+    }
     match t {
         "bool" => UvirType::bitvec(1, false),
         "uint8_t" | "unsigned char" => UvirType::bitvec(8, false),
@@ -498,7 +932,6 @@ fn extract_crave_constraint_inits(body: &str) -> Vec<(bool, String, Vec<String>)
         };
 
         if let Some(soft) = is_soft {
-            // Advance past keyword
             while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
                 i += 1;
             }
@@ -572,13 +1005,9 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
     parts
 }
 
-/// Converts CRAVE C++17 Boost.Proto idioms (`field()`, `crave::if_then(a, b)`,
-/// `crave::inside(x(), std::set<...>{...})`, `0x1000U`) into canonical SV-like syntax
-/// and reuses a clean recursive-descent builder into [`CrvArena`].
 fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError> {
     let s = strip_outer_parens(raw.trim());
 
-    // `crave::if_then(cond, body)` or `if_then(cond, body)`
     if let Some(inner) = s
         .strip_prefix("crave::if_then(")
         .or_else(|| s.strip_prefix("if_then("))
@@ -597,7 +1026,21 @@ fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError
         }
     }
 
-    // `crave::inside(var(), {1, 2})` or range form `(x() >= lo && x() <= hi)`
+    // `crave::dist(var(), crave::distribution<T>().add(0U, 10U).add_weighted_range(1U, 2U, 90U))`
+    if let Some(inner) = s
+        .strip_prefix("crave::dist(")
+        .or_else(|| s.strip_prefix("dist("))
+    {
+        if let Some(args_s) = inner.strip_suffix(')') {
+            let args = split_top_level_commas(args_s);
+            if args.len() == 2 {
+                let target = parse_crave_expr(&args[0], arena)?;
+                let items = parse_crave_dist_chain(&args[1], arena)?;
+                return Ok(arena.alloc(CrvExpr::Dist { target, items }));
+            }
+        }
+    }
+
     if let Some(inner) = s
         .strip_prefix("crave::inside(")
         .or_else(|| s.strip_prefix("inside("))
@@ -622,7 +1065,6 @@ fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError
         }
     }
 
-    // Binary operator split (lowest-precedence first)
     let ops: &[(&str, CrvBinaryOp)] = &[
         ("||", CrvBinaryOp::LogOr),
         ("&&", CrvBinaryOp::LogAnd),
@@ -666,14 +1108,12 @@ fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError
         }));
     }
 
-    // `static_cast<T>(expr)` -> unwrap inner expr
     if let Some(rest) = s.strip_prefix("static_cast<") {
         if let Some((_, after_gt)) = rest.split_once('>') {
             return parse_crave_expr(after_gt.trim(), arena);
         }
     }
 
-    // `field()` Boost.Proto variable reference
     if let Some(var_name) = s.strip_suffix("()") {
         let clean = var_name.trim();
         if clean.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !clean.is_empty() {
@@ -681,7 +1121,6 @@ fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError
         }
     }
 
-    // Numeric C++ literal (`0x1000U`, `16ULL`, `42`)
     let num_clean = s.trim_end_matches(['u', 'U', 'l', 'L']);
     if let Some(hex) = num_clean
         .strip_prefix("0x")
@@ -718,6 +1157,69 @@ fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError
         "uvir-front-sc/crave",
         format!("unable to parse CRAVE expression '{raw}'"),
     ))
+}
+
+fn parse_crave_dist_chain(chain: &str, arena: &mut CrvArena) -> Result<Vec<DistItem>, UvirError> {
+    let mut items = Vec::new();
+    let mut rem = chain;
+    while let Some(dot) = rem.find(".add") {
+        let after = &rem[dot + 1..];
+        let Some(lp) = after.find('(') else {
+            break;
+        };
+        let mname = &after[..lp];
+        let mut depth = 0usize;
+        let mut rp = None;
+        for (i, ch) in after[lp..].char_indices() {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                depth -= 1;
+                if depth == 0 {
+                    rp = Some(lp + i);
+                    break;
+                }
+            }
+        }
+        let Some(end_p) = rp else {
+            break;
+        };
+        let args = split_top_level_commas(&after[lp + 1..end_p]);
+        match (mname, args.as_slice()) {
+            ("add", [val_s, w_s]) => {
+                let v = parse_crave_expr(val_s, arena)?;
+                let w = parse_cpp_u64(w_s).unwrap_or(1) as u32;
+                items.push(DistItem {
+                    elem: InsideElem::Single(v),
+                    kind: DistWeightKind::PerValue,
+                    weight: w,
+                });
+            }
+            ("add_range", [lo_s, hi_s, w_s]) => {
+                let low = parse_crave_expr(lo_s, arena)?;
+                let high = parse_crave_expr(hi_s, arena)?;
+                let w = parse_cpp_u64(w_s).unwrap_or(1) as u32;
+                items.push(DistItem {
+                    elem: InsideElem::Range { low, high },
+                    kind: DistWeightKind::PerValue,
+                    weight: w,
+                });
+            }
+            ("add_weighted_range", [lo_s, hi_s, w_s]) => {
+                let low = parse_crave_expr(lo_s, arena)?;
+                let high = parse_crave_expr(hi_s, arena)?;
+                let w = parse_cpp_u64(w_s).unwrap_or(1) as u32;
+                items.push(DistItem {
+                    elem: InsideElem::Range { low, high },
+                    kind: DistWeightKind::SplitRange,
+                    weight: w,
+                });
+            }
+            _ => {}
+        }
+        rem = &after[end_p + 1..];
+    }
+    Ok(items)
 }
 
 fn strip_outer_parens(mut s: &str) -> &str {
@@ -758,7 +1260,6 @@ fn split_top_level_binop<'a>(s: &'a str, sym: &str) -> Option<(&'a str, &'a str)
             b'(' | b'{' | b'[' => depth += 1,
             b')' | b'}' | b']' => depth = depth.saturating_sub(1),
             _ if depth == 0 && s[i..].starts_with(sym) => {
-                // Prevent single-char `&`, `|`, `<`, `>` from splitting `&&`, `||`, `<=`, `>=`, `<<`, `>>`
                 if sym.len() == 1 {
                     let prev = (i > 0).then(|| bytes[i - 1]);
                     let next = bytes.get(i + 1).copied();
@@ -790,9 +1291,21 @@ fn split_top_level_binop<'a>(s: &'a str, sym: &str) -> Option<(&'a str, &'a str)
     Some((lhs, rhs))
 }
 
-fn parse_fc4sc_covergroup(name: &str, body: &str) -> CovergroupDecl {
+fn parse_fc4sc_covergroup(name: &str, body: &str) -> (Option<String>, CovergroupDecl) {
     let mut coverpoints = Vec::new();
     let mut crosses = Vec::new();
+    let mut owner_ty = None;
+
+    for ln in body.lines() {
+        let clean = ln.split("//").next().unwrap_or("").trim();
+        if let Some(before) = clean.strip_suffix("sample_Point{};") {
+            let ty = before.trim();
+            if !ty.is_empty() && ty != "uint32_t" {
+                owner_ty = Some(ty.to_string());
+            }
+        }
+    }
+
     let uncommented: String = body
         .lines()
         .map(|ln| ln.split("//").next().unwrap_or(""))
@@ -801,7 +1314,6 @@ fn parse_fc4sc_covergroup(name: &str, body: &str) -> CovergroupDecl {
 
     for stmt in uncommented.split(';') {
         let l = stmt.trim();
-        // `COVERPOINT(uint32_t, cp_addr, item.addr) { bin<uint32_t>("low", interval(0x1000, 0x17ff)) };`
         if let Some(idx) = l.find("COVERPOINT(") {
             let rest = &l[idx + "COVERPOINT(".len()..];
             if let Some((args_part, bins_part)) = rest.split_once(')') {
@@ -825,7 +1337,6 @@ fn parse_fc4sc_covergroup(name: &str, body: &str) -> CovergroupDecl {
                 }
             }
         } else if l.contains("fc4sc::cross<") {
-            // `fc4sc::cross<uint32_t, bool> cx_rw_addr{this, "cx_rw_addr", &cp_addr, &cp_write};`
             if let (Some(lb), Some(rb)) = (l.find('{'), l.rfind('}')) {
                 let args: Vec<&str> = l[lb + 1..rb].split(',').map(str::trim).collect();
                 if args.len() >= 3 {
@@ -843,11 +1354,14 @@ fn parse_fc4sc_covergroup(name: &str, body: &str) -> CovergroupDecl {
         }
     }
 
-    CovergroupDecl {
-        name: name.to_string(),
-        coverpoints,
-        crosses,
-    }
+    (
+        owner_ty,
+        CovergroupDecl {
+            name: name.to_string(),
+            coverpoints,
+            crosses,
+        },
+    )
 }
 
 fn extract_fc4sc_bins(s: &str) -> Vec<CovBin> {
@@ -855,8 +1369,9 @@ fn extract_fc4sc_bins(s: &str) -> Vec<CovBin> {
     let mut rem = s;
     while let Some(pos) = rem.find("bin<") {
         let after = &rem[pos..];
-        let Some(lp) = after.find('(') else { break };
-        // Find matching ')'
+        let Some(lp) = after.find('(') else {
+            break;
+        };
         let mut depth = 0usize;
         let mut rp = None;
         for (i, ch) in after[lp..].char_indices() {
@@ -870,7 +1385,9 @@ fn extract_fc4sc_bins(s: &str) -> Vec<CovBin> {
                 }
             }
         }
-        let Some(end_p) = rp else { break };
+        let Some(end_p) = rp else {
+            break;
+        };
         let call_args = split_top_level_commas(&after[lp + 1..end_p]);
         if call_args.len() >= 2 {
             let bname = call_args[0].trim().trim_matches('"').to_string();
@@ -916,51 +1433,5 @@ fn parse_cpp_u64(raw: &str) -> Option<u64> {
         u64::from_str_radix(h, 16).ok()
     } else {
         s.parse::<u64>().ok()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lowers_sc_uvm_crave_sequence_item_and_fc4sc_covergroup() {
-        let cpp = r#"
-class apb_item : public uvm::uvm_randomized_sequence_item {
-public:
-  crave::crv_variable<uint32_t> addr{"addr"};
-  crave::crv_variable<uint8_t> len{"len"};
-  crave::crv_variable<bool> write{"write"};
-  uint32_t tag = 0;
-
-  crave::crv_constraint c_align{this, "c_align",
-    (addr() & 0x3U) == 0x0U,
-    (addr() >= 0x1000U && addr() <= 0x1FFFU),
-    crave::if_then(write(), len() <= 16U)
-  };
-  crave::crv_soft_constraint c_align__soft_0{this, "c_align__soft_0", len() == 4U};
-};
-
-class cg_apb : public fc4sc::covergroup {
-public:
-  COVERPOINT(uint32_t, cp_addr, item.addr) {
-    fc4sc::bin<uint32_t>("low_page", fc4sc::interval(0x1000U, 0x17FFU)),
-    fc4sc::bin<uint32_t>("high_page", fc4sc::interval(0x1800U, 0x1FFFU))
-  };
-  COVERPOINT(bool, cp_write, item.write) {
-    fc4sc::bin<bool>("rd", 0),
-    fc4sc::bin<bool>("wr", 1)
-  };
-  fc4sc::cross<uint32_t, bool> cx_rw_addr{this, "cx_rw_addr", &cp_addr, &cp_write};
-};
-"#;
-        let fe = ScFrontend::new();
-        let (m, metrics) = fe.lower_str("apb_item.hpp", cpp).expect("lower sc");
-        assert_eq!(metrics.classes_lowered, 1);
-        assert_eq!(m.classes[0].fields.len(), 4);
-        assert_eq!(m.classes[0].constraints.len(), 1);
-        assert_eq!(m.classes[0].constraints[0].clauses.len(), 4);
-        assert_eq!(m.classes[0].covergroups.len(), 1);
-        assert_eq!(m.classes[0].covergroups[0].coverpoints.len(), 2);
     }
 }

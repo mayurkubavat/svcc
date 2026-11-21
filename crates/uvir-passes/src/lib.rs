@@ -1,23 +1,11 @@
-//! Middle-end normalization and multi-language target legalization passes for `UVIR`.
-//!
-//! Includes:
-//! 1. [`OwnershipPass`]: Resolves GC-handle vs. RAII/TLM value-copy semantics and flags
-//!    `crv_variable<T>` sequence items requiring synthesized value-only copy constructors.
-//! 2. [`WidthSignednessPass`]: Enforces IEEE 1800 bitvector widths & `sv_signedness`.
-//! 3. [`FieldOpSynthesisPass`]: Ensures IEEE 1800.2 field policy synthesis (`do_copy`,
-//!    `do_compare`, `convert2string`) across targets.
-//! 4. [`TargetLegalizerPass`]: Generic $O(N)$ multi-language legalization driven by
-//!    [`TargetCapabilities`] — expands IEEE 1800-2023 tolerance ranges (`[c +/- d]`, `[c +%- p]`)
-//!    for solvers without native tolerance syntax (`CRAVE`, `PyVSC`, `SMT-LIB2`) and lowers
-//!    `TemporalModel::LoweredAutomaton` SVA assertions when targeting C++/Python/Rust.
+//! Middle-end normalization and SV <-> C++17 capability legalization passes for `UVIR`.
 
 use std::time::Instant;
 use uvir_ir::{
-    CrvArena, CrvBinaryOp, CrvExpr, ExprId, InsideElem, MemoryModel, OwnershipMode, PassStats,
-    TargetCapabilities, TemporalModel, TransformPass, UvirError, UvirModule, UvmRole,
+    CrvArena, CrvBinaryOp, CrvExpr, DistItem, ExprId, InsideElem, MemoryModel, OwnershipMode,
+    PassStats, TargetCapabilities, TemporalModel, TransformPass, UvirError, UvirModule, UvmRole,
 };
 
-/// Ordered pass manager collecting microsecond telemetry per pass.
 #[derive(Default)]
 pub struct PassPipeline {
     passes: Vec<Box<dyn TransformPass>>,
@@ -28,7 +16,6 @@ impl PassPipeline {
         Self { passes: Vec::new() }
     }
 
-    /// Standard multi-language normalization + target legalization pipeline.
     pub fn for_target(caps: TargetCapabilities) -> Self {
         let mut p = Self::new();
         p.add_pass(Box::new(WidthSignednessPass));
@@ -53,7 +40,6 @@ impl PassPipeline {
     }
 }
 
-/// Resolves memory ownership (`SvGcHandle` vs. `ScValueCopy` / `ScFactoryRawPtr`) for the target's [`MemoryModel`].
 pub struct OwnershipPass {
     pub memory_model: MemoryModel,
 }
@@ -71,15 +57,15 @@ impl TransformPass for OwnershipPass {
             let (new_mode, needs_copy) = match self.memory_model {
                 MemoryModel::GarbageCollected => (OwnershipMode::SvGcHandle, false),
                 MemoryModel::ValueAndRaii => {
-                    if cls.role.is_component() {
+                    if cls.role.is_component() || cls.role == UvmRole::RegBlock {
                         (OwnershipMode::ScFactoryRawPtr, false)
                     } else {
                         let has_rand = cls.fields.iter().any(|f| f.is_rand);
-                        (OwnershipMode::ScValueCopy, has_rand)
+                        (
+                            OwnershipMode::ScValueCopy,
+                            has_rand && cls.role != UvmRole::Reg,
+                        )
                     }
-                }
-                MemoryModel::DeclarativeGraph | MemoryModel::StaticElaborated => {
-                    (OwnershipMode::Unspecified, false)
                 }
             };
             if cls.ownership != new_mode || cls.needs_value_copy_ctor != needs_copy {
@@ -97,7 +83,6 @@ impl TransformPass for OwnershipPass {
     }
 }
 
-/// Propagates declared field bit-widths and IEEE 1800 signedness rules onto CRV constants.
 pub struct WidthSignednessPass;
 
 impl TransformPass for WidthSignednessPass {
@@ -124,7 +109,6 @@ impl TransformPass for WidthSignednessPass {
     }
 }
 
-/// Marks transaction/object classes for IEEE 1800.2 `do_copy` / `do_compare` / `convert2string` synthesis.
 pub struct FieldOpSynthesisPass;
 
 impl TransformPass for FieldOpSynthesisPass {
@@ -150,7 +134,8 @@ impl TransformPass for FieldOpSynthesisPass {
     }
 }
 
-/// Capability-driven multi-language legalizer (`UVIR-H` -> target-legal `UVIR-L`).
+/// Capability-driven legalizer lowering SV constructs lacking direct C++17 equivalents
+/// (and vice versa).
 pub struct TargetLegalizerPass {
     pub caps: TargetCapabilities,
 }
@@ -164,8 +149,6 @@ impl TransformPass for TargetLegalizerPass {
         let t0 = Instant::now();
         let mut modified = 0usize;
 
-        // 1. Expand IEEE 1800-2023 `[c +/- d]` and `[c +%- p]` inside tolerances into `[lo : hi]`
-        //    when the target solver does not natively support tolerance range syntax.
         if !self.caps.native_inside_tolerance {
             for cls in &mut module.classes {
                 for cb in &mut cls.constraints {
@@ -181,7 +164,6 @@ impl TransformPass for TargetLegalizerPass {
             }
         }
 
-        // 2. Record lowered temporal observer metadata if target lacks native SVA/PSL.
         if self.caps.temporal_model == TemporalModel::LoweredAutomaton
             && !module.properties.is_empty()
         {
@@ -196,80 +178,93 @@ impl TransformPass for TargetLegalizerPass {
     }
 }
 
+fn expand_inside_elem(el: InsideElem, arena: &mut CrvArena, modified: &mut usize) -> InsideElem {
+    match el {
+        InsideElem::ToleranceAbs { center, delta } => {
+            *modified += 1;
+            let low = arena.alloc(CrvExpr::Binary {
+                op: CrvBinaryOp::Sub,
+                lhs: center,
+                rhs: delta,
+            });
+            let high = arena.alloc(CrvExpr::Binary {
+                op: CrvBinaryOp::Add,
+                lhs: center,
+                rhs: delta,
+            });
+            InsideElem::Range { low, high }
+        }
+        InsideElem::TolerancePct { center, pct } => {
+            *modified += 1;
+            let delta = if let (
+                CrvExpr::Const {
+                    value: c_v,
+                    width: w,
+                    signed: s,
+                },
+                CrvExpr::Const { value: p_v, .. },
+            ) = (arena.get(center).clone(), arena.get(pct).clone())
+            {
+                arena.alloc(CrvExpr::Const {
+                    value: (c_v * p_v) / 100,
+                    width: w,
+                    signed: s,
+                })
+            } else {
+                arena.alloc(CrvExpr::Binary {
+                    op: CrvBinaryOp::Mul,
+                    lhs: center,
+                    rhs: pct,
+                })
+            };
+            let low = arena.alloc(CrvExpr::Binary {
+                op: CrvBinaryOp::Sub,
+                lhs: center,
+                rhs: delta,
+            });
+            let high = arena.alloc(CrvExpr::Binary {
+                op: CrvBinaryOp::Add,
+                lhs: center,
+                rhs: delta,
+            });
+            InsideElem::Range { low, high }
+        }
+        other => other,
+    }
+}
+
 fn expand_tolerance_in_expr(id: ExprId, arena: &mut CrvArena, modified: &mut usize) -> ExprId {
     let node = arena.get(id).clone();
     match node {
         CrvExpr::Inside { target, elems } => {
-            let mut changed = false;
-            let mut new_elems = Vec::with_capacity(elems.len());
-            for el in elems {
-                match el {
-                    InsideElem::ToleranceAbs { center, delta } => {
-                        changed = true;
-                        *modified += 1;
-                        let low = arena.alloc(CrvExpr::Binary {
-                            op: CrvBinaryOp::Sub,
-                            lhs: center,
-                            rhs: delta,
-                        });
-                        let high = arena.alloc(CrvExpr::Binary {
-                            op: CrvBinaryOp::Add,
-                            lhs: center,
-                            rhs: delta,
-                        });
-                        new_elems.push(InsideElem::Range { low, high });
-                    }
-                    InsideElem::TolerancePct { center, pct } => {
-                        changed = true;
-                        *modified += 1;
-                        let hundred = arena.alloc(CrvExpr::Const {
-                            value: 100,
-                            width: 32,
-                            signed: false,
-                        });
-                        let prod = arena.alloc(CrvExpr::Binary {
-                            op: CrvBinaryOp::Mul,
-                            lhs: center,
-                            rhs: pct,
-                        });
-                        // Approximate integer delta `(center * pct) / 100` when constant, else keep symbolic
-                        let delta = if let (
-                            CrvExpr::Const {
-                                value: c_v,
-                                width: w,
-                                signed: s,
-                            },
-                            CrvExpr::Const { value: p_v, .. },
-                        ) = (arena.get(center).clone(), arena.get(pct).clone())
-                        {
-                            arena.alloc(CrvExpr::Const {
-                                value: (c_v * p_v) / 100,
-                                width: w,
-                                signed: s,
-                            })
-                        } else {
-                            let _ = hundred;
-                            prod
-                        };
-                        let low = arena.alloc(CrvExpr::Binary {
-                            op: CrvBinaryOp::Sub,
-                            lhs: center,
-                            rhs: delta,
-                        });
-                        let high = arena.alloc(CrvExpr::Binary {
-                            op: CrvBinaryOp::Add,
-                            lhs: center,
-                            rhs: delta,
-                        });
-                        new_elems.push(InsideElem::Range { low, high });
-                    }
-                    other => new_elems.push(other),
-                }
-            }
-            if changed {
+            let before = *modified;
+            let new_elems: Vec<_> = elems
+                .into_iter()
+                .map(|el| expand_inside_elem(el, arena, modified))
+                .collect();
+            if *modified != before {
                 arena.alloc(CrvExpr::Inside {
                     target,
                     elems: new_elems,
+                })
+            } else {
+                id
+            }
+        }
+        CrvExpr::Dist { target, items } => {
+            let before = *modified;
+            let new_items: Vec<_> = items
+                .into_iter()
+                .map(|it| DistItem {
+                    elem: expand_inside_elem(it.elem, arena, modified),
+                    kind: it.kind,
+                    weight: it.weight,
+                })
+                .collect();
+            if *modified != before {
+                arena.alloc(CrvExpr::Dist {
+                    target,
+                    items: new_items,
                 })
             } else {
                 id

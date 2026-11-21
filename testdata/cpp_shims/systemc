@@ -1,0 +1,96 @@
+#pragma once
+#include <cstdint>
+#include <functional>
+#include <string>
+
+namespace sc_core {
+enum sc_time_unit { SC_FS = 0, SC_PS, SC_NS, SC_US, SC_MS, SC_SEC };
+struct sc_time {};
+inline constexpr sc_time SC_ZERO_TIME{};
+
+struct sc_event_or_list {};
+struct sc_event_and_list {};
+
+struct sc_event {
+  void notify() {}
+  sc_event_or_list operator|(const sc_event&) const { return {}; }
+  sc_event_and_list operator&(const sc_event&) const { return {}; }
+};
+inline sc_event_or_list operator|(const sc_event_or_list&, const sc_event&) { return {}; }
+inline sc_event_and_list operator&(const sc_event_and_list&, const sc_event&) { return {}; }
+
+struct sc_module_name {
+  const char* name_;
+  sc_module_name(const char* n) : name_(n) {}
+  sc_module_name(const std::string& s) : name_(s.c_str()) {}
+};
+
+class sc_module {
+public:
+  explicit sc_module(sc_module_name) {}
+  virtual ~sc_module() = default;
+};
+
+template <typename T>
+class sc_in {
+public:
+  explicit sc_in(const char*) {}
+  T read() const { return T{}; }
+  const sc_event& posedge_event() const {
+    static sc_event ev;
+    return ev;
+  }
+};
+
+template <typename T>
+class sc_out {
+public:
+  explicit sc_out(const char*) {}
+  void write(const T&) {}
+};
+
+inline void wait(const sc_time&) {}
+inline void wait(uint64_t, sc_time_unit) {}
+inline void wait(const sc_event&) {}
+inline void wait(const sc_event_or_list&) {}
+inline void wait(const sc_event_and_list&) {}
+
+template <typename Fn>
+inline void sc_spawn(Fn&& fn) {
+  fn();
+}
+} // namespace sc_core
+
+namespace sc_dt {
+template <int W>
+struct sc_uint {
+  uint64_t v_ = 0;
+  constexpr sc_uint() = default;
+  constexpr sc_uint(uint64_t v) : v_(v) {}
+  constexpr operator uint64_t() const { return v_; }
+};
+
+template <int W>
+struct sc_int {
+  int64_t v_ = 0;
+  constexpr sc_int() = default;
+  constexpr sc_int(int64_t v) : v_(v) {}
+  constexpr operator int64_t() const { return v_; }
+};
+
+template <int W>
+struct sc_bv {
+  uint64_t v_ = 0;
+  constexpr sc_bv() = default;
+  constexpr sc_bv(uint64_t v) : v_(v) {}
+  constexpr operator uint64_t() const { return v_; }
+};
+
+template <int W>
+struct sc_lv {
+  uint64_t v_ = 0;
+  constexpr sc_lv() = default;
+  constexpr sc_lv(uint64_t v) : v_(v) {}
+  constexpr operator uint64_t() const { return v_; }
+};
+} // namespace sc_dt

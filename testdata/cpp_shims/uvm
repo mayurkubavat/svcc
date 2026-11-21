@@ -1,0 +1,164 @@
+#pragma once
+#include <cstdint>
+#include <string>
+
+namespace uvm {
+enum uvm_coverage_model_e { UVM_NO_COVERAGE = 0 };
+enum uvm_endianness_e { UVM_LITTLE_ENDIAN = 0 };
+
+struct uvm_comparer {};
+struct uvm_phase {};
+
+struct uvm_component_name {
+  std::string s_;
+  uvm_component_name(const char* s) : s_(s) {}
+  uvm_component_name(const std::string& s) : s_(s) {}
+};
+
+class uvm_object {
+  std::string name_;
+public:
+  explicit uvm_object(const std::string& name = "") : name_(name) {}
+  virtual ~uvm_object() = default;
+  const std::string& get_name() const { return name_; }
+  virtual void do_copy(const uvm_object&) {}
+  virtual bool do_compare(const uvm_object&, const uvm_comparer*) const { return true; }
+};
+
+class uvm_sequence_item : public uvm_object {
+public:
+  explicit uvm_sequence_item(const std::string& name = "") : uvm_object(name) {}
+};
+
+class uvm_randomized_sequence_item : public uvm_sequence_item {
+public:
+  explicit uvm_randomized_sequence_item(const std::string& name = "") : uvm_sequence_item(name) {}
+  void set_sv_signedness(bool) {}
+  bool randomize() { return true; }
+};
+
+class uvm_component : public uvm_object {
+public:
+  explicit uvm_component(uvm_component_name n) : uvm_object(n.s_) {}
+  virtual void build_phase(uvm_phase&) {}
+  virtual void connect_phase(uvm_phase&) {}
+  virtual void run_phase(uvm_phase&) {}
+};
+
+template <typename REQ = uvm_sequence_item>
+class uvm_randomized_sequence : public uvm_object {
+public:
+  explicit uvm_randomized_sequence(const std::string& name = "") : uvm_object(name) {}
+  void set_sv_signedness(bool) {}
+  void start_item(REQ*) {}
+  void finish_item(REQ*) {}
+  virtual void body() {}
+};
+
+template <typename T>
+class uvm_analysis_export {
+public:
+  explicit uvm_analysis_export(const char*) {}
+};
+
+template <typename T>
+class uvm_analysis_port {
+public:
+  explicit uvm_analysis_port(const char*) {}
+  void write(const T&) {}
+  template <typename Target>
+  void connect(Target&) {}
+};
+
+template <typename T>
+class uvm_seq_item_pull_port {
+public:
+  explicit uvm_seq_item_pull_port(const char*) {}
+  template <typename Target>
+  void connect(Target&) {}
+};
+
+template <typename REQ = uvm_sequence_item>
+class uvm_driver : public uvm_component {
+public:
+  uvm_seq_item_pull_port<REQ> seq_item_port{"seq_item_port"};
+  explicit uvm_driver(uvm_component_name n) : uvm_component(n) {}
+};
+
+class uvm_monitor : public uvm_component {
+public:
+  explicit uvm_monitor(uvm_component_name n) : uvm_component(n) {}
+};
+
+template <typename REQ = uvm_sequence_item>
+class uvm_sequencer : public uvm_component {
+public:
+  uvm_analysis_export<REQ> seq_item_export{"seq_item_export"};
+  explicit uvm_sequencer(uvm_component_name n) : uvm_component(n) {}
+};
+
+class uvm_agent : public uvm_component {
+public:
+  explicit uvm_agent(uvm_component_name n) : uvm_component(n) {}
+};
+
+class uvm_env : public uvm_component {
+public:
+  explicit uvm_env(uvm_component_name n) : uvm_component(n) {}
+};
+
+class uvm_scoreboard : public uvm_component {
+public:
+  explicit uvm_scoreboard(uvm_component_name n) : uvm_component(n) {}
+};
+
+template <typename T>
+class uvm_subscriber : public uvm_component {
+public:
+  uvm_analysis_export<T> analysis_export{"analysis_export"};
+  explicit uvm_subscriber(uvm_component_name n) : uvm_component(n) {}
+};
+
+class uvm_test : public uvm_component {
+public:
+  explicit uvm_test(uvm_component_name n) : uvm_component(n) {}
+};
+
+struct uvm_reg_field {};
+class uvm_reg_block;
+
+class uvm_randomized_reg : public uvm_object {
+public:
+  uvm_randomized_reg(const std::string& name, uint32_t, uvm_coverage_model_e) : uvm_object(name) {}
+  void set_sv_signedness(bool) {}
+  void configure(uvm_reg_block*) {}
+  template <typename Var>
+  void bind_field(Var&, uvm_reg_field*, const char*, uint32_t, uint32_t) {}
+};
+
+struct uvm_reg_map {
+  void add_reg(uvm_randomized_reg*, uint64_t, const char*) {}
+};
+
+class uvm_reg_block : public uvm_object {
+public:
+  uvm_reg_map* default_map = nullptr;
+  uvm_reg_block(const std::string& name, uvm_coverage_model_e) : uvm_object(name) {}
+  uvm_reg_map* create_map(const char*, uint64_t, uint32_t, uvm_endianness_e) {
+    static uvm_reg_map m;
+    return &m;
+  }
+};
+} // namespace uvm
+
+#define UVM_OBJECT_UTILS(T) \
+  struct type_id { \
+    static T* create(const std::string& n = #T) { return new T(n); } \
+  }
+
+#define UVM_COMPONENT_UTILS(T) \
+  struct type_id { \
+    static T* create(const std::string& n, ::uvm::uvm_component*) { return new T(n); } \
+  }
+
+#define UVM_ERROR(id, msg) do { (void)(id); (void)(msg); } while (0)

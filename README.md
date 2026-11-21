@@ -1,57 +1,31 @@
-# `uvir` — Universal Verification Intermediate Representation & Multi-Language Compiler
+# `uvir` — Bidirectional IEEE 1800-2023 SV/UVM <-> C++17 SystemC/UVM Compiler & Verifier
 
-`uvir` is a high-performance Rust compiler, target legalizer, and formal equivalence verifier bridging modern hardware verification ecosystems through a single **hub-and-spoke Verification IR (`UVIR`)**:
+`uvir` is a high-performance Rust compiler, capability legalizer, and Z3 formal equivalence prover translating bidirectionally between:
 
-- **Active Spoke 1 (`sv-uvm`)**: IEEE 1800-2023 SystemVerilog + IEEE 1800.2-2020 UVM (powered by pinned [`svlang`](https://github.com/mayurkubavat/svlang) `478a0d10`).
-- **Active Spoke 2 (`sc-uvm`)**: IEEE 1666-2023 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC (C++17).
-- **Planned Spokes (`O(N)` Extension Architecture)**: Python (`cocotb 2.0` + `pyuvm` + `PyVSC`), Accellera Portable Stimulus (`IEEE 1800.1 PSS`), Rust/Verilator/Arcilator native harnesses (`rust-dv`), VHDL-2019 (`OSVVM`/`UVVM`), and MLIR/CIRCT (`moore`/`verif`/`smt`).
+- **`sv-uvm`**: IEEE 1800-2023 SystemVerilog + IEEE 1800.2-2020 UVM (powered by pinned [`svlang`](https://github.com/mayurkubavat/svlang) `478a0d10`).
+- **`sc-uvm`**: IEEE 1666-2023 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC (C++17, verified via `clang++ -std=c++17 -Wall -Wextra -Werror`).
 
-## Workspace Layout
-
-```text
-uvir/
-├── Cargo.toml                           # Pinned svlang rev + LTO release profiles
-├── .cargo/config.toml.worktree-example  # Local [patch] for ../svlang-uvir co-development
-├── AGENTS.md                            # Hard repo invariants (zero GH Actions, mandatory result logs)
-├── STATUS.md                            # Milestone status & verified capability matrix
-├── crates/
-│   ├── uvir-ir/        # 6-dialect arena IR, TargetCapabilities, LanguageRegistry, extension traits
-│   ├── uvir-front-sv/  # IEEE 1800-2023 SV/UVM frontend over svlang + svlang-model + RAL
-│   ├── uvir-front-sc/  # C++17 SystemC/UVM + CRAVE + FC4SC frontend (+ optional libclang hook)
-│   ├── uvir-passes/    # Ownership, width/signedness, field-op, & TargetLegalizerPass
-│   ├── uvir-equiv/     # Language-agnostic Z3 QF_BV SMT-LIB2 miter & UCIS 1.0 isomorphism checker
-│   ├── uvir-emit-sc/   # Idiomatic C++17 SystemC/UVM + CRAVE + FC4SC emitter
-│   ├── uvir-emit-sv/   # Lint-clean IEEE 1800-2023 SV/UVM emitter with svlang self-verification
-│   └── uvir-cli/       # `uvir` CLI (`targets`, `transpile`, `sv2sc`, `sc2sv`, `roundtrip-check`, `prove-equiv`, `bench`)
-├── docs/
-│   ├── ARCHITECTURE.md       # 3-Tier generic IR, TargetCapabilities legalizer, & 7 SV<->SC rules
-│   ├── EXTENSIONS.md         # Adding new language spokes (Python/cocotb, PSS, Rust, VHDL), dialects, MCP, WASM
-│   ├── SVLANG_WORKTREE.md    # Isolated ../svlang-uvir git worktree workflow
-│   └── PAPER_EXPERIMENTS.md  # DAC / ICCAD / DVCon / TCAD benchmark & evaluation protocol
-├── results/
-│   ├── README.md             # Schema for reproducible experiment tracking
-│   ├── experiment_log.jsonl  # Machine-readable milestone & benchmark telemetry
-│   └── journal.md            # Chronological engineering lab notebook
-├── scripts/
-│   ├── check.sh              # Full fmt + clippy (-D warnings) + test + Z3 round-trip gate
-│   └── record_result.py      # Appends verified runs to results/{experiment_log.jsonl,journal.md}
-└── testdata/
-    ├── sv/apb_timer_item.sv  # IEEE 1800-2023 sequence item, tolerance inside, & covergroup fixture
-    └── sc/apb_timer_item.hpp # SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC counterpart fixture
-```
+## Verified Capabilities (M1)
+- **`types` & `uvm`**: 2-state/4-state bitvectors, signedness, `typedef enum` <-> `enum class`, `uvm_sequence_item` (synthesizing TLM-safe value-only copy constructors for CRAVE), `UVM_NOCOMPARE`/`UVM_NOCOPY` field policies, `uvm_reg` + `uvm_reg_block` address maps, and UVM component hierarchies (`build_phase` `type_id::create` + `connect_phase` TLM ports).
+- **`crv` & `cov`**: Hard & `soft` constraints, implication, `unique`, IEEE 1800-2023 `inside` tolerance ranges (`[c +/- d]`, `[c +%- p]`), weighted distributions (`dist { := , :/ }` <-> `crave::dist`), `randc`, and `covergroup`/`coverpoint`/`cross` <-> `fc4sc::covergroup` (with Z3 `QF_BV` constraint miters + UCIS 1.0 isomorphism checks).
+- **`sched` & `sva`**: `fork`/`join_any`/`disable fork` <-> SystemC `sc_spawn` + cooperative `std::atomic<bool>` cancel tokens, `clocking #1step` <-> `SC_PRE_TIMESTEP` sampler modules, and clocked `assert`/`cover property` (`|-> ##[m:n]`, `disable iff`) <-> $O(1)$ 64-bit shift-window C++17 observers proven trace-equivalent via Z3 Bounded Model Checking (BMC).
 
 ## Quick Start
 
 ```bash
-# Run formatting, strict clippy, unit/integration tests, and Z3 round-trip check
+# Full gate: rustfmt + clippy (-D warnings) + tests + clang++ -Werror + svlang + Z3 QF_BV & SVA BMC
 ./scripts/check.sh
 
-# Inspect registered & planned multi-language capability profiles
-cargo run --release -p uvir-cli -- targets
+# Round-trip check any SV/UVM file through C++17 (clang++ -Werror) and back to SV (svlang) + Z3 proofs
+cargo run --release -p uvir-cli -- roundtrip-check testdata/sv/axi4_burst_env.sv --shims testdata/cpp_shims
+cargo run --release -p uvir-cli -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims testdata/cpp_shims
 
-# Bidirectional round-trip + svlang parse verification + Z3 QF_BV equivalence proof
-cargo run --release -p uvir-cli -- roundtrip-check testdata/sv/apb_timer_item.sv
-
-# Latency & solver telemetry benchmark
-cargo run --release -p uvir-cli -- bench testdata/sv/apb_timer_item.sv --iters 100
+# Release latency & Z3 equivalence benchmark
+cargo run --release -p uvir-cli -- bench testdata/sv/axi4_burst_env.sv --iters 200
 ```
+
+## Key Documentation
+- `docs/ARCHITECTURE.md`: 6-dialect `UVIR`, capability legalizer, and the 7 SV <-> C++ semantic impedance rules.
+- `docs/PREDICTIONS.md` & `results/predictions.jsonl`: Falsifiable architectural & performance predictions (`P1`–`P8`) queued for experimental evaluation.
+- `docs/SVLANG_WORKTREE.md`: Isolated `../svlang-uvir` (`feature/uvir-hooks`) co-development workflow.
+- `results/journal.md` & `results/experiment_log.jsonl`: Measured milestone benchmarks and Z3 equivalence logs.
