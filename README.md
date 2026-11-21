@@ -26,6 +26,7 @@ cargo run --release -p uvir-cli -- bench testdata/sv/axi4_burst_env.sv --iters 2
 
 ## Key Documentation
 - `docs/ARCHITECTURE.md`: 6-dialect `UVIR`, capability legalizer, and the 7 SV <-> C++ semantic impedance rules.
-- `docs/PREDICTIONS.md` & `results/predictions.jsonl`: Falsifiable architectural & performance predictions (`P1`–`P8`) queued for experimental evaluation.
+- `docs/RTL_AND_C2RTL_ANALYSIS.md`: Feasibility, hard boundaries (IEEE 1666.1), and integration blueprint for bidirectional RTL + `InFormal` C2RTL/DPV/SLEC formal equivalence checking.
+- `docs/PREDICTIONS.md` & `results/predictions.jsonl`: Falsifiable architectural & performance predictions (`P1`–`P10`) queued for experimental evaluation.
 - `docs/SVLANG_WORKTREE.md`: Isolated `../svlang-uvir` (`feature/uvir-hooks`) co-development workflow.
 - `results/journal.md` & `results/experiment_log.jsonl`: Measured milestone benchmarks and Z3 equivalence logs.
