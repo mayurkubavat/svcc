@@ -1,0 +1,10 @@
+[package]
+name = "uvir-passes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Middle-end normalization and target-capability legalization passes for UVIR"
+
+[dependencies]
+uvir-ir.workspace = true

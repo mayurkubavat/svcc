@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/uvir-ir",
+    "crates/uvir-front-sv",
+    "crates/uvir-front-sc",
+    "crates/uvir-passes",
+    "crates/uvir-equiv",
+    "crates/uvir-emit-sc",
+    "crates/uvir-emit-sv",
+    "crates/uvir-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+repository = "https://github.com/mayurkubavat/uvir"
+authors = ["Mayur Kubavat"]
+
+[workspace.dependencies]
+# Pinned IEEE 1800-2023 SystemVerilog front-end & UVM design model (svlang v0.4.0)
+svlang = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
+svlang-model = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
+svlang-lint = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
+
+# Internal workspace crates
+uvir-ir = { path = "crates/uvir-ir", version = "0.1.0" }
+uvir-front-sv = { path = "crates/uvir-front-sv", version = "0.1.0" }
+uvir-front-sc = { path = "crates/uvir-front-sc", version = "0.1.0" }
+uvir-passes = { path = "crates/uvir-passes", version = "0.1.0" }
+uvir-equiv = { path = "crates/uvir-equiv", version = "0.1.0" }
+uvir-emit-sc = { path = "crates/uvir-emit-sc", version = "0.1.0" }
+uvir-emit-sv = { path = "crates/uvir-emit-sv", version = "0.1.0" }
+
+# Serialization for IR snapshots, telemetry, and benchmark logs
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

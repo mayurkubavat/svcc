@@ -1,0 +1,8 @@
+# Copy to `.cargo/config.toml` (gitignored) when co-developing `uvir` against
+# the isolated `svlang` worktree at `../svlang-uvir` (branch `feature/uvir-hooks`)
+# without touching the main `../svlang` checkout or unpinning `Cargo.toml`.
+
+[patch."https://github.com/mayurkubavat/svlang.git"]
+svlang = { path = "../svlang-uvir/crates/svlang" }
+svlang-model = { path = "../svlang-uvir/crates/svlang-model" }
+svlang-lint = { path = "../svlang-uvir/crates/svlang-lint" }

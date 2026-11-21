@@ -1,0 +1,6 @@
+/target
+/Cargo.lock.bak
+/.cargo/config.toml
+*.swp
+.DS_Store
+/tmp/
