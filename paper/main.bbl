@@ -69,10 +69,8 @@ M.~Kubavat, ``{SCBench: Do Verification Tools Help Coding Agents Maintain Open
   SystemC Libraries?}'' Elsevier SSRN Preprint 7715040, 2026,
   \url{https://ssrn.com/abstract=7715040}.
 
-\bibitem{kubavat2026proof}
-------, ``{Proof Before Push: A Sign-Off Checklist for Agent-Written Changes to
-  Open SystemC Verification Libraries},'' engrXiv Preprint, 2026, zenodo
-  artifacts: \url{https://doi.org/10.5281/zenodo.24267898} and
+\bibitem{kubavat2026evidence}
+------, ``{systemc-signoff-evidence, Release v1.2.0},'' Zenodo, 2026,
   \url{https://doi.org/10.5281/zenodo.24283926}.
 
 \bibitem{snyder2020verilator}
@@ -117,8 +115,8 @@ N.~P. Lopes, J.~Lee, C.-K. Hur, Z.~Liu, and J.~Regehr, ``{Alive2: Bounded
 \bibitem{kubavat2026svlang}
 M.~Kubavat, ``{svlang and svlang-lint: A Pure-Rust IEEE 1800-2023 SystemVerilog
   Compiler Front End and Semantic Static Analyzer for Hardware Design and
-  Verification},'' Research Square Preprint rs-11813840 (under review at
-  \textit{Automated Software Engineering}), 2026,
+  Verification},'' Research Square Preprint rs-11813840 (under peer review at
+  \textit{Automated Software Engineering}, Springer Nature), 2026,
   \url{https://github.com/mayurkubavat/svlang}.
 
 \bibitem{demoura2008z3}
@@ -155,12 +153,8 @@ A.~Koelbl, R.~Jacoby, H.~Jain, and C.~Pixley, ``{Solver Technology for
 
 \bibitem{kubavat2026informal}
 M.~Kubavat, ``{InFormal: An Open-Source Formal Property Verifier for
-  SystemVerilog with Checked Verdicts},''
-  \url{https://github.com/mayurkubavat/informal}, 2026, working manuscript.
-
-\bibitem{popoloski2024slang}
-M.~Popoloski, ``{slang: SystemVerilog Language Services},''
-  \url{https://github.com/MikePopoloski/slang}, 2024.
+  SystemVerilog with Checked Verdicts},'' Zenodo, Tech. Rep., Nov. 2026,
+  \url{https://doi.org/10.5281/zenodo.24261270}.
 
 \bibitem{dargelas2024surelog}
 A.~Dargelas and {CHIPS Alliance}, ``{Surelog and UHDM: SystemVerilog
