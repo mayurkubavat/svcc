@@ -1,0 +1,12 @@
+[package]
+name = "svcc-equiv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Formal SMT-LIB2 (Z3 QF_BV) constraint equivalence prover and UCIS 1.0 coverage isomorphism verifier for UVIR"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+svcc-ir.workspace = true

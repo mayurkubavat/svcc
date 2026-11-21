@@ -36,3 +36,14 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `z3_sva_bmc_unsat_properties`: `2`
 - **Notes**: Scoped strictly to SV (1800-2023/1800.2-2020) <-> C++17 (SystemC 3.0.3/UVM-SystemC/CRAVE/FC4SC). Every emitted C++17 header passes Apple clang++ 21 -std=c++17 -Wall -Wextra -Werror -fsyntax-only; every emitted SV file passes svlang; all CRV/Enum/Dist and pipelined SVA ##[m:n] observers proven EquivalentUnsat in Z3.
 
+## [2026-11-21T22:17:44+00:00] `M1.1-svcc-rename-and-sdk-packaging` — Renamed repo/CLI/SDK to svcc; verified crates.io, PyPI, and npm availability + maturin/PyO3 & umbrella SDK
+- **Commit**: `59913d9` (`Darwin-arm64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)`)
+- **Command**: `./scripts/check.sh`
+- **Measured Metrics**:
+  - `clippy_warnings`: `0`
+  - `crates_io_svcc_available`: `True`
+  - `npm_svcc_available`: `True`
+  - `pypi_svcc_available`: `True`
+  - `workspace_tests_passed`: `7`
+- **Notes**: Renamed GitHub repository to mayurkubavat/svcc (PRIVATE), moved workspace crates to svcc-*, exposed umbrella Rust SDK crate svcc (lib.rs + bin svcc), and added bindings/python/pyproject.toml + docs/PACKAGING.md.
+

@@ -148,6 +148,76 @@ dependencies = [
 ]
 
 [[package]]
+name = "svcc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "svcc-emit-sc",
+ "svcc-emit-sv",
+ "svcc-equiv",
+ "svcc-front-sc",
+ "svcc-front-sv",
+ "svcc-ir",
+ "svcc-passes",
+]
+
+[[package]]
+name = "svcc-emit-sc"
+version = "0.1.0"
+dependencies = [
+ "svcc-ir",
+]
+
+[[package]]
+name = "svcc-emit-sv"
+version = "0.1.0"
+dependencies = [
+ "svcc-ir",
+ "svlang",
+]
+
+[[package]]
+name = "svcc-equiv"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "svcc-ir",
+]
+
+[[package]]
+name = "svcc-front-sc"
+version = "0.1.0"
+dependencies = [
+ "svcc-ir",
+]
+
+[[package]]
+name = "svcc-front-sv"
+version = "0.1.0"
+dependencies = [
+ "svcc-ir",
+ "svlang",
+ "svlang-model",
+]
+
+[[package]]
+name = "svcc-ir"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "svcc-passes"
+version = "0.1.0"
+dependencies = [
+ "svcc-ir",
+]
+
+[[package]]
 name = "svlang"
 version = "0.4.0"
 source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
@@ -187,76 +257,6 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
-
-[[package]]
-name = "uvir-cli"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "uvir-emit-sc",
- "uvir-emit-sv",
- "uvir-equiv",
- "uvir-front-sc",
- "uvir-front-sv",
- "uvir-ir",
- "uvir-passes",
-]
-
-[[package]]
-name = "uvir-emit-sc"
-version = "0.1.0"
-dependencies = [
- "uvir-ir",
-]
-
-[[package]]
-name = "uvir-emit-sv"
-version = "0.1.0"
-dependencies = [
- "svlang",
- "uvir-ir",
-]
-
-[[package]]
-name = "uvir-equiv"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "uvir-ir",
-]
-
-[[package]]
-name = "uvir-front-sc"
-version = "0.1.0"
-dependencies = [
- "uvir-ir",
-]
-
-[[package]]
-name = "uvir-front-sv"
-version = "0.1.0"
-dependencies = [
- "svlang",
- "svlang-model",
- "uvir-ir",
-]
-
-[[package]]
-name = "uvir-ir"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "uvir-passes"
-version = "0.1.0"
-dependencies = [
- "uvir-ir",
-]
 
 [[package]]
 name = "zmij"

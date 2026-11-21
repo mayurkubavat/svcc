@@ -1,0 +1,12 @@
+[package]
+name = "svcc-front-sv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "IEEE 1800-2023 SystemVerilog & IEEE 1800.2 UVM front-end lowering svlang CST/semantic models into UVIR"
+
+[dependencies]
+svlang.workspace = true
+svlang-model.workspace = true
+svcc-ir.workspace = true

@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/uvir-ir",
-    "crates/uvir-front-sv",
-    "crates/uvir-front-sc",
-    "crates/uvir-passes",
-    "crates/uvir-equiv",
-    "crates/uvir-emit-sc",
-    "crates/uvir-emit-sv",
-    "crates/uvir-cli",
+    "crates/svcc-ir",
+    "crates/svcc-front-sv",
+    "crates/svcc-front-sc",
+    "crates/svcc-passes",
+    "crates/svcc-equiv",
+    "crates/svcc-emit-sc",
+    "crates/svcc-emit-sv",
+    "crates/svcc",
 ]
 
 [workspace.package]
@@ -16,7 +16,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 license = "Apache-2.0"
-repository = "https://github.com/mayurkubavat/uvir"
+repository = "https://github.com/mayurkubavat/svcc"
 authors = ["Mayur Kubavat"]
 
 [workspace.dependencies]
@@ -26,13 +26,13 @@ svlang-model = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a
 svlang-lint = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
 
 # Internal workspace crates
-uvir-ir = { path = "crates/uvir-ir", version = "0.1.0" }
-uvir-front-sv = { path = "crates/uvir-front-sv", version = "0.1.0" }
-uvir-front-sc = { path = "crates/uvir-front-sc", version = "0.1.0" }
-uvir-passes = { path = "crates/uvir-passes", version = "0.1.0" }
-uvir-equiv = { path = "crates/uvir-equiv", version = "0.1.0" }
-uvir-emit-sc = { path = "crates/uvir-emit-sc", version = "0.1.0" }
-uvir-emit-sv = { path = "crates/uvir-emit-sv", version = "0.1.0" }
+svcc-ir = { path = "crates/svcc-ir", version = "0.1.0" }
+svcc-front-sv = { path = "crates/svcc-front-sv", version = "0.1.0" }
+svcc-front-sc = { path = "crates/svcc-front-sc", version = "0.1.0" }
+svcc-passes = { path = "crates/svcc-passes", version = "0.1.0" }
+svcc-equiv = { path = "crates/svcc-equiv", version = "0.1.0" }
+svcc-emit-sc = { path = "crates/svcc-emit-sc", version = "0.1.0" }
+svcc-emit-sv = { path = "crates/svcc-emit-sv", version = "0.1.0" }
 
 # Serialization for IR snapshots, telemetry, and benchmark logs
 serde = { version = "1.0", features = ["derive"] }

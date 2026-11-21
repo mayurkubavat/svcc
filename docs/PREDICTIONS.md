@@ -11,17 +11,17 @@ While building and verifying `uvir` (`IEEE 1800-2023 SV/UVM` <-> `IEEE 1666-2023
 
 ## `P2` — `dist` `:/` Non-Divisible Range Rounding Divergence Despite `QF_BV` Equivalence
 - **Root Cause**: Z3 `QF_BV` proves *support-set* equivalence (every value with `weight > 0` is reachable), not probability mass accuracy. Under IEEE 1800-2023 `[lo:hi] :/ W`, when range cardinality $S = (hi - lo + 1) \nmid W$ (or $S > W$), SV simulators and CRAVE `add_weighted_range` apply different integer/float remainder rules.
-- **Prediction**: When $S \nmid W$ and $S > W$, empirical Jensen-Shannon / $\chi^2$ divergence over $10^5$ samples will exceed `0.05` unless `uvir-passes` pre-scales all weights in a `dist` block by $\text{LCM}_i(S_i)$ before emitting C++17.
+- **Prediction**: When $S \nmid W$ and $S > W$, empirical Jensen-Shannon / $\chi^2$ divergence over $10^5$ samples will exceed `0.05` unless `svcc-passes` pre-scales all weights in a `dist` block by $\text{LCM}_i(S_i)$ before emitting C++17.
 - **Planned Evaluation**: Draw $10^5$ samples on `[0:2] :/ 10` and `[0:15] :/ 5` before and after $\text{LCM}$ weight scaling; measure TVD and $\chi^2$ $p$-value.
 
 ## `P3` — Bitmask SVA Observer Exactness on Assertions vs. Multi-Hit Under-Counting on `cover property`
-- **Root Cause**: `uvir-emit-sc` lowers `ant |-> ##[min:max] con` to an $O(1)$ `uint64_t pending_window_` shift pipeline, proven 100% failure-equivalent by `prove_sva_bmc_equivalence`. However, clearing all bits in `sat_mask` on `con == 1` satisfies multiple overlapping in-flight `ant` triggers simultaneously (`++pass_count_` increments once instead of once per in-flight attempt).
+- **Root Cause**: `svcc-emit-sc` lowers `ant |-> ##[min:max] con` to an $O(1)$ `uint64_t pending_window_` shift pipeline, proven 100% failure-equivalent by `prove_sva_bmc_equivalence`. However, clearing all bits in `sat_mask` on `con == 1` satisfies multiple overlapping in-flight `ant` triggers simultaneously (`++pass_count_` increments once instead of once per in-flight attempt).
 - **Prediction**: `fail_count_` matches IEEE 1800 `assert property` on 100% of traces, whereas `pass_count_` on `cover property` under back-to-back overlapping `ant` bursts under-counts IEEE 1800 per-attempt non-vacuous cover hits by up to $(max - min)\times$ unless lowered to an array of per-age counters.
 - **Planned Evaluation**: Feed synthetic burst traces (`ant = 11100`, `con = 00010` on `##[1:3]`) to both SV simulator and `uvir_sva_*` C++17 observer; compare `fail_count_` and `pass_count_`.
 
 ## `P4` — Cooperative `cancel_tok` vs. Preemptive SV `disable fork` Intra-Delta Side Effects
 - **Root Cause**: SystemC cannot safely `kill()` a C++17 `sc_spawn` lambda mid-stack without leaking RAII destructors, so `uvir` lowers `fork ... join_any; disable fork;` using cooperative `std::atomic<bool> cancel_tok` checks at `wait()` boundaries.
-- **Prediction**: Branches that perform state mutations *after* a `wait()` and *before* the next `wait()` within the same SystemC delta evaluation wave can execute one extra side effect if scheduled in the same delta notification list as the winning branch, unless `uvir-passes` inserts `if (cancel_tok->load()) return;` immediately after **every** `sc_core::wait(...)` inside forked branches.
+- **Prediction**: Branches that perform state mutations *after* a `wait()` and *before* the next `wait()` within the same SystemC delta evaluation wave can execute one extra side effect if scheduled in the same delta notification list as the winning branch, unless `svcc-passes` inserts `if (cancel_tok->load()) return;` immediately after **every** `sc_core::wait(...)` inside forked branches.
 - **Planned Evaluation**: Construct a 2-branch `join_any` race where both branches wake on the exact same `ns` timestamp (`#100ns` vs `#100ns`) and write to a shared scoreboard counter.
 
 ## `P5` — Explicit-Exclusion `randc` Solver Cliff Above $W \ge 11$ Bits
@@ -36,7 +36,7 @@ While building and verifying `uvir` (`IEEE 1800-2023 SV/UVM` <-> `IEEE 1666-2023
 
 ## `P7` — 4-State `sc_dt::sc_lv<W>` Runtime Overhead vs. Dual-`uint64_t` `(val, xz_mask)` Legalization
 - **Root Cause**: `sc_dt::sc_lv<W>` allocates/manipulates multi-word 4-state logic digits, whereas hardware `logic [W-1:0]` ($W \le 64$) maps to two 64-bit native words (`val`, `xz_mask`).
-- **Prediction**: Adding a `four_state_dual_word` legalization mode in `uvir-passes` for $W \le 64$ will speed up `10^6`-transaction SystemC scoreboards and BFM loops by $4\times\text{--}8\times$ over `sc_dt::sc_lv<W>` while preserving exact IEEE 1800 `===` / `!==` / X-propagation semantics.
+- **Prediction**: Adding a `four_state_dual_word` legalization mode in `svcc-passes` for $W \le 64$ will speed up `10^6`-transaction SystemC scoreboards and BFM loops by $4\times\text{--}8\times$ over `sc_dt::sc_lv<W>` while preserving exact IEEE 1800 `===` / `!==` / X-propagation semantics.
 - **Planned Evaluation**: Microbenchmark `10^6` 64-bit 4-state packet comparisons and masks in `sc_lv<64>` vs. dual-`uint64_t`.
 
 ## `P8` — SystemC 3.0.3 `SC_PRE_TIMESTEP` Elimination of Co-Simulation Monitor Sampling Races

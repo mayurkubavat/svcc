@@ -1,0 +1,10 @@
+[package]
+name = "svcc-emit-sc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "C++17 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC backend emitter for UVIR"
+
+[dependencies]
+svcc-ir.workspace = true

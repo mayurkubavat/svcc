@@ -1,0 +1,27 @@
+[package]
+name = "svcc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bidirectional IEEE 1800-2023 SystemVerilog <-> C++17 SystemC/UVM compiler, SDK, and Z3 equivalence verifier"
+
+[lib]
+name = "svcc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "svcc"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+svcc-ir.workspace = true
+svcc-front-sv.workspace = true
+svcc-front-sc.workspace = true
+svcc-passes.workspace = true
+svcc-equiv.workspace = true
+svcc-emit-sc.workspace = true
+svcc-emit-sv.workspace = true

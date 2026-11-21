@@ -19,9 +19,9 @@ echo "==> [3/4] cargo test --workspace"
 cargo test --workspace
 
 echo "==> [4/4] CLI SV <-> C++17 (clang++ -Werror + svlang + Z3 QF_BV & SVA BMC) suite"
-cargo run --quiet -p uvir-cli -- roundtrip-check testdata/sv/apb_timer_item.sv --shims testdata/cpp_shims
-cargo run --quiet -p uvir-cli -- roundtrip-check testdata/sv/axi4_burst_env.sv --shims testdata/cpp_shims
-cargo run --quiet -p uvir-cli -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims testdata/cpp_shims
-cargo run --quiet -p uvir-cli -- prove-equiv testdata/sv/apb_timer_item.sv testdata/sc/apb_timer_item.hpp >/dev/null
+cargo run --quiet -p svcc -- roundtrip-check testdata/sv/apb_timer_item.sv --shims testdata/cpp_shims
+cargo run --quiet -p svcc -- roundtrip-check testdata/sv/axi4_burst_env.sv --shims testdata/cpp_shims
+cargo run --quiet -p svcc -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims testdata/cpp_shims
+cargo run --quiet -p svcc -- prove-equiv testdata/sv/apb_timer_item.sv testdata/sc/apb_timer_item.hpp >/dev/null
 
 echo "ALL CHECKS PASSED."
