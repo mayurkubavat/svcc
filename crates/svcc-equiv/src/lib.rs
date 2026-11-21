@@ -12,6 +12,9 @@
 //! 3. **UCIS 1.0 Coverage Space Isomorphism**:
 //!    Verifies bijective match of covergroups, coverpoints, bin intervals/values, and crosses.
 
+pub mod sec;
+pub use sec::{prove_rtl_sec_equivalence, RtlSecReport};
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -623,7 +626,7 @@ pub fn prove_sva_bmc_equivalence(
     })
 }
 
-fn run_z3_stdin(smt: &str) -> (SmtVerdict, String) {
+pub(crate) fn run_z3_stdin(smt: &str) -> (SmtVerdict, String) {
     let Ok(mut child) = Command::new("z3")
         .arg("-in")
         .stdin(Stdio::piped())

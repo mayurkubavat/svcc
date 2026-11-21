@@ -19,6 +19,13 @@ struct sc_event {
 inline sc_event_or_list operator|(const sc_event_or_list&, const sc_event&) { return {}; }
 inline sc_event_and_list operator&(const sc_event_and_list&, const sc_event&) { return {}; }
 
+struct sc_event_finder {};
+
+struct sc_sensitive {
+  template <typename T>
+  sc_sensitive& operator<<(const T&) { return *this; }
+};
+
 struct sc_module_name {
   const char* name_;
   sc_module_name(const char* n) : name_(n) {}
@@ -27,8 +34,13 @@ struct sc_module_name {
 
 class sc_module {
 public:
+  sc_sensitive sensitive{};
   explicit sc_module(sc_module_name) {}
   virtual ~sc_module() = default;
+  template <typename Port>
+  void async_reset_signal_is(const Port&, bool) {}
+  template <typename Port>
+  void reset_signal_is(const Port&, bool) {}
 };
 
 template <typename T>
@@ -36,6 +48,7 @@ class sc_in {
 public:
   explicit sc_in(const char*) {}
   T read() const { return T{}; }
+  sc_event_finder pos() const { return {}; }
   const sc_event& posedge_event() const {
     static sc_event ev;
     return ev;
@@ -46,9 +59,19 @@ template <typename T>
 class sc_out {
 public:
   explicit sc_out(const char*) {}
+  T read() const { return T{}; }
   void write(const T&) {}
 };
 
+template <typename T>
+class sc_signal {
+public:
+  explicit sc_signal(const char*) {}
+  T read() const { return T{}; }
+  void write(const T&) {}
+};
+
+inline void wait() {}
 inline void wait(const sc_time&) {}
 inline void wait(uint64_t, sc_time_unit) {}
 inline void wait(const sc_event&) {}
@@ -60,6 +83,13 @@ inline void sc_spawn(Fn&& fn) {
   fn();
 }
 } // namespace sc_core
+
+#define SC_MODULE(name) struct name : public ::sc_core::sc_module
+#define SC_CTOR(name) \
+  using SC_CURRENT_USER_MODULE = name; \
+  explicit name(::sc_core::sc_module_name nm) : ::sc_core::sc_module(nm)
+#define SC_METHOD(func) do { (void)&SC_CURRENT_USER_MODULE::func; } while (0)
+#define SC_CTHREAD(func, edge) do { (void)&SC_CURRENT_USER_MODULE::func; (void)(edge); } while (0)
 
 namespace sc_dt {
 template <int W>

@@ -47,3 +47,20 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `workspace_tests_passed`: `7`
 - **Notes**: Renamed GitHub repository to mayurkubavat/svcc (PRIVATE), moved workspace crates to svcc-*, exposed umbrella Rust SDK crate svcc (lib.rs + bin svcc), and added bindings/python/pyproject.toml + docs/PACKAGING.md.
 
+## [2026-11-21T22:36:38+00:00] `M2-rtl-c2rtl-btor2-sec-and-pyo3` — Bidirectional RTL (module <-> SC_MODULE), Untimed C++17 SSA C2RTL, Btor2+Z3 Sequential Equivalence (latency=L), and PyO3 bindings
+- **Commit**: `ba2f07e` (`Darwin-arm64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)`)
+- **Command**: `./scripts/check.sh && ./target/release/svcc bench testdata/sv/alu_pipe_rtl.sv --iters 200 && ./target/release/svcc prove-sec testdata/sc/alu_golden_c2rtl.hpp testdata/sv/alu_pipe_rtl.sv --latency 2`
+- **Measured Metrics**:
+  - `c2rtl_latency2_btor2_lines`: `80`
+  - `c2rtl_latency2_smt_bytes`: `30235`
+  - `c2rtl_latency2_z3_us`: `7188`
+  - `c2rtl_verdict`: `EquivalentUnsat`
+  - `clippy_warnings`: `0`
+  - `pyo3_binding_compiled`: `True`
+  - `rtl_sc2sv_us`: `179`
+  - `rtl_sec_btor2_lines`: `89`
+  - `rtl_sec_z3_us`: `6539`
+  - `rtl_sv2sc_us`: `213`
+  - `workspace_tests_passed`: `10`
+- **Notes**: Implemented 7th dialect (rtl), synthesizable SV module <-> SystemC SC_MODULE with auto-inferred sensitive<< lists and IEEE 1666.1 fail-closed heap/container guards, untimed C++17 SSA + bounded-loop unroller (// svcc:c2rtl), svlang Netlist -> Btor2 -> Z3 QF_BV SEC prover, and PyO3 Python bindings.
+

@@ -4,9 +4,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Formal SMT-LIB2 (Z3 QF_BV) constraint equivalence prover and UCIS 1.0 coverage isomorphism verifier for UVIR"
+description = "Formal SMT-LIB2 (Z3 QF_BV) CRV, SVA BMC, Btor2 Sequential Equivalence (SEC/C2RTL), and UCIS verifier for svcc"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+svlang.workspace = true
 svcc-ir.workspace = true

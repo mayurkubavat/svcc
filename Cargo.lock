@@ -184,6 +184,7 @@ dependencies = [
  "serde",
  "serde_json",
  "svcc-ir",
+ "svlang",
 ]
 
 [[package]]

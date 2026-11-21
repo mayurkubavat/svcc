@@ -1,8 +1,4 @@
-//! `svcc` — Bidirectional IEEE 1800-2023 SystemVerilog <-> C++17 SystemC/UVM Compiler SDK.
-//!
-//! Exposes high-level single-call APIs for Rust callers, `PyO3` Python bindings (`pip install svcc`),
-//! `InFormal` C2RTL/SEC integration, and `wasm32` browser artifacts, while re-exporting all
-//! underlying compiler stages.
+//! `svcc` — Bidirectional IEEE 1800-2023 SystemVerilog <-> C++17 SystemC/UVM & RTL Compiler SDK.
 
 pub use svcc_emit_sc as emit_sc;
 pub use svcc_emit_sv as emit_sv;
@@ -14,13 +10,14 @@ pub use svcc_passes as passes;
 
 use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;
-use svcc_equiv::{prove_class_equivalence_with_enums, EquivalenceReport};
+use svcc_equiv::{
+    prove_class_equivalence_with_enums, prove_rtl_sec_equivalence, EquivalenceReport, RtlSecReport,
+};
 use svcc_front_sc::ScFrontend;
 use svcc_front_sv::SvFrontend;
 use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, TargetCapabilities, UvirError};
 use svcc_passes::PassPipeline;
 
-/// Constructs a default [`LanguageRegistry`] populated with `sv-uvm` and `sc-uvm`.
 pub fn default_registry() -> LanguageRegistry {
     let mut reg = LanguageRegistry::new();
     reg.register_frontend("sv-uvm", Box::new(SvFrontend::new()));
@@ -30,7 +27,7 @@ pub fn default_registry() -> LanguageRegistry {
     reg
 }
 
-/// Compiles IEEE 1800-2023 SystemVerilog/UVM source text into C++17 SystemC/UVM + CRAVE + FC4SC.
+/// Compiles IEEE 1800-2023 SystemVerilog (RTL modules + UVM classes/SVA) into C++17 SystemC.
 pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, UvirError> {
     let (mut module, _) = SvFrontend::new().lower_str(filename, sv_source)?;
     let emitter = ScEmitter::new();
@@ -38,14 +35,15 @@ pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, UvirError> {
     emitter.emit(&module)
 }
 
-/// Compiles C++17 SystemC/UVM + CRAVE + FC4SC source text into `svlang`-verified IEEE 1800-2023 SV/UVM.
+/// Compiles C++17 SystemC (`SC_MODULE`, `// svcc:c2rtl` functions, or UVM/CRAVE/FC4SC classes)
+/// into `svlang`-verified IEEE 1800-2023 SystemVerilog.
 pub fn sc_to_sv(filename: &str, cpp_source: &str) -> Result<String, UvirError> {
     let (mut module, _) = ScFrontend::new().lower_str(filename, cpp_source)?;
     PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023()).run_all(&mut module)?;
     SvEmitter::new().emit_and_verify(&module)
 }
 
-/// Proves Z3 `QF_BV` constraint/enum/`dist` and UCIS 1.0 coverage equivalence between two files.
+/// Proves Z3 `QF_BV` CRV/Enum/`dist` and UCIS 1.0 coverage equivalence between two files.
 pub fn prove_sources_equivalent(
     lhs_filename: &str,
     lhs_source: &str,
@@ -91,6 +89,59 @@ pub fn prove_sources_equivalent(
         )?);
     }
     Ok(reports)
+}
+
+/// Proves word-level Sequential Equivalence (`Btor2` + Z3 `QF_BV`) between a `spec` source
+/// (SV RTL, SystemC `SC_MODULE`, or untimed `// svcc:c2rtl` C++17 golden model) and an `imp`
+/// source across pipeline skew `latency`.
+pub fn prove_rtl_or_c2rtl_sec(
+    spec_filename: &str,
+    spec_source: &str,
+    imp_filename: &str,
+    imp_source: &str,
+    latency: u32,
+) -> Result<RtlSecReport, UvirError> {
+    let sv_em = SvEmitter::new();
+    let (spec_mod, spec_sv) = if spec_filename.ends_with(".sv") || spec_filename.ends_with(".svh") {
+        let (m, _) = SvFrontend::new().lower_str(spec_filename, spec_source)?;
+        let rmod = m
+            .rtl_modules
+            .first()
+            .cloned()
+            .ok_or_else(|| UvirError::new("svcc/sec", "no RTL module found in spec SV"))?;
+        (rmod, spec_source.to_string())
+    } else {
+        let (m, _) = ScFrontend::new().lower_str(spec_filename, spec_source)?;
+        let rmod = m.rtl_modules.first().cloned().ok_or_else(|| {
+            UvirError::new(
+                "svcc/sec",
+                "no SC_MODULE or // svcc:c2rtl found in spec C++",
+            )
+        })?;
+        let emitted = sv_em.emit_and_verify(&m)?;
+        (rmod, emitted)
+    };
+
+    let (imp_mod, imp_sv) = if imp_filename.ends_with(".sv") || imp_filename.ends_with(".svh") {
+        let (m, _) = SvFrontend::new().lower_str(imp_filename, imp_source)?;
+        let rmod = m
+            .rtl_modules
+            .first()
+            .cloned()
+            .ok_or_else(|| UvirError::new("svcc/sec", "no RTL module found in imp SV"))?;
+        (rmod, imp_source.to_string())
+    } else {
+        let (m, _) = ScFrontend::new().lower_str(imp_filename, imp_source)?;
+        let rmod = m
+            .rtl_modules
+            .first()
+            .cloned()
+            .ok_or_else(|| UvirError::new("svcc/sec", "no SC_MODULE found in imp C++"))?;
+        let emitted = sv_em.emit_and_verify(&m)?;
+        (rmod, emitted)
+    };
+
+    prove_rtl_sec_equivalence(&spec_mod, &spec_sv, &imp_mod, &imp_sv, latency, 4)
 }
 
 #[cfg(test)]

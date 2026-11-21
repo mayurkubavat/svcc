@@ -1,0 +1,18 @@
+[package]
+name = "svcc-py"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+description = "PyO3 Python extension bindings (`import svcc`) for the svcc SV <-> C++17 compiler and Z3 prover"
+
+[workspace]
+
+[lib]
+name = "svcc"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.24", features = ["abi3-py39"] }
+serde_json = "1.0"
+svcc = { path = "../../crates/svcc" }

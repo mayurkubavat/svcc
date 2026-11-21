@@ -10,6 +10,7 @@
 //!    `disable fork`, `wait fork`, `@(cb)`, `#delay`, sequence item dispatch).
 
 pub mod crv_parser;
+pub mod rtl_lower;
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -100,6 +101,7 @@ impl Frontend for SvFrontend {
         let mut named_sva_props: HashMap<String, String> = HashMap::new();
         for tree in trees {
             collect_top_cst_items(
+                filename,
                 tree,
                 tree.root,
                 &mut cst_classes,
@@ -107,6 +109,7 @@ impl Frontend for SvFrontend {
                 &mut module.clockings,
                 &mut named_sva_props,
                 &mut module.properties,
+                &mut module.rtl_modules,
                 &mut module.standalone_covergroups,
                 &mut total_covergroups,
             );
@@ -323,6 +326,7 @@ impl Frontend for SvFrontend {
             constraints_lowered: total_constraints,
             covergroups_lowered: total_covergroups,
             properties_lowered: module.properties.len(),
+            rtl_modules_lowered: module.rtl_modules.len(),
         };
         Ok((module, metrics))
     }
@@ -330,6 +334,7 @@ impl Frontend for SvFrontend {
 
 #[allow(clippy::too_many_arguments)]
 fn collect_top_cst_items<'a>(
+    filename: &str,
     tree: &'a Tree,
     node: NodeId,
     cst_classes: &mut HashMap<String, (&'a Tree, NodeId)>,
@@ -337,10 +342,31 @@ fn collect_top_cst_items<'a>(
     clockings: &mut Vec<ClockingDecl>,
     named_props: &mut HashMap<String, String>,
     sva_props: &mut Vec<SvaPropertyDecl>,
+    rtl_modules: &mut Vec<svcc_ir::RtlModule>,
     standalone_cgs: &mut Vec<CovergroupDecl>,
     total_cgs: &mut usize,
 ) {
     match tree.kind(node) {
+        SyntaxKind::ModuleDecl => {
+            if let Some(rtl_m) = rtl_lower::try_lower_sv_module(filename, tree, node) {
+                rtl_modules.push(rtl_m);
+            }
+            for ch in tree.children(node) {
+                collect_top_cst_items(
+                    filename,
+                    tree,
+                    ch,
+                    cst_classes,
+                    enums,
+                    clockings,
+                    named_props,
+                    sva_props,
+                    rtl_modules,
+                    standalone_cgs,
+                    total_cgs,
+                );
+            }
+        }
         SyntaxKind::ClassDecl => {
             if let Some(nm) = tree.child(node, SyntaxKind::Name) {
                 cst_classes.insert(tree.bare_text(nm).trim().to_string(), (tree, node));
@@ -375,6 +401,7 @@ fn collect_top_cst_items<'a>(
         _ => {
             for ch in tree.children(node) {
                 collect_top_cst_items(
+                    filename,
                     tree,
                     ch,
                     cst_classes,
@@ -382,6 +409,7 @@ fn collect_top_cst_items<'a>(
                     clockings,
                     named_props,
                     sva_props,
+                    rtl_modules,
                     standalone_cgs,
                     total_cgs,
                 );

@@ -1,8 +1,8 @@
-# `uvir` Milestone & SV <-> C++17 Capability Status
+# `svcc` Milestone & SV <-> C++17 Capability Status
 
-Scoped strictly to **IEEE 1800-2023 SystemVerilog / IEEE 1800.2-2020 UVM** (`sv-uvm`) <-> **IEEE 1666-2023 SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC** (`sc-uvm`).
+Scoped strictly to **IEEE 1800-2023 SystemVerilog (RTL + UVM)** <-> **IEEE 1666-2023 SystemC 3.0.3 / C++17 (RTL + UVM-SystemC + CRAVE + FC4SC + C2RTL)**.
 
-| Dialect / Construct | `sv-uvm` (1800-2023) | `sc-uvm` (C++17 + CRAVE + FC4SC) | Verification Gate | Status |
+| Dialect / Construct | `sv-uvm` / SV RTL (1800-2023) | `sc-uvm` / C++17 (1666-2023 + 1666.1) | Verification Gate | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | `types`: 2/4-state vectors, widths, signedness, `typedef enum` | Lower + Emit | Lower + Emit (`uint*_t`, `sc_uint`, `sc_lv`, `enum class`) | `clang++ -Werror` + `svlang` + Z3 enum domain | Verified (M1) |
 | `uvm`: `sequence_item`, field ops (`UVM_NOCOMPARE`/`NOCOPY`), copy-ctor | Lower + Emit | Lower + Emit (`uvm_randomized_sequence_item`, value copy-ctor) | `clang++ -Werror` + `svlang` | Verified (M1) |
@@ -12,3 +12,6 @@ Scoped strictly to **IEEE 1800-2023 SystemVerilog / IEEE 1800.2-2020 UVM** (`sv-
 | `cov`: `covergroup`, `coverpoint`, range/value/ignore bins, `cross` | Lower + Emit | Lower + Emit (`fc4sc::covergroup`, `COVERPOINT`, `fc4sc::cross`) | UCIS 1.0 isomorphism | Verified (M1) |
 | `sched`: `fork`/`join_any`/`disable fork`, `#delay`, `clocking #1step` | Lower + Emit | Lower + Emit (`sc_spawn` + `atomic<bool>` cancel token + `uvir_clocking_*`) | `clang++ -Werror` + `svlang` | Verified (M1) |
 | `sva`: Clocked `assert`/`cover property` (`\|-> ##[m:n]`, `disable iff`) | Lower + Emit | Lower + Emit (`uvir_sva_*` 64-bit `O(1)` shift-window observer) | Z3 `K`-cycle BMC `EquivalentUnsat` | Verified (M1) |
+| `rtl`: `module`, `always_comb`, `always_ff` <-> `SC_MODULE` (`SC_METHOD`, `SC_CTHREAD`) | Lower + Emit | Lower + Emit (auto `sensitive <<`, IEEE 1666.1 fail-closed) | `clang++ -Werror` + `svlang` `Netlist` + Btor2/Z3 SEC | Verified (M2) |
+| `rtl` (`C2RTL`): Untimed C++17 golden functions + bounded loop SSA -> SV RTL | Emit + SEC Miter | Lower (`// svcc:c2rtl` SSA mux + loop unroller) | `svlang` `Netlist` -> Btor2 -> Z3 SEC (`latency = L`) | Verified (M2) |
+| Bindings: Rust SDK (`crates/svcc`) + Python `PyO3` (`bindings/python`) | `svcc` crate | `svcc` `abi3-py39` wheel target | `cargo test --workspace` + `cargo check` (`svcc-py`) | Verified (M2) |

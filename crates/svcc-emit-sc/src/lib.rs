@@ -4,6 +4,8 @@
 //! `clang++ -x c++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only` to guarantee zero syntax,
 //! type, or unused-parameter warnings.
 
+pub mod rtl_emit;
+
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
 use std::path::Path;
@@ -121,6 +123,9 @@ impl BackendEmitter for ScEmitter {
         }
         for prop in &module.properties {
             emit_sc_sva_observer(&mut out, prop);
+        }
+        for rtl_m in &module.rtl_modules {
+            rtl_emit::emit_sc_rtl_module(&mut out, rtl_m);
         }
 
         Ok(out)

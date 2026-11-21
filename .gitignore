@@ -1,4 +1,5 @@
 /target
+/bindings/python/target
 /Cargo.lock.bak
 /.cargo/config.toml
 *.swp
