@@ -1,0 +1,599 @@
+{
+  "rq1_corpus_count": 20,
+  "rq1_roundtrip_pass": 20,
+  "rq1_c2rtl_count": 8,
+  "rq1_c2rtl_pass": 8,
+  "rq1_median_sv2sc_us": 200,
+  "rq1_median_sc2sv_us": 216,
+  "rq1_rows": [
+    {
+      "design": "01_apb4_timer_vip",
+      "category": "UVM_CRV_VIP",
+      "sv_lines": 50,
+      "avg_sv2sc_us": 199,
+      "avg_sc2sv_us": 281,
+      "classes": 1,
+      "rtl_modules": 0,
+      "sva_properties": 0,
+      "crv_nodes": 34,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 5284,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "02_axi4_burst_vip",
+      "category": "UVM_CRV_VIP",
+      "sv_lines": 88,
+      "avg_sv2sc_us": 344,
+      "avg_sc2sv_us": 389,
+      "classes": 4,
+      "rtl_modules": 0,
+      "sva_properties": 0,
+      "crv_nodes": 23,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 22418,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "03_pcie_tlp_hdr",
+      "category": "UVM_CRV_VIP",
+      "sv_lines": 48,
+      "avg_sv2sc_us": 212,
+      "avg_sc2sv_us": 273,
+      "classes": 1,
+      "rtl_modules": 0,
+      "sva_properties": 0,
+      "crv_nodes": 25,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 5561,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "04_chi_coh_req",
+      "category": "UVM_CRV_VIP",
+      "sv_lines": 38,
+      "avg_sv2sc_us": 189,
+      "avg_sc2sv_us": 267,
+      "classes": 1,
+      "rtl_modules": 0,
+      "sva_properties": 0,
+      "crv_nodes": 32,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 5581,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "05_eth_mac_frame",
+      "category": "UVM_CRV_VIP",
+      "sv_lines": 41,
+      "avg_sv2sc_us": 190,
+      "avg_sc2sv_us": 261,
+      "classes": 1,
+      "rtl_modules": 0,
+      "sva_properties": 0,
+      "crv_nodes": 29,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 5349,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "06_ddr5_cmd_sched",
+      "category": "UVM_CRV_VIP",
+      "sv_lines": 59,
+      "avg_sv2sc_us": 236,
+      "avg_sc2sv_us": 300,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 0,
+      "crv_nodes": 21,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 10164,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "07_uart_16550_ral_sva",
+      "category": "UVM_RAL_SVA",
+      "sv_lines": 43,
+      "avg_sv2sc_us": 272,
+      "avg_sc2sv_us": 224,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 2,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 20150,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "08_dma_ch_ral_sva",
+      "category": "UVM_RAL_SVA",
+      "sv_lines": 42,
+      "avg_sv2sc_us": 267,
+      "avg_sc2sv_us": 229,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 2,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 21270,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "09_spi_master_ral_sva",
+      "category": "UVM_RAL_SVA",
+      "sv_lines": 41,
+      "avg_sv2sc_us": 265,
+      "avg_sc2sv_us": 224,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 1,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 16432,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "10_i2c_ctrl_ral_sva",
+      "category": "UVM_RAL_SVA",
+      "sv_lines": 39,
+      "avg_sv2sc_us": 260,
+      "avg_sc2sv_us": 216,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 2,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 26265,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "11_plic_irq_ral_sva",
+      "category": "UVM_RAL_SVA",
+      "sv_lines": 38,
+      "avg_sv2sc_us": 246,
+      "avg_sc2sv_us": 204,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 1,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 16168,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "12_wdog_tmr_ral_sva",
+      "category": "UVM_RAL_SVA",
+      "sv_lines": 38,
+      "avg_sv2sc_us": 245,
+      "avg_sc2sv_us": 202,
+      "classes": 2,
+      "rtl_modules": 0,
+      "sva_properties": 1,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 15835,
+      "c2rtl_latency": null,
+      "c2rtl_verdict": null,
+      "c2rtl_z3_us": null
+    },
+    {
+      "design": "13_alu32_pipe2",
+      "category": "RTL_C2RTL",
+      "sv_lines": 47,
+      "avg_sv2sc_us": 200,
+      "avg_sc2sv_us": 196,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 6890,
+      "c2rtl_latency": 2,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 6542
+    },
+    {
+      "design": "14_mac16_pipe2",
+      "category": "RTL_C2RTL",
+      "sv_lines": 34,
+      "avg_sv2sc_us": 166,
+      "avg_sc2sv_us": 165,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 5946,
+      "c2rtl_latency": 2,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 5489
+    },
+    {
+      "design": "15_crc8_step_comb",
+      "category": "RTL_C2RTL",
+      "sv_lines": 18,
+      "avg_sv2sc_us": 123,
+      "avg_sc2sv_us": 116,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 6746,
+      "c2rtl_latency": 0,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 6456
+    },
+    {
+      "design": "16_gray_enc16_pipe1",
+      "category": "RTL_C2RTL",
+      "sv_lines": 20,
+      "avg_sv2sc_us": 116,
+      "avg_sc2sv_us": 111,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 6034,
+      "c2rtl_latency": 1,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 5720
+    },
+    {
+      "design": "17_sat_sub16_pipe1",
+      "category": "RTL_C2RTL",
+      "sv_lines": 25,
+      "avg_sv2sc_us": 131,
+      "avg_sc2sv_us": 128,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 5728,
+      "c2rtl_latency": 1,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 5921
+    },
+    {
+      "design": "18_shifter32_pipe2",
+      "category": "RTL_C2RTL",
+      "sv_lines": 41,
+      "avg_sv2sc_us": 189,
+      "avg_sc2sv_us": 188,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 6971,
+      "c2rtl_latency": 2,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 6234
+    },
+    {
+      "design": "19_minmax32_pipe1",
+      "category": "RTL_C2RTL",
+      "sv_lines": 31,
+      "avg_sv2sc_us": 139,
+      "avg_sc2sv_us": 138,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 6144,
+      "c2rtl_latency": 1,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 5882
+    },
+    {
+      "design": "20_arb_prio4_comb",
+      "category": "RTL_C2RTL",
+      "sv_lines": 22,
+      "avg_sv2sc_us": 121,
+      "avg_sc2sv_us": 113,
+      "classes": 0,
+      "rtl_modules": 1,
+      "sva_properties": 0,
+      "crv_nodes": 0,
+      "clang_werror_pass": true,
+      "svlang_pass": true,
+      "z3_roundtrip_verdict": "EquivalentUnsat",
+      "z3_roundtrip_us": 6164,
+      "c2rtl_latency": 0,
+      "c2rtl_verdict": "EquivalentUnsat",
+      "c2rtl_z3_us": 5798
+    }
+  ],
+  "rq2_mutations": {
+    "total_mutations": 20,
+    "caught_sat": 20,
+    "equiv_rewrites_total": 4,
+    "equiv_rewrites_unsat": 4,
+    "details": [
+      {
+        "id": "M01_apb_align_mask",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M02_apb_last_word_drop",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M03_apb_tol_halved",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M04_apb_imp_inverted",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M05_axi_align_16_to_8",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M06_axi_wrap_len_widen",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M07_pcie_max_dw_127",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M08_chi_unique_broken",
+        "kind": "CRV_QF_BV",
+        "caught_defect": true
+      },
+      {
+        "id": "M09_eth_cov_bin_drop",
+        "kind": "UCIS_COV",
+        "caught_defect": true
+      },
+      {
+        "id": "M10_uart_sva_max_win",
+        "kind": "SVA_BMC",
+        "caught_defect": true
+      },
+      {
+        "id": "M11_dma_sva_min_win",
+        "kind": "SVA_BMC",
+        "caught_defect": true
+      },
+      {
+        "id": "M12_alu_xor_to_or",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M13_alu_sub_to_add",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M14_alu_wrong_lat1",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M15_mac_drop_addend",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M16_crc8_poly_bug",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M17_gray_shift_2",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M18_satsub_floor_bug",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M19_shifter_dir_flip",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      },
+      {
+        "id": "M20_arb_prio_invert",
+        "kind": "RTL_BTOR2_SEC",
+        "caught_defect": true
+      }
+    ],
+    "equiv_details": [
+      {
+        "id": "E01_aligned_hi_mask",
+        "mode": "CRV",
+        "proved_equivalent": true
+      },
+      {
+        "id": "E02_tol_range_expand",
+        "mode": "CRV",
+        "proved_equivalent": true
+      },
+      {
+        "id": "E03_satsub_boundary_eq",
+        "mode": "SEC",
+        "proved_equivalent": true
+      },
+      {
+        "id": "E04_gray_xor_commute",
+        "mode": "SEC",
+        "proved_equivalent": true
+      }
+    ]
+  },
+  "rq3_p6_cst_recovery": {
+    "total_standalone_vips": 12,
+    "hybrid_cst_valid": 12,
+    "strict_semantic_only_valid": 0,
+    "per_file": [
+      {
+        "file": "01_apb4_timer_vip.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "02_axi4_burst_vip.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "03_pcie_tlp_hdr.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "04_chi_coh_req.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "05_eth_mac_frame.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "06_ddr5_cmd_sched.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "07_uart_16550_ral_sva.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "08_dma_ch_ral_sva.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "09_spi_master_ral_sva.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "10_i2c_ctrl_ral_sva.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "11_plic_irq_ral_sva.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      },
+      {
+        "file": "12_wdog_tmr_ral_sva.sv",
+        "hybrid_valid": true,
+        "strict_semantic_only_valid": false
+      }
+    ]
+  },
+  "rq4_p1_proto_scaling": [
+    {
+      "clauses_k": 8,
+      "monolithic_clang_o2_ms": 227.6,
+      "partitioned_b8_clang_o2_ms": 227.3,
+      "speedup_x": 1.0
+    },
+    {
+      "clauses_k": 24,
+      "monolithic_clang_o2_ms": 272.5,
+      "partitioned_b8_clang_o2_ms": 247.3,
+      "speedup_x": 1.1
+    },
+    {
+      "clauses_k": 48,
+      "monolithic_clang_o2_ms": 395.6,
+      "partitioned_b8_clang_o2_ms": 291.5,
+      "speedup_x": 1.36
+    },
+    {
+      "clauses_k": 80,
+      "monolithic_clang_o2_ms": 756.0,
+      "partitioned_b8_clang_o2_ms": 275.9,
+      "speedup_x": 2.74
+    },
+    {
+      "clauses_k": 120,
+      "monolithic_clang_o2_ms": 1712.0,
+      "partitioned_b8_clang_o2_ms": 287.5,
+      "speedup_x": 5.95
+    }
+  ]
+}

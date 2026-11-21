@@ -4,8 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM backend emitter with svlang self-validation"
+description = "IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM backend emitter (optional svlang self-verification)"
+
+[features]
+default = ["verify-svlang"]
+verify-svlang = ["dep:svlang"]
 
 [dependencies]
-svlang.workspace = true
+svlang = { workspace = true, optional = true }
 svcc-ir.workspace = true

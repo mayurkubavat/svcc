@@ -25,15 +25,31 @@ use svlang::{Compilation, NodeId, Severity, SyntaxKind, Tree};
 use svlang_model::ral::extract_ral_blocks;
 use svlang_model::{Design as SvModelDesign, PhaseKind as SvPhaseKind, UvmKind};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SvFrontend {
     pub fail_on_syntax_error: bool,
+    /// Recover written base/property types from lossless CST on standalone VIP snippets (`P6`).
+    pub cst_fallback: bool,
+}
+
+impl Default for SvFrontend {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SvFrontend {
     pub fn new() -> Self {
         Self {
             fail_on_syntax_error: true,
+            cst_fallback: true,
+        }
+    }
+
+    pub fn strict_semantic_only() -> Self {
+        Self {
+            fail_on_syntax_error: true,
+            cst_fallback: false,
         }
     }
 }
@@ -139,7 +155,7 @@ impl Frontend for SvFrontend {
                 continue;
             }
             let cst_entry = cst_classes.get(&cls.name).copied();
-            let eff_base = if !cls.base_name.is_empty() {
+            let eff_base = if !cls.base_name.is_empty() || !self.cst_fallback {
                 cls.base_name.clone()
             } else if let Some((tree, cls_node)) = cst_entry {
                 extract_cst_extends(tree, cls_node).0.unwrap_or_default()
@@ -156,8 +172,12 @@ impl Frontend for SvFrontend {
                 continue;
             }
             let cst_entry = cst_classes.get(&cls.name).copied();
-            let (cst_base, item_type) = if let Some((tree, cls_node)) = cst_entry {
-                extract_cst_extends(tree, cls_node)
+            let (cst_base, item_type) = if self.cst_fallback {
+                if let Some((tree, cls_node)) = cst_entry {
+                    extract_cst_extends(tree, cls_node)
+                } else {
+                    (None, None)
+                }
             } else {
                 (None, None)
             };
@@ -221,7 +241,7 @@ impl Frontend for SvFrontend {
                 }
             } else if role != UvmRole::RegBlock {
                 for prop in &cls.properties {
-                    let resolved_ty = if prop.ty.trim() == "<error>" {
+                    let resolved_ty = if prop.ty.trim() == "<error>" && self.cst_fallback {
                         written_property_type(cst_entry, &prop.name)
                             .unwrap_or_else(|| prop.ty.clone())
                     } else {

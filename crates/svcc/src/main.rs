@@ -11,9 +11,10 @@ use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;
 use svcc_equiv::{
     prove_class_equivalence_with_enums, prove_rtl_sec_equivalence, prove_sva_bmc_equivalence,
-    SmtVerdict,
+    prove_sva_pair_equivalence, SmtVerdict,
 };
-use svcc_ir::{BackendEmitter, LanguageRegistry, TargetCapabilities, UvirError};
+use svcc_front_sv::SvFrontend;
+use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, TargetCapabilities, UvirError};
 use svcc_passes::PassPipeline;
 
 fn build_registry() -> LanguageRegistry {
@@ -51,9 +52,12 @@ fn run_cli() -> Result<(), UvirError> {
         "sv2sc" => {
             let input = args
                 .get(1)
-                .ok_or_else(|| UvirError::new("cli", "usage: svcc sv2sc <in.sv> [-o <out.hpp>]"))?;
+                .ok_or_else(|| UvirError::new("cli", "usage: svcc sv2sc <in.sv> [-o <out.hpp>] [--partition-clauses B] [--no-cst-fallback]"))?;
             let out_path = parse_opt_flag(&args[2..], "-o");
-            cmd_transpile(&reg, "sv-uvm", "sc-uvm", input, out_path.as_deref())
+            let partition = parse_opt_flag(&args[2..], "--partition-clauses")
+                .and_then(|s| s.parse::<usize>().ok());
+            let no_cst = args[2..].iter().any(|a| a == "--no-cst-fallback");
+            cmd_sv2sc_ext(input, out_path.as_deref(), partition, no_cst)
         }
         "sc2sv" | "c2rtl" => {
             let input = args.get(1).ok_or_else(|| {
@@ -171,6 +175,35 @@ fn cmd_targets(reg: &LanguageRegistry) -> Result<(), UvirError> {
             cap.solver_model,
             cap.temporal_model
         );
+    }
+    Ok(())
+}
+
+fn cmd_sv2sc_ext(
+    input_path: &str,
+    out_path: Option<&str>,
+    partition_clauses: Option<usize>,
+    no_cst_fallback: bool,
+) -> Result<(), UvirError> {
+    let src = fs::read_to_string(input_path)
+        .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
+    let fe = if no_cst_fallback {
+        SvFrontend::strict_semantic_only()
+    } else {
+        SvFrontend::new()
+    };
+    let mut emitter = ScEmitter::new();
+    emitter.max_clauses_per_constraint = partition_clauses;
+
+    let (mut module, _) = fe.lower_str(input_path, &src)?;
+    PassPipeline::for_target(emitter.capabilities()).run_all(&mut module)?;
+    let emitted = emitter.emit(&module)?;
+
+    if let Some(p) = out_path {
+        fs::write(p, &emitted)
+            .map_err(|e| UvirError::new("io", format!("cannot write {p}: {e}")))?;
+    } else {
+        print!("{emitted}");
     }
     Ok(())
 }
@@ -340,6 +373,24 @@ fn cmd_prove_equiv(
         println!("{}", serde_json::to_string_pretty(&rep).unwrap());
         if rep.hard_crv_verdict == SmtVerdict::CounterexampleSat || !rep.coverage_isomorphic {
             return Err(UvirError::new("equiv", "equivalence check failed"));
+        }
+    }
+
+    for prop_l in &m_l.properties {
+        let prop_r = m_r
+            .properties
+            .iter()
+            .find(|p| p.name == prop_l.name)
+            .ok_or_else(|| {
+                UvirError::new(
+                    "equiv/sva",
+                    format!("SVA property '{}' missing in {rhs_path}", prop_l.name),
+                )
+            })?;
+        let rep = prove_sva_pair_equivalence(prop_l, prop_r, 6)?;
+        println!("{}", serde_json::to_string_pretty(&rep).unwrap());
+        if rep.verdict == SmtVerdict::CounterexampleSat {
+            return Err(UvirError::new("equiv/sva", "SVA equivalence check failed"));
         }
     }
     Ok(())

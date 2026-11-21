@@ -64,3 +64,25 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `workspace_tests_passed`: `10`
 - **Notes**: Implemented 7th dialect (rtl), synthesizable SV module <-> SystemC SC_MODULE with auto-inferred sensitive<< lists and IEEE 1666.1 fail-closed heap/container guards, untimed C++17 SSA + bounded-loop unroller (// svcc:c2rtl), svlang Netlist -> Btor2 -> Z3 QF_BV SEC prover, and PyO3 Python bindings.
 
+## [2026-11-21T23:08:43+00:00] `M3-benchmarks-and-arxiv-manuscript` — Zero-svlang SDK decoupling, 20-design M3 benchmark + ablation suite, and 7-page IEEEtran arXiv/DAC manuscript
+- **Commit**: `77974fa` (`Darwin-arm64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)`)
+- **Command**: `./scripts/check.sh && python3 benchmarks/run_benchmarks.py && make -C paper check arxiv-tar`
+- **Measured Metrics**:
+  - `bib_entries`: `27`
+  - `c2rtl_sec_unsat`: `8/8`
+  - `corpus_designs`: `20`
+  - `corpus_roundtrip_unsat`: `20/20`
+  - `equiv_rewrites_unsat`: `4/4`
+  - `latex_warnings`: `0`
+  - `median_c2rtl_z3_ms`: `5.9`
+  - `median_sc2sv_us`: `210`
+  - `median_sv2sc_us`: `200`
+  - `median_z3_roundtrip_ms`: `6.82`
+  - `overfull_hboxes`: `0`
+  - `p1_k120_clang_o2_speedup_x`: `5.95`
+  - `p6_hybrid_vs_strict`: `12/12 vs 0/12`
+  - `paper_pages`: `7`
+  - `rust_loc`: `10899`
+  - `semantic_mutations_caught`: `20/20`
+- **Notes**: Confirmed Predictions P1 (5.95x clang++ -O2 speedup at K=120 via --partition-clauses 8) and P6 (12/12 vs 0/12 standalone VIP recovery); compiled paper/main.pdf (7 pages, 27 cited references, 0 warnings, 0 overfull/badness-10000 boxes, 0 shared prose 7-grams).
+

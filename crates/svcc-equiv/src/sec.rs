@@ -15,12 +15,17 @@
 //!    `QF_BV` and queries `z3 -in` to prove sequential equivalence (`EquivalentUnsat`) or report a
 //!    bug (`CounterexampleSat`).
 
-use crate::{run_z3_stdin, SmtVerdict};
+#[cfg(feature = "btor2-sec")]
+use crate::run_z3_stdin;
+use crate::SmtVerdict;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "btor2-sec")]
 use std::collections::BTreeMap;
 use std::fmt::Write;
+#[cfg(feature = "btor2-sec")]
 use std::time::Instant;
 use svcc_ir::{RtlModule, RtlPortDir, UvirError};
+#[cfg(feature = "btor2-sec")]
 use svlang::netlist::{lower_trees, LowerConfig, LowerOutcome};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -35,16 +40,15 @@ pub struct RtlSecReport {
     pub solver_time_us: u64,
 }
 
-/// Proves sequential equivalence (`latency = 0` or pipelined `latency = L`) between two SV RTL
-/// strings containing `spec_mod` and `imp_mod`.
-pub fn prove_rtl_sec_equivalence(
+/// Pure in-memory SystemVerilog SEC product-machine bundle (`spec` + `imp` + `svcc_sec_miter`),
+/// zero `svlang` or `z3` runtime dependency — ready to pass directly into `InFormal`.
+pub fn build_combined_sec_miter_sv(
     spec_mod: &RtlModule,
     spec_sv_src: &str,
     imp_mod: &RtlModule,
     imp_sv_src: &str,
     latency: u32,
-    extra_cycles: u32,
-) -> Result<RtlSecReport, UvirError> {
+) -> Result<String, UvirError> {
     let renamed_spec_name = format!("{}__svcc_spec", spec_mod.name);
     let renamed_imp_name = format!("{}__svcc_imp", imp_mod.name);
 
@@ -58,8 +62,22 @@ pub fn prove_rtl_sec_equivalence(
         &renamed_imp_name,
         latency,
     )?;
+    Ok(format!(
+        "{spec_sv_renamed}\n\n{imp_sv_renamed}\n\n{miter_sv}\n"
+    ))
+}
 
-    let combined_sv = format!("{spec_sv_renamed}\n\n{imp_sv_renamed}\n\n{miter_sv}\n");
+/// Pure in-memory Btor2 transition-system builder for a dual-design SEC miter (without spawning Z3).
+#[cfg(feature = "btor2-sec")]
+pub fn build_sec_btor2(
+    spec_mod: &RtlModule,
+    spec_sv_src: &str,
+    imp_mod: &RtlModule,
+    imp_sv_src: &str,
+    latency: u32,
+) -> Result<String, UvirError> {
+    let combined_sv =
+        build_combined_sec_miter_sv(spec_mod, spec_sv_src, imp_mod, imp_sv_src, latency)?;
     let tree = svlang::syntax::parse_source(&combined_sv, "svcc_sec_miter.sv", Default::default());
     let netlist = match lower_trees(
         &[tree],
@@ -79,13 +97,27 @@ pub fn prove_rtl_sec_equivalence(
             ));
         }
     };
-
     let btor_model = svlang::btor2::write(&netlist, &svlang::btor2::Options::default())
         .map_err(|e| UvirError::new("svcc-equiv/btor2", format!("btor2 write failed: {e:?}")))?;
-    let btor2_lines = btor_model.btor2.lines().count();
+    Ok(btor_model.btor2)
+}
+
+/// Proves sequential equivalence (`latency = 0` or pipelined `latency = L`) between two SV RTL
+/// strings containing `spec_mod` and `imp_mod`.
+#[cfg(feature = "btor2-sec")]
+pub fn prove_rtl_sec_equivalence(
+    spec_mod: &RtlModule,
+    spec_sv_src: &str,
+    imp_mod: &RtlModule,
+    imp_sv_src: &str,
+    latency: u32,
+    extra_cycles: u32,
+) -> Result<RtlSecReport, UvirError> {
+    let btor2 = build_sec_btor2(spec_mod, spec_sv_src, imp_mod, imp_sv_src, latency)?;
+    let btor2_lines = btor2.lines().count();
 
     let bound_k = latency + extra_cycles.max(4) + 2;
-    let smt = unroll_btor2_to_smtlib2(&btor_model.btor2, bound_k)?;
+    let smt = unroll_btor2_to_smtlib2(&btor2, bound_k)?;
     let smt_bytes = smt.len();
 
     let t0 = Instant::now();
@@ -112,7 +144,7 @@ fn rename_sv_module_decl(sv: &str, old_name: &str, new_name: &str) -> String {
     )
 }
 
-fn build_sv_sec_miter(
+pub fn build_sv_sec_miter(
     spec: &RtlModule,
     spec_sv_name: &str,
     imp: &RtlModule,
@@ -279,6 +311,7 @@ fn build_sv_sec_miter(
 // Built-In Word-Level Btor2 -> Z3 SMT-LIB2 `QF_BV` Unroller
 // ============================================================================
 
+#[cfg(feature = "btor2-sec")]
 #[derive(Clone, Debug)]
 enum BtorLine {
     Input {
@@ -335,6 +368,7 @@ enum BtorLine {
     },
 }
 
+#[cfg(feature = "btor2-sec")]
 fn unroll_btor2_to_smtlib2(btor2: &str, k_steps: u32) -> Result<String, UvirError> {
     let mut sorts: BTreeMap<u32, u32> = BTreeMap::new();
     let mut nodes: BTreeMap<u32, BtorLine> = BTreeMap::new();
@@ -718,6 +752,7 @@ fn unroll_btor2_to_smtlib2(btor2: &str, k_steps: u32) -> Result<String, UvirErro
     Ok(smt)
 }
 
+#[cfg(feature = "btor2-sec")]
 fn infer_btor_width(id: u32, nodes: &BTreeMap<u32, BtorLine>, sorts: &BTreeMap<u32, u32>) -> u32 {
     match nodes.get(&id) {
         Some(

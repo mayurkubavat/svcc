@@ -5,3 +5,8 @@
 *.swp
 .DS_Store
 /tmp/
+__pycache__/
+/paper/*.aux
+/paper/*.blg
+/paper/*.log
+/paper/*.out

@@ -13,7 +13,9 @@
 //!    Verifies bijective match of covergroups, coverpoints, bin intervals/values, and crosses.
 
 pub mod sec;
-pub use sec::{prove_rtl_sec_equivalence, RtlSecReport};
+pub use sec::{build_combined_sec_miter_sv, build_sv_sec_miter, RtlSecReport};
+#[cfg(feature = "btor2-sec")]
+pub use sec::{build_sec_btor2, prove_rtl_sec_equivalence};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -619,6 +621,90 @@ pub fn prove_sva_bmc_equivalence(
 
     Ok(SvaBmcReport {
         property_name: prop.name.clone(),
+        bound_cycles: k,
+        verdict,
+        smtlib2_bytes: smt_bytes,
+        solver_time_us,
+    })
+}
+
+/// Proves via `K`-step Bounded Model Checking (`QF_BV`) whether two `SvaPropertyDecl` temporal
+/// specifications (`lhs` vs. `rhs`) accept the exact same trace set.
+pub fn prove_sva_pair_equivalence(
+    lhs: &SvaPropertyDecl,
+    rhs: &SvaPropertyDecl,
+    extra_cycles: u32,
+) -> Result<SvaBmcReport, UvirError> {
+    if lhs.is_cover != rhs.is_cover
+        || lhs.antecedent.replace(' ', "") != rhs.antecedent.replace(' ', "")
+        || lhs.consequent.replace(' ', "") != rhs.consequent.replace(' ', "")
+        || lhs.disable_iff.as_deref().map(|s| s.replace(' ', ""))
+            != rhs.disable_iff.as_deref().map(|s| s.replace(' ', ""))
+    {
+        return Ok(SvaBmcReport {
+            property_name: lhs.name.clone(),
+            bound_cycles: 1,
+            verdict: SmtVerdict::CounterexampleSat,
+            smtlib2_bytes: 0,
+            solver_time_us: 0,
+        });
+    }
+
+    let max_d = lhs.max_delay.max(rhs.max_delay).max(1);
+    let k = max_d + extra_cycles.max(4);
+    let mut smt = String::new();
+    smt.push_str("(set-logic QF_BV)\n");
+    for t in 0..k {
+        smt.push_str(&format!("(declare-const dis_{t} Bool)\n"));
+        smt.push_str(&format!("(declare-const ant_{t} Bool)\n"));
+        smt.push_str(&format!("(declare-const con_{t} Bool)\n"));
+        if lhs.disable_iff.is_none() {
+            smt.push_str(&format!("(assert (not dis_{t}))\n"));
+        }
+    }
+
+    let encode_spec_fail = |p: &SvaPropertyDecl| -> String {
+        let lo = p.min_delay;
+        let hi = p.max_delay.max(lo);
+        let mut fails = Vec::new();
+        for tau in 0..(k - hi) {
+            let no_dis: Vec<String> = (tau..=(tau + hi))
+                .map(|s| format!("(not dis_{s})"))
+                .collect();
+            let no_con: Vec<String> = ((tau + lo)..=(tau + hi))
+                .map(|s| format!("(not con_{s})"))
+                .collect();
+            fails.push(format!(
+                "(and ant_{tau} {} {})",
+                no_dis.join(" "),
+                no_con.join(" ")
+            ));
+        }
+        if fails.is_empty() {
+            "false".into()
+        } else {
+            format!("(or {})", fails.join(" "))
+        }
+    };
+
+    smt.push_str(&format!(
+        "(define-fun lhs_fail () Bool {})\n",
+        encode_spec_fail(lhs)
+    ));
+    smt.push_str(&format!(
+        "(define-fun rhs_fail () Bool {})\n",
+        encode_spec_fail(rhs)
+    ));
+    smt.push_str("(assert (xor lhs_fail rhs_fail))\n");
+    smt.push_str("(check-sat)\n");
+
+    let smt_bytes = smt.len();
+    let t0 = Instant::now();
+    let (verdict, _) = run_z3_stdin(&smt);
+    let solver_time_us = t0.elapsed().as_micros() as u64;
+
+    Ok(SvaBmcReport {
+        property_name: lhs.name.clone(),
         bound_cycles: k,
         verdict,
         smtlib2_bytes: smt_bytes,

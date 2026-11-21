@@ -9,6 +9,7 @@ use svcc_ir::{
     SchedOp, SvaPropertyDecl, TargetCapabilities, TlmPortKind, UvirError, UvirModule, UvirType,
     UvmRole,
 };
+#[cfg(feature = "verify-svlang")]
 use svlang::{Compilation, DiagnosticStage, Severity};
 
 #[derive(Clone, Debug, Default)]
@@ -19,33 +20,63 @@ impl SvEmitter {
         Self
     }
 
+    /// Synthesizes `InFormal` D17-compliant primary-input `assume property` directives from a
+    /// `ClassDecl`'s hard CRV constraints (`check_sec(assumptions=[...])`).
+    pub fn emit_d17_primary_input_assumptions(
+        &self,
+        cls: &ClassDecl,
+        arena: &CrvArena,
+        clock: &str,
+        disable_iff: Option<&str>,
+    ) -> Result<Vec<String>, UvirError> {
+        let dis = disable_iff
+            .map(|d| format!(" disable iff ({d})"))
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for cb in &cls.constraints {
+            for (idx, clause) in cb.clauses.iter().enumerate() {
+                if !clause.is_soft {
+                    let pred = format_sv_expr(clause.expr, arena)?;
+                    out.push(format!(
+                        "svcc_d17_{}_{}: assume property (@(posedge {}){} ({}));",
+                        cb.name, idx, clock, dis, pred
+                    ));
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub fn emit_and_verify(&self, module: &UvirModule) -> Result<String, UvirError> {
         let sv_text = self.emit(module)?;
-        let comp = Compilation::from_source("emitted_uvir.sv", &sv_text);
-        let errs: Vec<_> = comp
-            .diagnostics()
-            .into_iter()
-            .filter(|d| {
-                if d.severity != Severity::Error {
-                    return false;
-                }
-                match d.stage {
-                    DiagnosticStage::Parser => true,
-                    DiagnosticStage::Preprocessor => {
-                        !d.message.contains("unknown macro or directive `uvm_")
+        #[cfg(feature = "verify-svlang")]
+        {
+            let comp = Compilation::from_source("emitted_uvir.sv", &sv_text);
+            let errs: Vec<_> = comp
+                .diagnostics()
+                .into_iter()
+                .filter(|d| {
+                    if d.severity != Severity::Error {
+                        return false;
                     }
-                    _ => false,
-                }
-            })
-            .collect();
-        if !errs.is_empty() {
-            return Err(UvirError::new(
-                "svcc-emit-sv/verify",
-                format!(
-                    "emitted SV failed svlang syntax verification at line {}: {}",
-                    errs[0].line, errs[0].message
-                ),
-            ));
+                    match d.stage {
+                        DiagnosticStage::Parser => true,
+                        DiagnosticStage::Preprocessor => {
+                            !d.message.contains("unknown macro or directive `uvm_")
+                        }
+                        _ => false,
+                    }
+                })
+                .collect();
+            if !errs.is_empty() {
+                return Err(UvirError::new(
+                    "svcc-emit-sv/verify",
+                    format!(
+                        "emitted SV failed svlang syntax verification at line {}: {}",
+                        errs[0].line, errs[0].message
+                    ),
+                ));
+            }
         }
         Ok(sv_text)
     }

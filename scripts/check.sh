@@ -26,7 +26,10 @@ cargo run --quiet -p svcc -- roundtrip-check testdata/sv/alu_pipe_rtl.sv --shims
 cargo run --quiet -p svcc -- prove-sec testdata/sc/alu_golden_c2rtl.hpp testdata/sv/alu_pipe_rtl.sv --latency 2 >/dev/null
 cargo run --quiet -p svcc -- prove-equiv testdata/sv/apb_timer_item.sv testdata/sc/apb_timer_item.hpp >/dev/null
 
-echo "==> [5/5] PyO3 Python extension crate check (bindings/python)"
+echo "==> [5/6] Zero-svlang decoupling check for InFormal embedding (--no-default-features)"
+cargo clippy --no-default-features -p svcc-ir -p svcc-front-sc -p svcc-passes -p svcc-emit-sv -p svcc-equiv -- -D warnings
+
+echo "==> [6/6] PyO3 Python extension crate check (bindings/python)"
 cargo check --manifest-path bindings/python/Cargo.toml
 
 echo "ALL CHECKS PASSED."

@@ -6,8 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 description = "Formal SMT-LIB2 (Z3 QF_BV) CRV, SVA BMC, Btor2 Sequential Equivalence (SEC/C2RTL), and UCIS verifier for svcc"
 
+[features]
+default = ["btor2-sec"]
+btor2-sec = ["dep:svlang"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-svlang.workspace = true
+svlang = { workspace = true, optional = true }
 svcc-ir.workspace = true

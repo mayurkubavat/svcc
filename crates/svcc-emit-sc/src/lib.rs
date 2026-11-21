@@ -18,11 +18,22 @@ use svcc_ir::{
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct ScEmitter;
+pub struct ScEmitter {
+    /// Optional clause-partitioning bound `B` (`P1` Boost.Proto compile-time optimization).
+    pub max_clauses_per_constraint: Option<usize>,
+}
 
 impl ScEmitter {
     pub fn new() -> Self {
-        Self
+        Self {
+            max_clauses_per_constraint: None,
+        }
+    }
+
+    pub fn with_clause_partition(max_clauses: usize) -> Self {
+        Self {
+            max_clauses_per_constraint: Some(max_clauses.max(1)),
+        }
     }
 
     /// Emits C++17 SystemC/UVM header text and type-checks it via `clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only`.
@@ -113,7 +124,12 @@ impl BackendEmitter for ScEmitter {
             emit_sc_clocking(&mut out, cb);
         }
         for cls in &module.classes {
-            emit_sc_class(&mut out, cls, &module.crv_arena)?;
+            emit_sc_class(
+                &mut out,
+                cls,
+                &module.crv_arena,
+                self.max_clauses_per_constraint,
+            )?;
             for cg in &cls.covergroups {
                 emit_fc4sc_covergroup(&mut out, cg, Some(cls));
             }
@@ -196,7 +212,12 @@ fn emit_sc_clocking(out: &mut String, cb: &ClockingDecl) {
     out.push_str("};\n\n");
 }
 
-fn emit_sc_class(out: &mut String, cls: &ClassDecl, arena: &CrvArena) -> Result<(), UvirError> {
+fn emit_sc_class(
+    out: &mut String,
+    cls: &ClassDecl,
+    arena: &CrvArena,
+    max_clauses_per_constraint: Option<usize>,
+) -> Result<(), UvirError> {
     let item_ty = cls.item_type.as_deref().unwrap_or("uvm::uvm_sequence_item");
     let base_cpp = match cls.role {
         UvmRole::SequenceItem => "uvm::uvm_randomized_sequence_item".to_string(),
@@ -300,13 +321,30 @@ fn emit_sc_class(out: &mut String, cls: &ClassDecl, arena: &CrvArena) -> Result<
             for cl in hard {
                 rendered.push(format_crave_expr(cl.expr, arena, cls)?);
             }
-            let _ = writeln!(
-                out,
-                "  crave::crv_constraint {}{{this, \"{}\",\n    {}\n  }};",
-                cb.name,
-                cb.name,
-                rendered.join(",\n    ")
-            );
+            if let Some(chunk_sz) = max_clauses_per_constraint.filter(|&b| rendered.len() > b) {
+                for (p_idx, chunk) in rendered.chunks(chunk_sz).enumerate() {
+                    let pname = if p_idx == 0 {
+                        cb.name.clone()
+                    } else {
+                        format!("{}__part_{}", cb.name, p_idx)
+                    };
+                    let _ = writeln!(
+                        out,
+                        "  crave::crv_constraint {}{{this, \"{}\",\n    {}\n  }};",
+                        pname,
+                        pname,
+                        chunk.join(",\n    ")
+                    );
+                }
+            } else {
+                let _ = writeln!(
+                    out,
+                    "  crave::crv_constraint {}{{this, \"{}\",\n    {}\n  }};",
+                    cb.name,
+                    cb.name,
+                    rendered.join(",\n    ")
+                );
+            }
         }
         for (idx, cl) in soft.into_iter().enumerate() {
             let expr_s = format_crave_expr(cl.expr, arena, cls)?;

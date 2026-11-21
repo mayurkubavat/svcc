@@ -578,7 +578,10 @@ fn parse_sc_uvm_class(
                 soft_weight: is_soft.then_some(1),
             });
         }
-        if let Some((parent_name, _)) = cname.split_once("__soft_") {
+        if let Some((parent_name, _)) = cname
+            .split_once("__soft_")
+            .or_else(|| cname.split_once("__part_"))
+        {
             if let Some(existing) = constraints.iter_mut().find(|c| c.name == parent_name) {
                 existing.clauses.extend(clauses);
                 continue;
