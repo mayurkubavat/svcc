@@ -15,3 +15,12 @@ Scoped strictly to **IEEE 1800-2023 SystemVerilog (RTL + UVM)** <-> **IEEE 1666-
 | `rtl`: `module`, `always_comb`, `always_ff` <-> `SC_MODULE` (`SC_METHOD`, `SC_CTHREAD`) | Lower + Emit | Lower + Emit (auto `sensitive <<`, IEEE 1666.1 fail-closed) | `clang++ -Werror` + `svlang` `Netlist` + Btor2/Z3 SEC | Verified (M2) |
 | `rtl` (`C2RTL`): Untimed C++17 golden functions + bounded loop SSA -> SV RTL | Emit + SEC Miter | Lower (`// svcc:c2rtl` SSA mux + loop unroller) | `svlang` `Netlist` -> Btor2 -> Z3 SEC (`latency = L`) | Verified (M2) |
 | Bindings: Rust SDK (`crates/svcc`) + Python `PyO3` (`bindings/python`) | `svcc` crate | `svcc` `abi3-py39` wheel target | `cargo test --workspace` + `cargo check` (`svcc-py`) | Verified (M2) |
+
+## Next actions
+
+- Triage the SCAV probe set (`benchmarks/scav_compare/`): svcc matches the Icarus reference on 3 of 18 probes. First the 2 probes that pass `roundtrip-check` but mismatch in co-simulation (a gap in the equivalence gate), then the 15 that fail earlier.
+- Local `main` is ahead of `origin/main` and unpushed; push only when Mayur asks.
+
+## Session log
+
+- 2026-11-22: Landed the `svcc-svlang` adapter crate (`8da6eaf`, pushed). Landed the SCAV head-to-head comparison benchmark locally (`12aa039`, unpushed): corpus designs 13..20 svcc 8/8 match, SCAV 0/8 compile; probes svcc 3/18, SCAV 0/18. `./scripts/check.sh` passes (12 tests).
