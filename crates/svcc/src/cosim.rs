@@ -409,7 +409,11 @@ pub fn run_cosim(sv_path: &str, opts: &CosimOptions) -> Result<CosimReport, Svcc
     let lib = ["lib", "lib-linux64", "lib64"]
         .iter()
         .map(|l| sc.join(l))
-        .find(|p| p.join("libsystemc.so").exists() || p.join("libsystemc.a").exists())
+        .find(|p| {
+            ["libsystemc.so", "libsystemc.dylib", "libsystemc.a"]
+                .iter()
+                .any(|f| p.join(f).exists())
+        })
         .ok_or_else(|| SvccError::new(STAGE, "libsystemc not found under SYSTEMC_HOME"))?;
     let sv_abs = Path::new(sv_path)
         .canonicalize()

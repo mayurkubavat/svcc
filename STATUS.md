@@ -19,9 +19,12 @@ Scoped strictly to **IEEE 1800-2023 SystemVerilog (RTL + UVM)** <-> **IEEE 1666-
 
 ## Next actions
 
-- Triage the SCAV probe set (`benchmarks/scav_compare/`): svcc matches the Icarus reference on 3 of 18 probes. First the 2 probes that pass `roundtrip-check` but mismatch in co-simulation (a gap in the equivalence gate), then the 15 that fail earlier.
+- SCAV probe set (`benchmarks/scav_compare/`): the typed `hdl` path converts all 18 probes and designs 13..20, and each matches Verilator under `svcc rtl-cosim` (20000 steps, checked on macOS arm64 and Linux x86_64). `benchmarks/results/scav_compare_summary.json` still holds the earlier legacy-path run against Icarus (svcc 3 of 18); regenerate it with `run_compare.py` on the typed path before quoting a head-to-head number.
+- `roundtrip-check` and C2RTL SEC still use the legacy text-based RTL path, so the gap where 2 probes passed `roundtrip-check` but mismatched in co-simulation is still open in that gate. Move the gate onto the typed path or retire the legacy one.
+- The probes and designs 13..20 are run by hand; only `testdata/rtl` (16 designs) is in `scripts/check.sh`.
 - Local `main` is ahead of `origin/main` and unpushed; push only when Mayur asks.
 
 ## Session log
 
 - 2026-11-22: Landed the `svcc-svlang` adapter crate (`8da6eaf`, pushed). Landed the SCAV head-to-head comparison benchmark locally (`12aa039`, unpushed): corpus designs 13..20 svcc 8/8 match, SCAV 0/8 compile; probes svcc 3/18, SCAV 0/18. `./scripts/check.sh` passes (12 tests).
+- 2026-11-22: Brought the typed RTL path (`rtl/typed-hdl`, from the Linux clone) onto local `main`, unpushed. Made `rtl-cosim` find `libsystemc.dylib` so step 7 of `scripts/check.sh` runs on macOS. On macOS arm64 against SystemC `development` `9767bff` (C++17) in `~/.local/opt/accellera-svcc` with Verilator 5.052: `./scripts/check.sh` passes, corpus 16/16 with 3893207 output comparisons, SCAV probes 18/18, designs 13..20 8/8. Per-design comparison counts are identical on Linux; the 3830212 total in the earlier Linux log entry is stale.

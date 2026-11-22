@@ -149,3 +149,21 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `verilator`: `5.052`
 - **Notes**: New rtl2sc and rtl-cosim commands; sv2sc routes RTL modules through the typed path. Legacy text-based RTL path kept only for roundtrip-check and C2RTL SEC. Evidence is random-stimulus simulation, not proof. SCAV probes and benchmark designs were run once by hand and are not part of check.sh.
 
+## [2026-11-22T19:21:21+00:00] `M5.1-typed-rtl-macos-dev-stack` — Typed RTL path re-checked on macOS arm64 against the SystemC development stack
+- **Commit**: `96b5f30` (`Darwin-arm64`, `rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)`)
+- **Command**: `SYSTEMC_HOME=$HOME/.local/opt/accellera-svcc/systemc ./scripts/check.sh`
+- **Measured Metrics**:
+  - `benchmark_rtl_13_20_cosim_pass`: `8/8`
+  - `cargo_tests_failed`: `0`
+  - `cargo_tests_passed`: `18`
+  - `check_sh`: `ALL CHECKS PASSED (exit 0)`
+  - `corpus_cosim_pass`: `16/16`
+  - `corpus_cosim_steps_each`: `20000`
+  - `corpus_output_comparisons`: `3893207`
+  - `linux_per_design_counts_identical`: `True`
+  - `scav_probes_cosim_pass`: `18/18`
+  - `systemc`: `oss-workbench systemc development 9767bff (3.0.3, C++17), libsystemc.dylib`
+  - `uvm_systemc`: `development 8faac2c (installed, not used by these checks)`
+  - `verilator`: `5.052`
+- **Notes**: rtl-cosim only looked for libsystemc.so/.a, so all 16 designs failed on macOS before any model was built; it now also accepts libsystemc.dylib. Per-design comparison counts match a Linux rerun exactly (sum 3893207); the 3830212 total in the M5-typed-rtl-hdl entry is stale. SCAV probes and designs 13..20 were run by hand with svcc rtl-cosim --steps 20000 against Verilator, not through run_compare.py (Icarus), and are not part of check.sh. Evidence is random-stimulus simulation, not proof.
+
