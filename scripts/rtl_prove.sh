@@ -25,6 +25,11 @@ pass=0; fail=0; bounded=0; uncovered=0; failed=(); notcov=(); surprise=()
 for f in "${FILES[@]}"; do
   n="$(basename "$f")"
   out="$("$SVCC" rtl-prove "$f" 2>&1)"; rc=$?
+  # A module that instantiates itself is never a top on its own; name it after the file.
+  stem="${n%.*}"
+  if [[ $rc -ne 0 ]] && grep -q "no module found to convert" <<<"$out" && grep -qE "^[[:space:]]*module[[:space:]]+$stem\b" "$f"; then
+    out="$("$SVCC" rtl-prove "$f" --top "$stem" 2>&1)"; rc=$?
+  fi
   if [[ $rc -eq 0 ]]; then
     pass=$((pass + 1))
     if grep -q "(bounded)" <<<"$out"; then bounded=$((bounded + 1)); echo "$out"; fi

@@ -130,7 +130,18 @@ Inputs that reach an edge sensitivity, directly or through gating logic and inst
 boundaries, are driven as clocks: one of them changes per step, alone. Asynchronous controls
 start inactive, are asserted at step 1 and released at step 3. Verilator runs with
 `--no-assert`, because the design's own assertions about its environment do not hold under
-random stimulus.
+random stimulus, and with `-UVERILATOR`: Verilator defines the `VERILATOR` macro and svcc
+does not, so without it the two models are built from different text wherever the source
+tests it.
+
+Two known Verilator deviations affect the comparison:
+
+- A module that instantiates itself (a recursive tree) is built without its children when it
+  is the top level (Verilator 5.052 and 5.055). rtl-cosim then gives the reference a wrapper
+  top, so the recursive module is an ordinary instance (`testdata/rtl/recursive_top.sv`).
+- A write through a computed index outside the declared range is not ignored, as IEEE
+  1800-2023 11.5.1 requires; Verilator wraps the index into the range. svcc ignores the
+  write. A difference on such a design is in the reference, not in svcc.
 
 `benchmarks/rtl_stress/run_stress.py` runs the same three stages (convert, compile against
 SystemC, simulate against Verilator) over every module of a corpus of open-source designs

@@ -22,8 +22,15 @@ fn every_corpus_design_converts() {
         if path.extension().is_some_and(|e| e == "sv") {
             let src = std::fs::read_to_string(&path).expect("read");
             let name = path.to_string_lossy().to_string();
+            // Each corpus file's top module is named after the file, as scripts/rtl_cosim.sh
+            // assumes; a module that instantiates itself is never picked as a top on its own.
+            let top = path
+                .file_stem()
+                .expect("stem")
+                .to_string_lossy()
+                .to_string();
             let (code, design) =
-                svcc::sv_rtl_to_sc(&name, &src, &[]).unwrap_or_else(|e| panic!("{name}: {e}"));
+                svcc::sv_rtl_to_sc(&name, &src, &[top]).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(code.contains("SC_MODULE("), "{name}: no module emitted");
             assert!(!design.tops.is_empty(), "{name}: no top");
             // A pure RTL header depends on SystemC only.
