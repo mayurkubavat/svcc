@@ -78,6 +78,12 @@ and `svcc.__version__`.
   usually end in an "undriven" error.
 - **Not supported:** interfaces, `inout`, unpacked structs, hierarchical references, tasks,
   `foreach`, arrays local to a process, gate primitives, among others (see the subset page).
+- **Known differences on real designs.** In the 2,184-module stress run, the modules that
+  still differ from Verilator are: `lfsr`/`cc_lfsr` (svlang reads a sized parameter default
+  `'1` as 1; fixed in svlang 0.5.1), `popcount` and `prim_pad_attr` (the Verilator reference
+  is wrong or sees different source), `stream_mux` with a placeholder parameter of 0
+  (undefined in two-state), and `fpnew_cast_multi` / `fpnew_opgroup_block` from cvfpu, which
+  are not yet explained.
 - **Other directions.** The UVM/verification-class translation (`sv2sc`, `sc2sv`) and the
   SystemC-to-SystemVerilog direction ship in this package but have not had the same scrutiny
   on real code as the RTL path. Treat their output as a starting point.
