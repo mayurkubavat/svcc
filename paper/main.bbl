@@ -69,10 +69,6 @@ M.~Kubavat, ``{SCBench: Do Verification Tools Help Coding Agents Maintain Open
   SystemC Libraries?}'' Elsevier SSRN Preprint 7715040, 2026,
   \url{https://ssrn.com/abstract=7715040}.
 
-\bibitem{kubavat2026evidence}
-------, ``{systemc-signoff-evidence, Release v1.2.0},'' Zenodo, 2026,
-  \url{https://doi.org/10.5281/zenodo.24283926}.
-
 \bibitem{snyder2020verilator}
 W.~Snyder, ``{Verilator: Open Simulation: Growing Up},'' in \emph{DVCon US
   Proceedings}, 2020, \url{https://www.veripool.org/verilator/}.

@@ -44,7 +44,7 @@ SystemVerilog, SystemC, UVM, translation validation, constrained-random verifica
 \section{Introduction}
 \label{sec:intro}
 
-Hardware engineering teams maintain parallel representations of the same subsystem in C++ and SystemVerilog. Architectural performance models, reference predictors, and fast verification harnesses are written in C++17 and IEEE~1666-2023 SystemC~\cite{ieee1666_2023,ghenassia2005tlm} coupled with open Accellera libraries such as UVM-SystemC, CRAVE~\cite{haedicke2012crave}, and FC4SC~\cite{accellera2026systemc}. Register-transfer-level (RTL) sign-off and coverage closure, by contrast, execute in IEEE~1800-2023 SystemVerilog~\cite{ieee1800_2023} and IEEE~1800.2-2020 UVM~\cite{ieee1800_2_2020}. Recent work on autonomous coding agents for hardware design~\cite{liu2023verilogeval,thakur2024verigen} and SystemC verification library maintenance~\cite{kubavat2026scbench,kubavat2026evidence} highlights why both ecosystems persist: C++17 testbenches recompile incrementally and execute without simulator license queues, whereas final RTL integration requires native SystemVerilog assertions, covergroups, and UVM sequence items.
+Hardware engineering teams maintain parallel representations of the same subsystem in C++ and SystemVerilog. Architectural performance models, reference predictors, and fast verification harnesses are written in C++17 and IEEE~1666-2023 SystemC~\cite{ieee1666_2023,ghenassia2005tlm} coupled with open Accellera libraries such as UVM-SystemC, CRAVE~\cite{haedicke2012crave}, and FC4SC~\cite{accellera2026systemc}. Register-transfer-level (RTL) sign-off and coverage closure, by contrast, execute in IEEE~1800-2023 SystemVerilog~\cite{ieee1800_2023} and IEEE~1800.2-2020 UVM~\cite{ieee1800_2_2020}. Recent work on autonomous coding agents for hardware design~\cite{liu2023verilogeval,thakur2024verigen} and SystemC verification library maintenance~\cite{kubavat2026scbench} highlights why both ecosystems persist: C++17 testbenches recompile incrementally and execute without simulator license queues, whereas final RTL integration requires native SystemVerilog assertions, covergroups, and UVM sequence items.
 
 Maintaining these twin representations manually or via ad-hoc scripts introduces silent verification gaps. Existing open-source tools address one direction or one abstraction layer. Verilator~\cite{snyder2020verilator} compiles SystemVerilog into C++ simulation models optimized for cycle execution rather than human-readable UVM-SystemC classes or CRAVE constraints, and provides no reverse C++-to-SystemVerilog path. Synthesis and hardware compiler frameworks such as Yosys~\cite{wolf2013yosys}, LLHD~\cite{schuiki2020llhd}, and CIRCT~\cite{lattner2021mlir,circt2024} represent structural netlists and behavioral RTL, but omit dynamic verification constructs including \code{rand}/\code{randc} constraints, weighted \code{dist} clauses, functional coverage crosses, UVM register abstraction layer (RAL) maps, and \code{fork}/\code{join\_any}/\code{disable fork} process groups. Conversely, feeding SystemVerilog VIPs to general-purpose large language models produces plausible C++ syntax whose bitvector widths, signedness, or constraint implications subtly diverge from IEEE~1800 rules.
 
@@ -225,7 +225,7 @@ Finally, to allow downstream formal verification engines such as \code{InFormal}
 \section{Translation Validation and C2RTL Equivalence}
 \label{sec:equiv}
 
-Every \code{svcc} compilation can be audited statically and formally before code enters a repository~\cite{kubavat2026evidence}:
+Every \code{svcc} compilation can be audited statically and formally before code enters a repository:
 \begin{enumerate}
 \item \textbf{Dual compiler and semantic lint gate.} Emitted C++17 headers are type-checked by \code{clang++ -std=c++17 -Wall -Wextra -Werror} against both lightweight open-source SystemC/UVM/CRAVE/FC4SC shims and live Accellera libraries; emitted SystemVerilog is elaborated by \code{svlang} and checked against \code{svlang-lint}'s \code{formal-ready} ruleset.
 \item \textbf{\code{QF\_BV} CRV, Enum, and \code{dist} miter.} For any pair of lowered classes $(C_{\text{lhs}}, C_{\text{rhs}})$, \code{svcc-equiv} declares each \code{rand}/\code{randc} field as an exact-width SMT-LIB2 bitvector \code{(\_ BitVec W)}, injects implicit IEEE~1800 enum legal-variant domain disjunctions, encodes hard constraints and positive-weight \code{dist} support sets using signed/unsigned bitvector operators, and queries Z3~\cite{demoura2008z3} on \code{(assert (xor c\_lhs c\_rhs))}. An \code{unsat} result proves identical solution sets across all $2^{\sum W_i}$ assignments; \code{sat} returns a concrete counterexample transaction.
@@ -236,7 +236,7 @@ Every \code{svcc} compilation can be audited statically and formally before code
 \section{Experimental Evaluation}
 \label{sec:eval}
 
-We evaluate \code{svcc} on an Apple Silicon macOS workstation (arm64, Rust~1.93.0 \code{-{}-release}, Apple \code{clang++}~21.0.0, Z3~4.13, pinned \code{svlang} commit \code{478a0d10}, and live SystemC~3.0.3 / UVM-SystemC / CRAVE / FC4SC \code{development} libraries~\cite{kubavat2026scbench,kubavat2026evidence}). All corpus generators, live C++17 probes, and JSON outputs are reproducible via \code{benchmarks/run\_benchmarks.py} and \code{benchmarks/run\_m4\_extended.py}. We investigate five research questions:
+We evaluate \code{svcc} on an Apple Silicon macOS workstation (arm64, Rust~1.93.0 \code{-{}-release}, Apple \code{clang++}~21.0.0, Z3~4.13, pinned \code{svlang} commit \code{478a0d10}, and live SystemC~3.0.3 / UVM-SystemC / CRAVE / FC4SC \code{development} libraries~\cite{kubavat2026scbench}). All corpus generators, live C++17 probes, and JSON outputs are reproducible via \code{benchmarks/run\_benchmarks.py} and \code{benchmarks/run\_m4\_extended.py}. We investigate five research questions:
 \begin{itemize}
 \item \textbf{RQ1 (Bidirectional Fidelity, C2RTL SEC, and Speed):} Does \code{svcc} preserve compilation validity and formal equivalence across diverse UVM VIPs, RAL+SVA blocks, and pipelined RTL/C2RTL pairs at interactive latency?
 \item \textbf{RQ2 (Defect Sensitivity and Equivalent-Rewrite Specificity):} Does formal translation validation catch subtle semantic bugs across CRV, SVA, UCIS, and RTL while avoiding false alarms on non-trivial equivalent rewrites?
@@ -399,7 +399,7 @@ Finally, auditing 12 unmodified external SystemVerilog files totaling 1,515~LOC 
 
 By unifying UVM constrained-random verification, functional coverage, Preponed clocking, concurrent SVA assertion and cover observers, and synthesizable RTL/C2RTL datapaths in \code{UVIR} under fast Z3 and Btor2 translation validation, \code{svcc} enables hardware engineers and coding agents to iterate at C++17 compile speeds without sacrificing IEEE~1800 sign-off equivalence.
 
-\IEEEtriggeratref{21}
+\IEEEtriggeratref{20}
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
 
