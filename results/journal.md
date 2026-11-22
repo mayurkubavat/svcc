@@ -195,4 +195,25 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `systemc`: `development 9767bff (3.0.3) in ~/.local/opt/accellera-svcc`
   - `verilator`: `5.052`
 - **Notes**: What a pass means and what it assumes is in docs/formal_gates.md: two-state reference (X reads 0, division by zero yields 0), svlang netlist as the meaning of SV on both sides, one clock with a synchronous view of asynchronous reset, svcc's own model of C++ and SystemC integer semantics (checked against SystemC 3.0.3 with a probe and by the mutation check, not a compiler front end). Only 17 of 281 mutants change behaviour, so the mutation check is a small sample. The UVM-side gates were not re-examined. Paper text and benchmarks/results/m3_benchmark_summary.json still describe the removed gate and were not regenerated. The earlier roundtrip-check verdicts for RTL in this log (EquivalentUnsat from the textual miter) did not examine the generated C++ and should not be cited as proofs of it.
+## [2026-11-22T21:25:32+00:00] `M5.1-typed-rtl-real-designs` — Typed RTL path stressed on 15 open-source designs (2,184 modules) against Verilator
+- **Commit**: `7c85167` (`Linux-x86_64`, `unknown`)
+- **Command**: `SYSTEMC_HOME=$HOME/.local/opt/accellera-svcc/systemc ./scripts/check.sh && python3 benchmarks/rtl_stress/run_stress.py --census-tool <svlang>/tools/quality --corpus <rtl-census> --stage cosim --steps 3000`
+- **Measured Metrics**:
+  - `converted`: `1191`
+  - `cosim_match`: `1170`
+  - `cosim_mismatch`: `14`
+  - `cosim_mismatch_unexplained`: `4`
+  - `cosim_not_built`: `7`
+  - `cpp_compiles`: `1191`
+  - `memout_or_timeout`: `13`
+  - `modules`: `2184`
+  - `repo_corpus_cosim`: `20/20`
+  - `svcc_rejects`: `763`
+  - `svcc_silent_bugs_fixed`: `3`
+  - `svlang`: `478a0d1`
+  - `svlang_defects_found`: `3`
+  - `svlang_rejects`: `217`
+  - `systemc`: `development 9767bff`
+  - `verilator`: `5.052`
+- **Notes**: See benchmarks/results/rtl_stress.md. Caliptra was re-run after the last fix and merged into the result. Remaining mismatches: 3 svlang parameter fill literal, 4 derived or generated clocks, 2 reference-side, 1 out-of-range under placeholder parameters, 4 unexplained (cvfpu).
 
