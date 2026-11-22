@@ -1,5 +1,5 @@
 // Array elements driven by different processes (each element has its own writer), a chain
-// through the elements, and a latch-gated clock reaching a register through logic.
+// through the elements, a clock enable, and a register on a buffered copy of the clock.
 module array_elems (
   input  logic       clk,
   input  logic       gate_en,
@@ -16,11 +16,9 @@ module array_elems (
   assign stage[2][3:2] = stage[0][1:0];
   assign y = stage[2];
 
-  logic en_q;
-  logic gclk;
-  always_latch if (!clk) en_q = gate_en;
-  assign gclk = clk & en_q;
-  always_ff @(posedge gclk) q <= q + a;
+  // A clock enable. (A latch-gated clock is rejected by the converter: see
+  // `derived_clocks_fail_closed` in crates/svcc/tests/rtl_hdl.rs.)
+  always_ff @(posedge clk) if (gate_en) q <= q + a;
 
   // A register on a buffered copy of the clock must sample the same values as one on the
   // clock itself.

@@ -239,7 +239,8 @@ dependencies = [
 [[package]]
 name = "sv-aiger"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99026be37cb17393ef3bf548b0408613d67f35e9bed8a4b158e90622fdd992d5"
 dependencies = [
  "sv-btor2",
  "sv-netlist",
@@ -248,7 +249,8 @@ dependencies = [
 [[package]]
 name = "sv-btor2"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09f423c23d5ec7826559bfa755b169314f3f91506d7759ac7b64666d014fae38"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -257,12 +259,14 @@ dependencies = [
 [[package]]
 name = "sv-lexer"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30c6fa15a8a85d0a910a397fc659ad7a65cd5041fb3b9e25040dfbff92ba0b2a"
 
 [[package]]
 name = "sv-netlist"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad5be4238a4fbb0fa26632a77cb565be021b980dc92a6a4a59adb44097eac86f"
 dependencies = [
  "sv-semantic",
  "sv-syntax",
@@ -271,7 +275,8 @@ dependencies = [
 [[package]]
 name = "sv-preprocessor"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33738be010ec7b1ccbbdbd5f337d9a59b2ea0cf84f3cc5b5ae0502f2bf061449"
 dependencies = [
  "sv-lexer",
 ]
@@ -279,7 +284,8 @@ dependencies = [
 [[package]]
 name = "sv-semantic"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80452febc59acffc4d08a5149c26f72b791d243b134b21fff3be54638baa0b64"
 dependencies = [
  "sv-source",
  "sv-syntax",
@@ -288,12 +294,14 @@ dependencies = [
 [[package]]
 name = "sv-source"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b875d9291623bbe969f85e8c3031fb457171a419d97b0cc6e9ce9e4d39ed0311"
 
 [[package]]
 name = "sv-syntax"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f342dbccc5c82731c45dfe90194fcdc2c4d590ff7d6c64d6ebcc67870d4a4c34"
 dependencies = [
  "sv-lexer",
  "sv-preprocessor",
@@ -302,7 +310,8 @@ dependencies = [
 [[package]]
 name = "sv-yosys"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82deb256b664628cbd45a3406583ee859a00915268f3aba39a3db08516993b8c"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -399,7 +408,8 @@ dependencies = [
 [[package]]
 name = "svlang"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d5a3871892599bbfb5055ce9a73af81e4862550a07bbb8fbbf4d92bdfa2ae16"
 dependencies = [
  "sv-aiger",
  "sv-btor2",
@@ -415,7 +425,8 @@ dependencies = [
 [[package]]
 name = "svlang-lint"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99002675711f8bd50ef1cb8cca7badfa5befcdf8f59687a9644c6de7026704e3"
 dependencies = [
  "regex",
  "svlang",
@@ -425,7 +436,8 @@ dependencies = [
 [[package]]
 name = "svlang-model"
 version = "0.4.0"
-source = "git+https://github.com/mayurkubavat/svlang.git?rev=478a0d10a4e91ea8199d3179ee0a8fc111d1e692#478a0d10a4e91ea8199d3179ee0a8fc111d1e692"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6838806de3ccac5ddf21623cef5f4c9c0f186d97070b0783096855a2dbf5779c"
 dependencies = [
  "svlang",
 ]

@@ -116,6 +116,41 @@ fn undriven_output_is_an_error() {
 }
 
 #[test]
+fn derived_clocks_fail_closed() {
+    // A register on a clock made by combinational logic, by a blocking assignment in an
+    // edge-triggered block, or by an edge on an expression would run one delta cycle after
+    // the registers on the source clock and sample their new values. Each of these differed
+    // from Verilator before the check existed.
+    let cases: [(&str, &str, &str); 4] = [
+        ("gated", "module gated (input logic clk, input logic en, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic en_l, gclk;\n  logic [7:0] a;\n  always_latch if (!clk) en_l = en;\n  assign gclk = clk & en_l;\n  always_ff @(posedge clk) a <= d;\n  always_ff @(posedge gclk) g <= a;\n  assign q = a;\nendmodule\n", "combinational logic"),
+        ("gated_inst", "module ckg (input logic clk_i, input logic en_i, output logic clk_o);\n  logic en_l;\n  always_latch if (!clk_i) en_l = en_i;\n  assign clk_o = clk_i & en_l;\nendmodule\nmodule leaf (input logic ck, input logic [7:0] d, output logic [7:0] q);\n  always_ff @(posedge ck) q <= d;\nendmodule\nmodule gated_inst (input logic clk, input logic en, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic gclk; logic [7:0] a;\n  ckg u_g (.clk_i(clk), .en_i(en), .clk_o(gclk));\n  always_ff @(posedge clk) a <= d;\n  leaf u_l (.ck(gclk), .d(a), .q(g));\n  assign q = a;\nendmodule\n", "not a register output"),
+        ("divblk", "module divblk (input logic clk, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic div; logic [7:0] a;\n  initial div = 0;\n  always_ff @(posedge clk) div = ~div;\n  always_ff @(posedge clk) a <= d;\n  always_ff @(posedge div) g <= a;\n  assign q = a;\nendmodule\n", "blocking assignment"),
+        ("exprck", "module leafv (input logic [1:0] ck, input logic [7:0] d, output logic [7:0] q);\n  always_ff @(posedge ck[0]) q <= d;\nendmodule\nmodule exprck (input logic clk, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic [7:0] a;\n  always_ff @(posedge clk) a <= d;\n  leafv u_l (.ck({1'b0, clk}), .d(a), .q(g));\n  assign q = a;\nendmodule\n", "combinational logic"),
+    ];
+    for (name, src, why) in cases {
+        let err = svcc::sv_rtl_to_sc("t.sv", src, &[])
+            .expect_err(&format!("{name}: a derived clock must be rejected"));
+        assert!(err.message.contains("clock '"), "{name}: {err}");
+        assert!(err.message.contains(why), "{name}: {err}");
+    }
+}
+
+#[test]
+fn register_driven_clock_and_expression_reset_are_accepted() {
+    // A divider register written with nonblocking assignments changes after the update in
+    // both languages, and an asynchronous reset taken from a vector bit is read by level.
+    let code = convert(
+        "module m(input logic clk, input logic [1:0] rn, input logic [7:0] d, output logic [7:0] g);
+  logic div;
+  always_ff @(posedge clk or negedge rn[0]) if (!rn[0]) div <= 1'b0; else div <= ~div;
+  always_ff @(posedge div) g <= d;
+endmodule
+",
+    );
+    assert!(code.contains("SC_MODULE"), "{code}");
+}
+
+#[test]
 fn a_process_writes_back_only_its_own_array_elements() {
     // Element 1 is assigned in pieces, so it goes through a local copy; element 0 belongs
     // to another process and must not be written from here.

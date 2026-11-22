@@ -86,6 +86,8 @@ pub fn lower_elaborated(
         next_local: 0,
         m: ModState::default(),
         pass_through: HashMap::new(),
+        clock_ins: HashMap::new(),
+        reg_outs: HashMap::new(),
     };
     let mut tops = Vec::new();
     for &t in &design.tops {
@@ -227,6 +229,11 @@ struct Lowerer<'a> {
     m: ModState,
     /// Per module: output ports that are plain copies of an input port.
     pass_through: HashMap<String, HashMap<String, String>>,
+    /// Per module: input ports that clock a register, here or in an instance below.
+    clock_ins: HashMap<String, HashSet<String>>,
+    /// Per module: output ports driven directly by a register (nonblocking assignments in an
+    /// edge-triggered block). Only these, and input ports, may clock a register in a parent.
+    reg_outs: HashMap<String, HashSet<String>>,
 }
 
 fn ity(t: &RtlType) -> Option<Ty> {
@@ -727,7 +734,7 @@ impl<'a> Lowerer<'a> {
         }
 
         self.resolve_drivers(inst.loc);
-        self.follow_clock_aliases(&name);
+        self.follow_clock_aliases(&name, inst.loc);
         // A missing driver is only worth reporting when nothing was rejected before it.
         if self.errs.len() == errs_before {
             self.check_undriven(inst.loc);
@@ -1102,7 +1109,7 @@ impl<'a> Lowerer<'a> {
     /// A signal write takes one delta cycle, so a register clocked by the copy would run one
     /// delta after the registers on the source clock and sample their new values. In
     /// SystemVerilog the copy settles before nonblocking updates, so both sample old values.
-    fn follow_clock_aliases(&mut self, module_name: &str) {
+    fn follow_clock_aliases(&mut self, module_name: &str, loc: Loc) {
         // sig -> the signal it is a plain copy of.
         let mut alias: HashMap<String, String> = HashMap::new();
         for p in &self.m.processes {
@@ -1170,6 +1177,177 @@ impl<'a> Lowerer<'a> {
             }
         }
         self.pass_through.insert(module_name.to_string(), pass);
+        self.check_clock_sources(module_name, loc, &resolve);
+    }
+
+    /// Fail-closed check: a register may only be clocked by an input port (through plain
+    /// copies) or by a signal that is itself a register output.
+    ///
+    /// A signal write takes one delta cycle. A clock produced by combinational logic (a
+    /// clock-gating cell, an edge on an expression) or by a blocking assignment in an
+    /// edge-triggered block therefore reaches its registers one delta after the registers on
+    /// the source clock, which have already been updated; in SystemVerilog the derived clock
+    /// settles before any nonblocking update. The converted design would sample different
+    /// values without any diagnostic, so it is rejected. A clock driven by a nonblocking
+    /// assignment (a divider register) changes after the update in both languages and is
+    /// accepted. Asynchronous set and reset edges are not checked: the block reads their
+    /// level, so a delta of delay does not change the value the register settles to.
+    fn check_clock_sources(
+        &mut self,
+        module_name: &str,
+        loc: Loc,
+        resolve: &dyn Fn(&str) -> String,
+    ) {
+        // Helper signals for edges on expressions, with the signals their expression reads.
+        let glue: HashSet<&String> = self.m.edge_glue.values().collect();
+        let mut glue_reads: HashMap<String, HashSet<String>> = HashMap::new();
+        for p in &self.m.processes {
+            if matches!(p.kind, ProcKind::Comb) {
+                for k in driver_keys(&p.body) {
+                    if glue.contains(&k) {
+                        glue_reads.insert(k, read_sigs(&p.body));
+                    }
+                }
+            }
+        }
+        // Every use of a signal as a clock: (signal, where).
+        let mut uses: Vec<(String, String)> = Vec::new();
+        for p in &self.m.processes {
+            let ProcKind::Seq { edges } = &p.kind else {
+                continue;
+            };
+            let reads = read_sigs(&p.body);
+            let is_ctrl = |e: &hdl::Edge| {
+                e.is_async_ctrl
+                    || glue_reads
+                        .get(&e.sig)
+                        .is_some_and(|r| !r.is_empty() && r.is_subset(&reads))
+            };
+            let all_ctrl = edges.iter().all(is_ctrl);
+            for e in edges {
+                if all_ctrl || !is_ctrl(e) {
+                    uses.push((e.sig.clone(), format!("the block at line {}", p.line)));
+                }
+            }
+        }
+        for inst in &self.m.instances {
+            let Some(clk_ports) = self.clock_ins.get(&inst.module) else {
+                continue;
+            };
+            for c in inst.conns.iter().filter(|c| clk_ports.contains(&c.port)) {
+                uses.push((
+                    resolve(&c.sig),
+                    format!("port '{}' of instance '{}'", c.port, inst.name),
+                ));
+            }
+        }
+
+        // What drives a signal, as far as clocking is concerned.
+        let classify = |sig: &str| -> Result<bool, String> {
+            // Ok(true): an input port. Ok(false): a register output, or no driver here.
+            if self
+                .m
+                .ports
+                .iter()
+                .any(|p| p.name == sig && p.dir == Dir::In)
+            {
+                return Ok(true);
+            }
+            for p in &self.m.processes {
+                let drives = driver_keys(&p.body)
+                    .iter()
+                    .any(|k| k.split('[').next().unwrap_or(k) == sig);
+                if !drives {
+                    continue;
+                }
+                if matches!(p.kind, ProcKind::Comb) {
+                    return Err(
+                        "is driven by combinational logic (a gated or derived clock, \
+                                or an edge on an expression)"
+                            .into(),
+                    );
+                }
+                let mut blocking = false;
+                walk_stmts(&p.body, &mut |s| {
+                    if let Stmt::Assign {
+                        lhs,
+                        nonblocking: false,
+                        ..
+                    } = s
+                    {
+                        if let LvBase::Sig { name, .. } | LvBase::Elem { name, .. } = &lhs.base {
+                            blocking |= name == sig;
+                        }
+                    }
+                });
+                if blocking {
+                    return Err(
+                        "is written with a blocking assignment in an edge-triggered block".into(),
+                    );
+                }
+            }
+            for inst in &self.m.instances {
+                for c in inst.conns.iter().filter(|c| c.sig == sig) {
+                    let child = self.out.iter().find(|m| m.name == inst.module);
+                    let is_out = child
+                        .and_then(|m| m.ports.iter().find(|p| p.name == c.port))
+                        .is_some_and(|p| p.dir == Dir::Out);
+                    let is_reg = self
+                        .reg_outs
+                        .get(&inst.module)
+                        .is_some_and(|r| r.contains(&c.port));
+                    if is_out && !is_reg {
+                        return Err(format!(
+                            "is driven by output '{}' of instance '{}', which is not a \
+                             register output",
+                            c.port, inst.name
+                        ));
+                    }
+                }
+            }
+            Ok(false)
+        };
+
+        let mut clock_ins: HashSet<String> = HashSet::new();
+        let mut errors: Vec<String> = Vec::new();
+        for (sig, place) in &uses {
+            match classify(sig) {
+                Ok(true) => {
+                    clock_ins.insert(sig.clone());
+                }
+                Ok(false) => {}
+                Err(why) => {
+                    let msg = format!(
+                        "clock '{sig}' of {place} {why}; registers on it would run one delta \
+                         cycle after registers on the source clock, which is not supported"
+                    );
+                    if !errors.contains(&msg) {
+                        errors.push(msg);
+                    }
+                }
+            }
+        }
+        let mut reg_outs: HashSet<String> = HashSet::new();
+        for port in self.m.ports.iter().filter(|p| p.dir == Dir::Out) {
+            let src = resolve(&port.name);
+            let has_driver = self.m.processes.iter().any(|p| {
+                driver_keys(&p.body)
+                    .iter()
+                    .any(|k| k.split('[').next().unwrap_or(k) == src)
+            }) || self
+                .m
+                .instances
+                .iter()
+                .any(|i| i.conns.iter().any(|c| c.sig == src));
+            if has_driver && classify(&src) == Ok(false) {
+                reg_outs.insert(port.name.clone());
+            }
+        }
+        self.clock_ins.insert(module_name.to_string(), clock_ins);
+        self.reg_outs.insert(module_name.to_string(), reg_outs);
+        for e in errors {
+            self.err(loc, e);
+        }
     }
 
     /// Fail-closed check: a signal that is read, or an output port, with no driver at all.
