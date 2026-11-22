@@ -233,3 +233,18 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `rtl_prove_proved`: `43/46, all by induction`
 - **Notes**: The stress corpus (outside the repository, multi-file) was not put to the proof; its evidence is the simulation in benchmarks/results/rtl_stress.md. Rebase conflicts: cosim.rs, lib.rs, main.rs, docs/rtl_subset.md (kept both sides), result logs (both entries kept).
 
+## [2026-11-22T23:26:12+00:00] `R0.1-release` — svcc 0.1.0 release candidate on svlang 0.5.1 with derived-clock fail-closed check
+- **Commit**: `9cce2b3` (`Darwin-arm64`, `rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)`)
+- **Command**: `SYSTEMC_HOME=~/.local/opt/accellera-svcc/systemc ./scripts/check.sh; run_stress.py --stage cosim --steps 3000 (linux, 16 designs)`
+- **Measured Metrics**:
+  - `check_sh`: `pass`
+  - `lfsr_with_svlang_0_5_1`: `3/3 match`
+  - `repo_cosim`: `20/20`
+  - `rtl_prove_not_covered`: `3`
+  - `rtl_prove_proved`: `43`
+  - `stress_match`: `1128`
+  - `stress_mismatch_svlang_0_4`: `10`
+  - `stress_modules`: `2184`
+  - `stress_rejected_by_clock_check`: `68`
+- **Notes**: Clock check rejects gated/derived/blocking-assigned/expression clocks. Remaining mismatches with svlang 0.5.1: popcount, prim_pad_attr (reference), stream_mux (placeholder parameter), fpnew_cast_multi and fpnew_opgroup_block x2 (unexplained).
+

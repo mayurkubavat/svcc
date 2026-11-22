@@ -72,18 +72,17 @@ and `svcc.__version__`.
   it one delta cycle late. Signals written by blocks on different clocks are rejected.
 - **Proof model.** One clock; an asynchronous reset is treated as taking effect at the clock
   step. Designs with several clocks are simulated, not proved.
-- **Front end.** `svlang` defects can affect both sides of a proof alike. Three are known in
-  the elaborated model (a generate block under `if (|PARAM)` dropped, a sized parameter
-  default `'1` read as 1, a select on a struct member with its own range); the first two
-  usually end in an "undriven" error.
+- **Front end.** `svlang` is the meaning of SystemVerilog for both the conversion and the
+  proof, so an `svlang` defect can affect both sides of a proof alike. This release uses
+  svlang 0.5.1, which fixes the three elaboration defects the stress run found.
 - **Not supported:** interfaces, `inout`, unpacked structs, hierarchical references, tasks,
   `foreach`, arrays local to a process, gate primitives, among others (see the subset page).
 - **Known differences on real designs.** In the 2,184-module stress run, the modules that
-  still differ from Verilator are: `lfsr`/`cc_lfsr` (svlang reads a sized parameter default
-  `'1` as 1; fixed in svlang 0.5.1), `popcount` and `prim_pad_attr` (the Verilator reference
+  still differ from Verilator are `popcount` and `prim_pad_attr` (the Verilator reference
   is wrong or sees different source), `stream_mux` with a placeholder parameter of 0
   (undefined in two-state), and `fpnew_cast_multi` / `fpnew_opgroup_block` from cvfpu, which
-  are not yet explained.
+  are not yet explained. (`lfsr` and `cc_lfsr` differed because of an svlang defect fixed
+  in svlang 0.5.1, which this release uses; they now match.)
 - **Other directions.** The UVM/verification-class translation (`sv2sc`, `sc2sv`) and the
   SystemC-to-SystemVerilog direction ship in this package but have not had the same scrutiny
   on real code as the RTL path. Treat their output as a starting point.
