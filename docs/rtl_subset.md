@@ -29,6 +29,7 @@ location. Constructs skipped on purpose are reported as notes.
 | :--- | :--- |
 | `module` (one per parameter set) | `SC_MODULE` |
 | `input` / `output` port | `sc_in<T>` / `sc_out<T>` |
+| unpacked array port | `sc_vector<sc_in<T>>` / `sc_vector<sc_out<T>>` |
 | variable, `wire` | `sc_signal<T>` |
 | unpacked array of packed elements (memory) | `sc_vector<sc_signal<T>>` |
 | 1-bit scalar | `bool` |
@@ -42,9 +43,10 @@ location. Constructs skipped on purpose are reported as notes.
 | module instance | member object, ports bound in the constructor |
 | expression on a port, or a select on an output | glue signal plus a small `SC_METHOD` |
 
-Supported statements: `if`, `case`, `casez`, `casex` (wildcards from constant items), `for`
-and `while`, blocking and nonblocking assignment, compound assignment, `++` / `--`,
-concatenation on the left-hand side, local variable declarations, `return`.
+Supported statements: `if`, `case`, `casez`, `casex` (wildcards from constant items),
+`case inside` (values, ranges, wildcard items), `for` and `while`, blocking and nonblocking assignment, compound assignment, `++` / `--`,
+concatenation on the left-hand side, whole-array assignment (array copy or assignment
+pattern), local variable declarations, `return`.
 
 Supported expressions: all arithmetic, bitwise, reduction, logical, relational and shift
 operators, `?:`, `inside` with constant items, concatenation and replication, bit, part and
@@ -62,6 +64,14 @@ constant (`$clog2`, `$bits`, parameters, enum members).
 - **Several blocks driving one signal.** A SystemC signal has one writer. Blocks (or instance
   outputs) that drive different bits of the same signal are merged into one process. Blocks
   with different triggers that share a signal are an error.
+- **Edges on expressions and internal signals.** An edge on a struct member, a vector bit or
+  any expression triggers on a 1-bit helper signal driven with that expression. A register
+  clocked by an internal signal uses that signal's edge event.
+- **Arrays with several writers.** Each element is its own signal. A process writes back only
+  the elements it assigns; elements assigned through a computed index make the whole array
+  belong to one process.
+- **No driver.** A signal that is read, or an output port, with no driver at all is an error.
+  In a two-state model it would silently read 0.
 - **Two-state.** `x` and `z` map to `0`. Reads outside a vector or array give `0`; writes
   outside are dropped.
 - **Division and modulo by zero** give `0`.
@@ -71,8 +81,8 @@ constant (`$clog2`, `$bits`, parameters, enum members).
 ## Not supported (reported as errors)
 
 `inout` and `ref` ports, interfaces and modports, tri-state and net types other than `wire`,
-unpacked structs and unions, whole-array assignment, arrays local to a process, `foreach`,
-`repeat`, `forever`, `do while`, `case inside`, tasks, functions with `output` arguments,
+unpacked structs and unions, arrays local to a process, array ports connected to anything but
+a whole array, `foreach`, `repeat`, `forever`, `do while`, tasks, functions with `output` arguments,
 recursive functions, hierarchical references, `**` with a non-constant operand, gate
 primitives and UDPs, initializers that are not constant.
 
@@ -83,6 +93,12 @@ Known limits of the current mapping:
 
 - Variables declared inside a process are created anew on each activation. A static local
   that is read before it is written is not preserved across activations.
+- A blocking assignment becomes visible to *other* processes one delta cycle later, like any
+  signal write. Clock or reset generators that rely on a blocking assignment in an
+  edge-triggered block taking effect before nonblocking updates of the same edge are not
+  reproduced (seen in `cc_clk_int_div`, `scr1_scu`).
+- A signal written by two edge-triggered blocks with different clocks (a dual-clock memory)
+  is rejected.
 - Parameters are resolved to constants. The output is not a C++ template.
 - A file with several top modules is converted as several tops; multi-file `-f` builds are
   not wired into the command line yet.
@@ -98,6 +114,16 @@ edge against a simultaneous data change. Both models run two-state
 
 `scripts/rtl_cosim.sh` runs this over `testdata/rtl` (one design per construct group) and is
 step 7 of `scripts/check.sh`. It needs `verilator` on `PATH` and `SYSTEMC_HOME`.
+
+Inputs that reach an edge sensitivity, directly or through gating logic and instance
+boundaries, are driven as clocks: one of them changes per step, alone. Asynchronous controls
+start inactive, are asserted at step 1 and released at step 3. Verilator runs with
+`--no-assert`, because the design's own assertions about its environment do not hold under
+random stimulus.
+
+`benchmarks/rtl_stress/run_stress.py` runs the same three stages (convert, compile against
+SystemC, simulate against Verilator) over every module of a corpus of open-source designs
+kept outside this repository; `benchmarks/results/rtl_stress.md` holds the last result.
 
 This is simulation evidence over random stimulus, not a proof.
 

@@ -79,6 +79,14 @@ pub fn sv_rtl_to_sc(
     Ok((code, design))
 }
 
+/// As [`sv_rtl_to_sc`], for a multi-file design given as command-line style arguments (source
+/// files, `-f`, `+incdir+`, `+define+`, `-G name=value`, `-top module`).
+pub fn sv_rtl_args_to_sc(args: &[String]) -> Result<(String, svcc_ir::hdl::Design), SvccError> {
+    let design = svcc_front_sv::hdl_lower::lower_hdl_from_args(args)?;
+    let code = svcc_emit_sc::hdl_emit::emit_hdl_design(&design)?;
+    Ok((code, design))
+}
+
 /// Compiles C++17 SystemC UVM/CRAVE/FC4SC classes into `svlang`-verified IEEE 1800-2023
 /// SystemVerilog.
 ///

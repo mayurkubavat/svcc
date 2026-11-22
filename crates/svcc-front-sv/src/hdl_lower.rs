@@ -24,6 +24,8 @@ use svcc_svlang::elab::{
 use svcc_svlang::syntax::{Compilation, NodeId, Severity, SyntaxKind, Tree};
 
 const STAGE: &str = "svcc-front-sv/hdl";
+/// Errors reported by `svlang` itself (parse, semantic, elaboration) before lowering starts.
+const FRONT_STAGE: &str = "svcc-front-sv/svlang";
 
 /// Parses, elaborates and lowers SystemVerilog RTL source into a typed [`hdl::Design`].
 ///
@@ -46,7 +48,24 @@ pub fn lower_hdl_design(
         .map(|d| format!("{}:{}:{}: {}", d.file, d.line, d.column, d.message))
         .collect();
     if !errs.is_empty() {
-        return Err(SvccError::new(STAGE, join_errs(&errs)));
+        return Err(SvccError::new(FRONT_STAGE, join_errs(&errs)));
+    }
+    lower_elaborated(comp.trees(), &elab.design)
+}
+
+/// As [`lower_hdl_design`], for a design given as command-line style arguments: source files,
+/// `-f <filelist>`, `+incdir+<dir>`, `+define+<name>[=<value>]`, `-G <name>=<value>` and
+/// `-top <module>`.
+pub fn lower_hdl_from_args(args: &[String]) -> Result<hdl::Design, SvccError> {
+    let comp = Compilation::from_args(args).map_err(|e| SvccError::new(STAGE, e.to_string()))?;
+    let (diags, elab) = comp.check();
+    let errs: Vec<String> = diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| format!("{}:{}:{}: {}", d.file, d.line, d.column, d.message))
+        .collect();
+    if !errs.is_empty() {
+        return Err(SvccError::new(FRONT_STAGE, join_errs(&errs)));
     }
     lower_elaborated(comp.trees(), &elab.design)
 }
@@ -66,6 +85,7 @@ pub fn lower_elaborated(
         used_module_names: HashSet::new(),
         next_local: 0,
         m: ModState::default(),
+        pass_through: HashMap::new(),
     };
     let mut tops = Vec::new();
     for &t in &design.tops {
@@ -125,6 +145,8 @@ struct ModState {
     instances: Vec<hdl::Instance>,
     func_names: HashMap<(usize, NodeId, String), String>,
     func_stack: Vec<(usize, NodeId, String)>,
+    /// Helper signals created for edges on expressions, by expression.
+    edge_glue: HashMap<String, String>,
 }
 
 impl ModState {
@@ -203,6 +225,8 @@ struct Lowerer<'a> {
     used_module_names: HashSet<String>,
     next_local: u32,
     m: ModState,
+    /// Per module: output ports that are plain copies of an input port.
+    pass_through: HashMap<String, HashMap<String, String>>,
 }
 
 fn ity(t: &RtlType) -> Option<Ty> {
@@ -500,17 +524,27 @@ impl<'a> Lowerer<'a> {
 
         let saved = std::mem::take(&mut self.m);
         self.m.used.insert(name.clone());
+        let errs_before = self.errs.len();
 
         // Ports and signals.
         for &sid in &inst.symbols {
             let sym = self.design.symbol(sid);
             match &sym.kind {
                 SymbolKind::Port { dir, .. } => {
-                    let Some(ty) = ity(&sym.ty) else {
+                    let (elem_ty, dims): (&RtlType, Vec<u32>) = match &sym.ty {
+                        RtlType::UnpackedArray { elem, dims } => (
+                            elem,
+                            dims.iter()
+                                .map(|(l, r)| (l.abs_diff(*r) + 1) as u32)
+                                .collect(),
+                        ),
+                        other => (other, Vec::new()),
+                    };
+                    let Some(ty) = ity(elem_ty) else {
                         self.err(
                             sym.loc,
                             format!(
-                                "port '{}' has a type that is not a packed integral type",
+                                "port '{}' has a type that is not a packed integral type (or an unpacked array of one)",
                                 sym.name
                             ),
                         );
@@ -535,7 +569,7 @@ impl<'a> Lowerer<'a> {
                         SigInfo {
                             ty,
                             scalar,
-                            dims: Vec::new(),
+                            dims: dims.clone(),
                             is_input: d == Dir::In,
                         },
                     );
@@ -544,6 +578,7 @@ impl<'a> Lowerer<'a> {
                         dir: d,
                         ty,
                         scalar,
+                        dims,
                     });
                 }
                 SymbolKind::Var | SymbolKind::Net { .. } => {
@@ -692,6 +727,11 @@ impl<'a> Lowerer<'a> {
         }
 
         self.resolve_drivers(inst.loc);
+        self.follow_clock_aliases(&name);
+        // A missing driver is only worth reporting when nothing was rejected before it.
+        if self.errs.len() == errs_before {
+            self.check_undriven(inst.loc);
+        }
 
         let m = std::mem::replace(&mut self.m, saved);
         let file = self
@@ -745,14 +785,31 @@ impl<'a> Lowerer<'a> {
         nm
     }
 
+    /// Marks a glue signal as deliberately constant 0 (an unconnected input).
+    fn tie_off(&mut self, name: &str, ty: Ty) {
+        if let Some(s) = self.m.signals.iter_mut().find(|s| s.name == name) {
+            s.init = Some(vec![0; ty.w.div_ceil(64) as usize]);
+        }
+    }
+
     fn lower_child(&mut self, parent: InstanceId, child_id: InstanceId, child_mod: &str) {
         let child = self.design.instance(child_id);
+        // A member may not carry the name of a class used in the same scope.
+        self.m.used.insert(sanitize(child_mod));
         let inst_name = self.m.unique(&child.rel_path);
         let mut conns: Vec<Conn> = Vec::new();
         let mut done: HashSet<SymbolId> = HashSet::new();
         let child_ports: Vec<SymbolId> = child.ports.clone();
 
+        // Resolve each connection to its port. A `.*` connection stands for every port that
+        // is not connected explicitly, each bound to the parent signal of the same name.
+        let mut plan: Vec<(SymbolId, &svcc_svlang::elab::PortConn)> = Vec::new();
+        let mut wildcard = None;
         for pc in &child.port_conns {
+            if pc.wildcard {
+                wildcard = Some(pc);
+                continue;
+            }
             let port_sid = match &pc.port_name {
                 Some(n) => child_ports
                     .iter()
@@ -760,11 +817,70 @@ impl<'a> Lowerer<'a> {
                     .find(|s| self.design.symbol(*s).name == *n),
                 None => child_ports.get(pc.arg_index).copied(),
             };
-            let Some(port_sid) = port_sid else {
-                self.err(pc.loc, "port connection does not match a port");
-                continue;
-            };
+            match port_sid {
+                Some(p) => plan.push((p, pc)),
+                None => self.err(pc.loc, "port connection does not match a port"),
+            }
+        }
+        if let Some(w) = wildcard {
+            for &ps in &child_ports {
+                if !plan.iter().any(|(p, _)| *p == ps) {
+                    plan.push((ps, w));
+                }
+            }
+        }
+        for (port_sid, pc) in plan {
             let psym = self.design.symbol(port_sid);
+            if let RtlType::UnpackedArray { elem, dims } = &psym.ty {
+                // An array port binds to a whole array of the same shape and element type.
+                done.insert(port_sid);
+                let pdims: Vec<u32> = dims
+                    .iter()
+                    .map(|(l, r)| (l.abs_diff(*r) + 1) as u32)
+                    .collect();
+                let ctx = Ctx::new(parent, &pc.scope_prefix, &pc.gen_consts);
+                let mut arena = ExprArena::new();
+                let bound = match pc.expr {
+                    Some((tree, node)) => {
+                        self.with_binder(&ctx, &mut arena, |b| b.bind_self(tree, node))
+                    }
+                    None => self
+                        .design
+                        .instance(parent)
+                        .resolve_lexical(&pc.scope_prefix, &psym.name)
+                        .map(|sid| {
+                            let st = self.design.symbol(sid).ty.clone();
+                            arena.alloc(ExprKind::Symbol(sid), st, None, pc.loc)
+                        }),
+                };
+                let target = bound.and_then(|b| match &arena.get(b).kind {
+                    ExprKind::Symbol(sid) => self.sym_name(*sid, &ctx, pc.loc),
+                    _ => None,
+                });
+                let ok = target
+                    .as_ref()
+                    .and_then(|n| self.m.sigs.get(n))
+                    .is_some_and(|i| {
+                        i.dims == pdims
+                            && Some(i.ty) == ity(elem)
+                            && i.scalar == (psym.packed_bounds.is_none() && i.ty == Ty::BIT)
+                    });
+                match (target, ok) {
+                    (Some(sig), true) => conns.push(Conn {
+                        port: sanitize(&psym.name),
+                        sig,
+                        elem: Vec::new(),
+                    }),
+                    _ => self.err(
+                        pc.loc,
+                        format!(
+                            "array port '{}' must be connected to a whole array of the same shape and element type",
+                            psym.name
+                        ),
+                    ),
+                }
+                continue;
+            }
             let Some(pty) = ity(&psym.ty) else { continue };
             let pscalar = psym.packed_bounds.is_none() && pty == Ty::BIT;
             let is_in = matches!(
@@ -819,6 +935,7 @@ impl<'a> Lowerer<'a> {
             let Some(bound) = bound else {
                 // Unconnected: inputs read 0, outputs are left open.
                 let g = self.add_glue(&format!("{inst_name}_{pname}"), pty, pscalar);
+                self.tie_off(&g, pty);
                 conns.push(Conn {
                     port: pname,
                     sig: g,
@@ -919,10 +1036,17 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             let psym = self.design.symbol(ps);
-            let Some(pty) = ity(&psym.ty) else { continue };
+            let Some(pty) = ity(&psym.ty) else {
+                self.err(
+                    child.loc,
+                    format!("array port '{}' is left unconnected", psym.name),
+                );
+                continue;
+            };
             let pscalar = psym.packed_bounds.is_none() && pty == Ty::BIT;
             let pname = sanitize(&psym.name);
             let g = self.add_glue(&format!("{inst_name}_{pname}"), pty, pscalar);
+            self.tie_off(&g, pty);
             conns.push(Conn {
                 port: pname,
                 sig: g,
@@ -972,6 +1096,130 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    /// Edge sensitivities on a signal that is only a copy of another signal (`assign gclk =
+    /// clk;`, or the output of a buffer instance) are moved to the source signal.
+    ///
+    /// A signal write takes one delta cycle, so a register clocked by the copy would run one
+    /// delta after the registers on the source clock and sample their new values. In
+    /// SystemVerilog the copy settles before nonblocking updates, so both sample old values.
+    fn follow_clock_aliases(&mut self, module_name: &str) {
+        // sig -> the signal it is a plain copy of.
+        let mut alias: HashMap<String, String> = HashMap::new();
+        for p in &self.m.processes {
+            if let (
+                ProcKind::Comb,
+                [Stmt::Assign {
+                    lhs:
+                        Lval {
+                            base: LvBase::Sig { name, ty },
+                            sel: None,
+                        },
+                    rhs: Expr::Sig { name: src, ty: sty },
+                    ..
+                }],
+            ) = (&p.kind, p.body.as_slice())
+            {
+                if ty == sty && p.merged_from == 1 {
+                    alias.insert(name.clone(), src.clone());
+                }
+            }
+        }
+        for inst in &self.m.instances {
+            let Some(pass) = self.pass_through.get(&inst.module) else {
+                continue;
+            };
+            for c in &inst.conns {
+                if let Some(src_port) = pass.get(&c.port) {
+                    if let Some(src) = inst.conns.iter().find(|x| x.port == *src_port) {
+                        if c.elem.is_empty() && src.elem.is_empty() {
+                            alias.insert(c.sig.clone(), src.sig.clone());
+                        }
+                    }
+                }
+            }
+        }
+        let resolve = |start: &str| -> String {
+            let mut cur = start.to_string();
+            for _ in 0..32 {
+                match alias.get(&cur) {
+                    Some(n) => cur = n.clone(),
+                    None => break,
+                }
+            }
+            cur
+        };
+        for p in &mut self.m.processes {
+            if let ProcKind::Seq { edges } = &mut p.kind {
+                for e in edges {
+                    e.sig = resolve(&e.sig);
+                }
+            }
+        }
+        // Output ports of this module that are plain copies of an input port.
+        let mut pass = HashMap::new();
+        for port in self.m.ports.iter().filter(|p| p.dir == Dir::Out) {
+            let src = resolve(&port.name);
+            if src != port.name
+                && self
+                    .m
+                    .ports
+                    .iter()
+                    .any(|p| p.name == src && p.dir == Dir::In)
+            {
+                pass.insert(port.name.clone(), src);
+            }
+        }
+        self.pass_through.insert(module_name.to_string(), pass);
+    }
+
+    /// Fail-closed check: a signal that is read, or an output port, with no driver at all.
+    /// In a two-state model it would silently read 0, and in practice it means a construct
+    /// that should have driven it was not elaborated (for example a generate block whose
+    /// condition the front end could not evaluate).
+    fn check_undriven(&mut self, loc: Loc) {
+        let mut driven: HashSet<String> = HashSet::new();
+        let mut read: HashSet<String> = HashSet::new();
+        for p in &self.m.processes {
+            for k in driver_keys(&p.body) {
+                driven.insert(k.split('[').next().unwrap_or(&k).to_string());
+            }
+            read.extend(read_sigs(&p.body));
+            if let ProcKind::Seq { edges } = &p.kind {
+                read.extend(edges.iter().map(|e| e.sig.clone()));
+            }
+        }
+        for f in &self.m.functions {
+            read.extend(read_sigs(&f.body));
+        }
+        for inst in &self.m.instances {
+            let child = self.out.iter().find(|m| m.name == inst.module);
+            for c in &inst.conns {
+                let is_out = child
+                    .and_then(|m| m.ports.iter().find(|p| p.name == c.port))
+                    .is_some_and(|p| p.dir == Dir::Out);
+                if is_out {
+                    driven.insert(c.sig.clone());
+                } else {
+                    read.insert(c.sig.clone());
+                }
+            }
+        }
+        let mut missing: Vec<String> = Vec::new();
+        for s in &self.m.signals {
+            if s.init.is_none() && read.contains(&s.name) && !driven.contains(&s.name) {
+                missing.push(format!("signal '{}' is read but never driven", s.name));
+            }
+        }
+        for p in &self.m.ports {
+            if p.dir == Dir::Out && !driven.contains(&p.name) {
+                missing.push(format!("output port '{}' is never driven", p.name));
+            }
+        }
+        for m in missing {
+            self.err(loc, m);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Driver analysis: several blocks driving parts of one signal are merged
     // into one process, because a SystemC signal has a single writer.
@@ -994,6 +1242,7 @@ impl<'a> Lowerer<'a> {
                 .enumerate()
                 .flat_map(|(ii, inst)| {
                     let out = &self.out;
+                    let sigs = &self.m.sigs;
                     inst.conns
                         .iter()
                         .enumerate()
@@ -1003,7 +1252,16 @@ impl<'a> Lowerer<'a> {
                                 .and_then(|m| m.ports.iter().find(|p| p.name == c.port))
                                 .is_some_and(|p| p.dir == Dir::Out)
                         })
-                        .map(move |(ci, c)| (ii, ci, conn_key(c)))
+                        .map(move |(ci, c)| {
+                            let whole_array = c.elem.is_empty()
+                                && sigs.get(&c.sig).is_some_and(|i| !i.dims.is_empty());
+                            let key = if whole_array {
+                                format!("{}[*]", c.sig)
+                            } else {
+                                conn_key(c)
+                            };
+                            (ii, ci, key)
+                        })
                 })
                 .collect();
             for (n, (ii, ci, key)) in child_out.iter().enumerate() {
@@ -1022,6 +1280,16 @@ impl<'a> Lowerer<'a> {
                     continue;
                 };
                 let conn = self.m.instances[*ii].conns[*ci].clone();
+                if conn.elem.is_empty() && !info.dims.is_empty() {
+                    self.err(
+                        loc,
+                        format!(
+                            "array '{}' is driven by an instance array port and by something else",
+                            conn.sig
+                        ),
+                    );
+                    break;
+                }
                 let iname = self.m.instances[*ii].name.clone();
                 let g = self.add_glue(&format!("{iname}_{}", conn.port), info.ty, info.scalar);
                 let lhs_base = if conn.elem.is_empty() {
@@ -1231,6 +1499,9 @@ impl<'a> Lowerer<'a> {
                 );
             }
             "always_comb" | "always_latch" => {
+                // Nonblocking assignments are legal in latch and combinational blocks; they
+                // update after the block, which is what a signal write does.
+                ctx.allow_nba = true;
                 let mut body = Vec::new();
                 self.stmt(item.tree, first, &mut ctx, &mut body);
                 self.push_proc(item, ProcKind::Comb, ctx, body, "comb");
@@ -1272,6 +1543,7 @@ impl<'a> Lowerer<'a> {
                     }
                     // `always @*` or a level-sensitive list: combinational. The complete
                     // read set is used as sensitivity, as synthesis does.
+                    ctx.allow_nba = true;
                     let mut body = Vec::new();
                     self.stmt(item.tree, body_node, &mut ctx, &mut body);
                     self.push_proc(item, ProcKind::Comb, ctx, body, "comb");
@@ -1306,9 +1578,61 @@ impl<'a> Lowerer<'a> {
                             posedge: pos,
                             is_async_ctrl: false,
                         }),
-                        _ => {
-                            self.err(item.loc, "edge event must be a plain 1-bit signal");
-                            return;
+                        other => {
+                            // An edge on an expression (a struct member, one bit of a
+                            // vector, ...): drive a 1-bit helper signal with it and
+                            // trigger on that. A wider expression triggers on its bit 0.
+                            let bit = if other.ty().w == 1 {
+                                coerce(other, Ty::BIT)
+                            } else {
+                                Expr::Slice {
+                                    base: Box::new(other),
+                                    lo: 0,
+                                    lo_dyn: None,
+                                    ty: Ty::BIT,
+                                }
+                            };
+                            // One helper per distinct expression, so blocks triggered by
+                            // the same expression share a trigger and can be merged.
+                            let key = format!("{bit:?}");
+                            if let Some(g) = self.m.edge_glue.get(&key) {
+                                edges.push(Edge {
+                                    sig: g.clone(),
+                                    posedge: pos,
+                                    is_async_ctrl: false,
+                                });
+                                continue;
+                            }
+                            let g = self.add_glue(
+                                &format!("edge_L{}_{}", item.loc.line, edges.len()),
+                                Ty::BIT,
+                                true,
+                            );
+                            self.m.edge_glue.insert(key, g.clone());
+                            let pname = self.m.unique(&format!("drive_{g}"));
+                            self.m.processes.push(Process {
+                                name: pname,
+                                kind: ProcKind::Comb,
+                                locals: Vec::new(),
+                                body: vec![Stmt::Assign {
+                                    lhs: Lval {
+                                        base: LvBase::Sig {
+                                            name: g.clone(),
+                                            ty: Ty::BIT,
+                                        },
+                                        sel: None,
+                                    },
+                                    rhs: bit,
+                                    nonblocking: false,
+                                }],
+                                merged_from: 1,
+                                line: item.loc.line,
+                            });
+                            edges.push(Edge {
+                                sig: g,
+                                posedge: pos,
+                                is_async_ctrl: false,
+                            });
                         }
                     }
                 }
@@ -1567,15 +1891,14 @@ impl<'a> Lowerer<'a> {
         let t = &self.trees[tree];
         let own = own_toks(t, node);
         let loc = self.node_loc(ctx, tree, node);
-        if own.contains(&"randcase") || own.contains(&"matches") || own.contains(&"inside") {
-            self.err(
-                loc,
-                "'case inside', pattern-matching case and randcase are not supported",
-            );
+        if own.contains(&"randcase") || own.contains(&"matches") {
+            self.err(loc, "pattern-matching case and randcase are not supported");
             return;
         }
+        let is_inside = own.contains(&"inside");
         let is_z = own.contains(&"casez");
-        let is_x = own.contains(&"casex");
+        // `case inside` compares with `==?`: x and z bits of an item are wildcards.
+        let is_x = own.contains(&"casex") || is_inside;
 
         // Split children into selector, item patterns and bodies.
         let mut sel_node = None;
@@ -1628,7 +1951,14 @@ impl<'a> Lowerer<'a> {
             let (mut w, mut s, _) = b.peek_self_shape(tree, sel_node)?;
             for (pats, _) in &branches {
                 for &p in pats {
-                    if let Some((pw, ps, _)) = b.peek_self_shape(tree, p) {
+                    if t.kind(p) == SyntaxKind::OpenRange {
+                        for q in t.children(p) {
+                            if let Some((pw, ps, _)) = b.peek_self_shape(tree, q) {
+                                w = w.max(pw);
+                                s = s && ps;
+                            }
+                        }
+                    } else if let Some((pw, ps, _)) = b.peek_self_shape(tree, p) {
                         w = w.max(pw);
                         s = s && ps;
                     }
@@ -1653,6 +1983,29 @@ impl<'a> Lowerer<'a> {
         for (pats, body_n) in branches {
             let mut ps = Vec::new();
             for p in pats {
+                if t.kind(p) == SyntaxKind::OpenRange {
+                    let ends: Vec<NodeId> = t
+                        .children(p)
+                        .filter(|&c| t.kind(c) != SyntaxKind::Attribute)
+                        .collect();
+                    if ends.len() != 2 || cs {
+                        self.err(
+                            loc,
+                            "range item in 'case inside' needs two bounds and an unsigned selector",
+                        );
+                        continue;
+                    }
+                    let bound = |lw: &mut Self, n: NodeId| {
+                        let mut a3 = ExprArena::new();
+                        let b =
+                            lw.with_binder(ctx, &mut a3, |b| b.bind_with_context(tree, n, cw, cs));
+                        b.and_then(|e| lw.conv(&a3, e, ctx)).map(|e| coerce(e, cty))
+                    };
+                    if let (Some(lo), Some(hi)) = (bound(self, ends[0]), bound(self, ends[1])) {
+                        ps.push(Pat::Range(lo, hi));
+                    }
+                    continue;
+                }
                 let mut a2 = ExprArena::new();
                 let pb = self.with_binder(ctx, &mut a2, |b| b.bind_with_context(tree, p, cw, cs));
                 let Some(pb) = pb else { continue };
@@ -1874,10 +2227,16 @@ impl<'a> Lowerer<'a> {
             return;
         };
         let lhs_rty = arena.get(lhs_b).ty.clone();
+        if matches!(lhs_rty, RtlType::UnpackedArray { .. }) && (op == "=" || op == "<=") {
+            if let Some(rn) = rhs_n {
+                self.array_assignment(tree, &arena, lhs_b, rn, nb, ctx, out, loc);
+            }
+            return;
+        }
         let Some(lty) = ity(&lhs_rty) else {
             self.err(
                 loc,
-                "assignment target must be a packed integral value (whole-array and unpacked struct assignments are not supported)",
+                "assignment target must be a packed integral value (unpacked struct assignments are not supported)",
             );
             return;
         };
@@ -1946,6 +2305,180 @@ impl<'a> Lowerer<'a> {
             }
         };
         self.assign_lvals(lvs, rhs, nb, out, Some(ctx));
+    }
+
+    /// Whole unpacked array assignment: a copy from another array of the same shape, or an
+    /// assignment pattern over a one-dimensional array.
+    #[allow(clippy::too_many_arguments)]
+    fn array_assignment(
+        &mut self,
+        tree: usize,
+        arena: &ExprArena,
+        lhs_b: ExprId,
+        rhs_n: NodeId,
+        nb: bool,
+        ctx: &mut Ctx,
+        out: &mut Vec<Stmt>,
+        loc: Loc,
+    ) {
+        let ExprKind::Symbol(lsid) = &arena.get(lhs_b).kind else {
+            self.err(
+                loc,
+                "assignment to part of a multi-dimensional array is not supported",
+            );
+            return;
+        };
+        let Some(lname) = self.sym_name(*lsid, ctx, loc) else {
+            return;
+        };
+        let Some(linfo) = self.m.sigs.get(&lname).cloned() else {
+            return;
+        };
+        if linfo.is_input {
+            self.err(loc, format!("assignment to input port '{lname}'"));
+            return;
+        }
+        let lhs_rty = arena.get(lhs_b).ty.clone();
+        let mut a2 = ExprArena::new();
+        let Some(rb) = self.with_binder(ctx, &mut a2, |b| b.bind_assigned(tree, rhs_n, &lhs_rty))
+        else {
+            return;
+        };
+        let elem = |name: &str, idx: Vec<Expr>, ty: Ty| Lval {
+            base: LvBase::Elem {
+                name: name.to_string(),
+                idx,
+                ty,
+            },
+            sel: None,
+        };
+        match a2.get(rb).kind.clone() {
+            ExprKind::Symbol(rsid) => {
+                let Some(rname) = self.sym_name(rsid, ctx, loc) else {
+                    return;
+                };
+                let Some(rinfo) = self.m.sigs.get(&rname).cloned() else {
+                    return;
+                };
+                if rinfo.dims != linfo.dims {
+                    self.err(loc, "array assignment between arrays of different shapes");
+                    return;
+                }
+                // One loop per dimension.
+                let mut names = Vec::new();
+                for _ in &linfo.dims {
+                    let n = self.new_local(
+                        ctx,
+                        "_i",
+                        RtlType::Integral {
+                            width: 32,
+                            signed: true,
+                            four_state: false,
+                        },
+                        Ty::INT,
+                    );
+                    ctx.locals.pop();
+                    names.push(n);
+                }
+                let idx: Vec<Expr> = names
+                    .iter()
+                    .map(|n| Expr::Local {
+                        name: n.clone(),
+                        ty: Ty::INT,
+                    })
+                    .collect();
+                let mut body = vec![Stmt::Assign {
+                    lhs: elem(&lname, idx.clone(), linfo.ty),
+                    rhs: coerce(
+                        Expr::Elem {
+                            name: rname,
+                            idx,
+                            ty: rinfo.ty,
+                        },
+                        linfo.ty,
+                    ),
+                    nonblocking: nb,
+                }];
+                for (k, n) in names.iter().enumerate().rev() {
+                    let var = || Expr::Local {
+                        name: n.clone(),
+                        ty: Ty::INT,
+                    };
+                    let set = |rhs: Expr| Stmt::Assign {
+                        lhs: Lval {
+                            base: LvBase::Local {
+                                name: n.clone(),
+                                ty: Ty::INT,
+                            },
+                            sel: None,
+                        },
+                        rhs,
+                        nonblocking: false,
+                    };
+                    body = vec![Stmt::For {
+                        init: vec![set(Expr::konst(Ty::INT, 0))],
+                        cond: bin(
+                            BinOp::Lt,
+                            var(),
+                            Expr::konst(Ty::INT, linfo.dims[k] as u64),
+                            Ty::BIT,
+                        ),
+                        step: vec![set(bin(
+                            BinOp::Add,
+                            var(),
+                            Expr::konst(Ty::INT, 1),
+                            Ty::INT,
+                        ))],
+                        body,
+                    }];
+                }
+                out.extend(body);
+            }
+            ExprKind::AssignPattern(items) if linfo.dims.len() == 1 => {
+                let n = linfo.dims[0] as usize;
+                let default = items
+                    .iter()
+                    .find(|(k, _)| k.as_deref() == Some("default"))
+                    .map(|(_, e)| *e);
+                let positional: Vec<ExprId> = items
+                    .iter()
+                    .filter(|(k, _)| k.is_none())
+                    .map(|(_, e)| *e)
+                    .collect();
+                if items.iter().any(|(k, _)| k.as_ref().is_some_and(|k| k != "default"))
+                    || (default.is_none() && positional.len() != n)
+                    || (default.is_some() && !positional.is_empty())
+                {
+                    self.err(
+                        loc,
+                        "array assignment pattern must list every element or use only 'default'",
+                    );
+                    return;
+                }
+                if n > 4096 {
+                    self.err(loc, "array assignment pattern over more than 4096 elements");
+                    return;
+                }
+                let sources: Vec<ExprId> = match default {
+                    Some(d) => vec![d; n],
+                    None => positional,
+                };
+                for (k, &src) in sources.iter().enumerate() {
+                    let Some(v) = self.conv(&a2, src, ctx) else {
+                        return;
+                    };
+                    out.push(Stmt::Assign {
+                        lhs: elem(&lname, vec![Expr::konst(Ty::INT, k as u64)], linfo.ty),
+                        rhs: coerce(v, linfo.ty),
+                        nonblocking: nb,
+                    });
+                }
+            }
+            _ => self.err(
+                loc,
+                "array assignment needs a whole array of the same shape or an assignment pattern on the right",
+            ),
+        }
     }
 
     /// Emits the assignment of `rhs` to one target, or to the parts of a concatenation.
@@ -2567,6 +3100,13 @@ impl<'a> Lowerer<'a> {
             } => {
                 let b = self.conv(a, *base, ctx)?;
                 let pos = self.norm_index(a, *index, *bounds, *elem_width, 0, b.ty().w, ctx)?;
+                if pos.is_none() {
+                    self.err(
+                        loc,
+                        "constant select is outside the declared range (it would read x)",
+                    );
+                    return None;
+                }
                 Some(slice_of(b, pos, *elem_width, ty))
             }
             ExprKind::PartSelect {
@@ -2579,6 +3119,13 @@ impl<'a> Lowerer<'a> {
                 let b = self.conv(a, *base, ctx)?;
                 let lo =
                     const_offset(*lsb, *bounds, *elem_width).filter(|lo| lo + ty.w <= b.ty().w);
+                if lo.is_none() {
+                    self.err(
+                        loc,
+                        "constant select is outside the declared range (it would read x)",
+                    );
+                    return None;
+                }
                 Some(slice_of(b, lo.map(|lo| Pos { lo, lo_dyn: None }), ty.w, ty))
             }
             ExprKind::IndexedPartSelect {
@@ -2593,6 +3140,13 @@ impl<'a> Lowerer<'a> {
                 let adj = indexed_adjust(*bounds, *width, *ascending);
                 let pos =
                     self.norm_index(a, *base_idx, *bounds, *elem_width, adj, b.ty().w, ctx)?;
+                if pos.is_none() {
+                    self.err(
+                        loc,
+                        "constant select is outside the declared range (it would read x)",
+                    );
+                    return None;
+                }
                 Some(slice_of(b, pos, width * elem_width, ty))
             }
             ExprKind::ArrayIndex { base, index, dim } => {
@@ -3122,7 +3676,7 @@ fn read_sigs(stmts: &[Stmt]) -> HashSet<String> {
     let mut out = HashSet::new();
     let on_expr = |e: &Expr, out: &mut HashSet<String>| {
         e.walk(&mut |x| {
-            if let Expr::Sig { name, .. } = x {
+            if let Expr::Sig { name, .. } | Expr::Elem { name, .. } = x {
                 out.insert(name.clone());
             }
         });
@@ -3145,8 +3699,13 @@ fn read_sigs(stmts: &[Stmt]) -> HashSet<String> {
             on_expr(sel, &mut out);
             for a in arms {
                 for p in &a.pats {
-                    if let Pat::Expr(e) = p {
-                        on_expr(e, &mut out);
+                    match p {
+                        Pat::Expr(e) => on_expr(e, &mut out),
+                        Pat::Range(lo, hi) => {
+                            on_expr(lo, &mut out);
+                            on_expr(hi, &mut out);
+                        }
+                        Pat::Const { .. } => {}
                     }
                 }
             }

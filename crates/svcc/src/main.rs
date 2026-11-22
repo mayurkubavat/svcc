@@ -68,21 +68,31 @@ fn run_cli() -> Result<(), SvccError> {
             )
         }
         "rtl2sc" => {
-            let pos = positional_args(&args[1..]);
-            let input = pos.first().ok_or_else(|| {
+            let (design_args, own) = split_design_args(&args[1..], &["-o", "--top"]);
+            let input = design_args.first().ok_or_else(|| {
                 SvccError::new(
                     "cli",
-                    "usage: svcc rtl2sc <in.sv> [--top <module>] [-o <out.hpp>]",
+                    "usage: svcc rtl2sc <in.sv> [more.sv ...] [-f <list>] [+incdir+<dir>] [+define+<d>] [-G <p>=<v>] [--top <module>] [-o <out.hpp>]",
                 )
             })?;
-            let tops: Vec<String> = parse_opt_flag(&args[1..], "--top").into_iter().collect();
-            let src = fs::read_to_string(input)
-                .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
-            let (code, design) = svcc::sv_rtl_to_sc(input, &src, &tops)?;
+            let top = parse_opt_flag(&own, "--top");
+            let (code, design) = if design_args.len() == 1 {
+                let src = fs::read_to_string(input)
+                    .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+                let tops: Vec<String> = top.into_iter().collect();
+                svcc::sv_rtl_to_sc(input, &src, &tops)?
+            } else {
+                let mut a = design_args.clone();
+                if let Some(t) = top {
+                    a.push("-top".into());
+                    a.push(t);
+                }
+                svcc::sv_rtl_args_to_sc(&a)?
+            };
             for n in &design.notes {
                 eprintln!("note: {n}");
             }
-            match parse_opt_flag(&args[1..], "-o") {
+            match parse_opt_flag(&own, "-o") {
                 Some(p) => fs::write(&p, code)
                     .map_err(|e| SvccError::new("io", format!("cannot write {p}: {e}")))?,
                 None => print!("{code}"),
@@ -90,23 +100,25 @@ fn run_cli() -> Result<(), SvccError> {
             Ok(())
         }
         "rtl-cosim" => {
-            let pos = positional_args(&args[1..]);
-            let input = pos.first().ok_or_else(|| {
+            let (design_args, own) =
+                split_design_args(&args[1..], &["--top", "--steps", "--seed", "--keep", "--header"]);
+            let input = design_args.first().ok_or_else(|| {
                 SvccError::new(
                     "cli",
-                    "usage: svcc rtl-cosim <in.sv> [--top <module>] [--steps N] [--seed S] [--keep <dir>] [--header <generated.hpp>]",
+                    "usage: svcc rtl-cosim <in.sv> [more.sv ...] [-f <list>] [+incdir+<dir>] [+define+<d>] [-G <p>=<v>] [--top <module>] [--steps N] [--seed S] [--keep <dir>] [--header <generated.hpp>]",
                 )
             })?;
             let opts = svcc::cosim::CosimOptions {
-                top: parse_opt_flag(&args[1..], "--top"),
-                steps: parse_opt_flag(&args[1..], "--steps")
+                design_args: design_args[1..].to_vec(),
+                top: parse_opt_flag(&own, "--top"),
+                steps: parse_opt_flag(&own, "--steps")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(20000),
-                seed: parse_opt_flag(&args[1..], "--seed")
+                seed: parse_opt_flag(&own, "--seed")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0x5eed_1234_abcd),
-                work_dir: parse_opt_flag(&args[1..], "--keep").map(Into::into),
-                header: match parse_opt_flag(&args[1..], "--header") {
+                work_dir: parse_opt_flag(&own, "--keep").map(Into::into),
+                header: match parse_opt_flag(&own, "--header") {
                     Some(h) => Some(
                         fs::read_to_string(&h)
                             .map_err(|e| SvccError::new("io", format!("cannot read {h}: {e}")))?,
@@ -296,6 +308,26 @@ fn print_usage() {
 
 fn parse_opt_flag(args: &[String], flag: &str) -> Option<String> {
     args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
+}
+
+/// Splits arguments into design arguments (sources, `-f`, `+incdir+`, `+define+`, `-G`) and
+/// this command's own `flag value` pairs.
+fn split_design_args(args: &[String], own_flags: &[&str]) -> (Vec<String>, Vec<String>) {
+    let (mut design, mut own) = (Vec::new(), Vec::new());
+    let mut i = 0;
+    while i < args.len() {
+        if own_flags.contains(&args[i].as_str()) {
+            own.push(args[i].clone());
+            if let Some(v) = args.get(i + 1) {
+                own.push(v.clone());
+            }
+            i += 2;
+        } else {
+            design.push(args[i].clone());
+            i += 1;
+        }
+    }
+    (design, own)
 }
 
 fn positional_args(args: &[String]) -> Vec<String> {

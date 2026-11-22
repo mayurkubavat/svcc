@@ -301,6 +301,8 @@ pub enum Pat {
     Const { value: Vec<u64>, care: Vec<u64> },
     /// Matches when `sel == expr` (expression typed like the selector).
     Expr(Expr),
+    /// Matches when `lo <= sel <= hi` (both typed like the selector).
+    Range(Expr, Expr),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,6 +403,8 @@ pub struct Port {
     pub ty: Ty,
     /// Declared without a packed range (maps to a plain boolean when 1 bit unsigned).
     pub scalar: bool,
+    /// Unpacked dimension sizes; empty for a plain port.
+    pub dims: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -415,7 +419,8 @@ pub struct Signal {
 }
 
 /// What an instance port is bound to: a signal or port of the parent, or one element of an
-/// unpacked array signal.
+/// unpacked array signal. An array port is bound to a whole array of the same shape (`elem`
+/// empty).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Conn {
     pub port: String,
@@ -460,5 +465,119 @@ pub struct Design {
 impl Design {
     pub fn module(&self, name: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.name == name)
+    }
+}
+
+impl Module {
+    /// Names of the signals, ports and arrays that `stmts` read, including reads made by the
+    /// module functions they call.
+    pub fn reads(&self, stmts: &[Stmt], out: &mut std::collections::BTreeSet<String>) {
+        let on_expr = |e: &Expr, out: &mut std::collections::BTreeSet<String>| {
+            let mut calls = Vec::new();
+            e.walk(&mut |x| match x {
+                Expr::Sig { name, .. } | Expr::Elem { name, .. } => {
+                    out.insert(name.clone());
+                }
+                Expr::Call { func, .. } => calls.push(func.clone()),
+                _ => {}
+            });
+            for c in calls {
+                if let Some(f) = self.functions.iter().find(|f| f.name == c) {
+                    // Functions cannot recurse, so this terminates.
+                    self.reads(&f.body, out);
+                }
+            }
+        };
+        for s in stmts {
+            match s {
+                Stmt::Assign { lhs, rhs, .. } => {
+                    on_expr(rhs, out);
+                    if let Some(LvSel {
+                        lo_dyn: Some(d), ..
+                    }) = &lhs.sel
+                    {
+                        on_expr(d, out);
+                    }
+                    if let LvBase::Elem { idx, .. } = &lhs.base {
+                        idx.iter().for_each(|e| on_expr(e, out));
+                    }
+                }
+                Stmt::If {
+                    cond,
+                    then_s,
+                    else_s,
+                } => {
+                    on_expr(cond, out);
+                    self.reads(then_s, out);
+                    self.reads(else_s, out);
+                }
+                Stmt::Case { sel, arms, default } => {
+                    on_expr(sel, out);
+                    for a in arms {
+                        for p in &a.pats {
+                            match p {
+                                Pat::Expr(e) => on_expr(e, out),
+                                Pat::Range(lo, hi) => {
+                                    on_expr(lo, out);
+                                    on_expr(hi, out);
+                                }
+                                Pat::Const { .. } => {}
+                            }
+                        }
+                        self.reads(&a.body, out);
+                    }
+                    if let Some(d) = default {
+                        self.reads(d, out);
+                    }
+                }
+                Stmt::For {
+                    init,
+                    cond,
+                    step,
+                    body,
+                } => {
+                    self.reads(init, out);
+                    on_expr(cond, out);
+                    self.reads(step, out);
+                    self.reads(body, out);
+                }
+                Stmt::Return(e) => on_expr(e, out),
+                Stmt::Block { body, .. } => self.reads(body, out),
+            }
+        }
+    }
+
+    /// Names of the signals, ports and arrays that `stmts` assign.
+    pub fn writes(stmts: &[Stmt], out: &mut std::collections::BTreeSet<String>) {
+        for s in stmts {
+            match s {
+                Stmt::Assign { lhs, .. } => {
+                    if !matches!(lhs.base, LvBase::Local { .. }) {
+                        out.insert(lhs.base.name().to_string());
+                    }
+                }
+                Stmt::If { then_s, else_s, .. } => {
+                    Self::writes(then_s, out);
+                    Self::writes(else_s, out);
+                }
+                Stmt::Case { arms, default, .. } => {
+                    for a in arms {
+                        Self::writes(&a.body, out);
+                    }
+                    if let Some(d) = default {
+                        Self::writes(d, out);
+                    }
+                }
+                Stmt::For {
+                    init, step, body, ..
+                } => {
+                    Self::writes(init, out);
+                    Self::writes(step, out);
+                    Self::writes(body, out);
+                }
+                Stmt::Block { body, .. } => Self::writes(body, out),
+                Stmt::Return(_) => {}
+            }
+        }
     }
 }

@@ -93,3 +93,67 @@ fn unsupported_constructs_fail_closed() {
     .expect_err("inout must be rejected");
     assert!(err.message.contains("inout"), "{err}");
 }
+
+#[test]
+fn wildcard_connection_binds_every_port() {
+    let code = convert(
+        "module leaf(input logic a, input logic b, output logic y);\n  assign y = a & b;\nendmodule\nmodule m(input logic a, input logic b, output logic y);\n  leaf u (.*);\nendmodule\n",
+    );
+    for port in ["u.a(a);", "u.b(b);", "u.y(y);"] {
+        assert!(code.contains(port), "missing {port}:\n{code}");
+    }
+}
+
+#[test]
+fn undriven_output_is_an_error() {
+    let err = svcc::sv_rtl_to_sc(
+        "t.sv",
+        "module m(input logic a, output logic y, output logic z);\n  assign y = a;\nendmodule\n",
+        &[],
+    )
+    .expect_err("an output without a driver must be rejected");
+    assert!(err.message.contains("'z' is never driven"), "{err}");
+}
+
+#[test]
+fn a_process_writes_back_only_its_own_array_elements() {
+    // Element 1 is assigned in pieces, so it goes through a local copy; element 0 belongs
+    // to another process and must not be written from here.
+    let code = convert(
+        "module m(input logic [3:0] a, output logic [3:0] y);\n  logic [3:0] s [2];\n  assign s[0] = a;\n  always_comb begin\n    s[1] = 4'd0;\n    s[1][0] = s[0][3];\n  end\n  assign y = s[1];\nendmodule\n",
+    );
+    assert!(code.contains("s[1].write(s_v[1]);"), "{code}");
+    assert!(!code.contains("s[0].write(s_v[0]);"), "{code}");
+    assert!(code.contains("sensitive << s[0];"), "{code}");
+}
+
+#[test]
+fn multi_file_design_arguments() {
+    let dir = std::env::temp_dir().join(format!("svcc-rtl-args-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("inc")).expect("mkdir");
+    std::fs::write(dir.join("inc/w.svh"), "`define W 6\n").expect("write");
+    std::fs::write(
+        dir.join("leaf.sv"),
+        "`include \"w.svh\"\nmodule leaf #(parameter int N = 2)(input logic [`W-1:0] a, output logic [`W-1:0] y);\n  assign y = a + N;\nendmodule\n",
+    )
+    .expect("write");
+    std::fs::write(
+        dir.join("top.sv"),
+        "module top #(parameter int K = 1)(input logic [5:0] a, output logic [5:0] y);\n  leaf #(.N(K)) u (.a(a), .y(y));\nendmodule\n",
+    )
+    .expect("write");
+    let args: Vec<String> = [
+        dir.join("leaf.sv").display().to_string(),
+        dir.join("top.sv").display().to_string(),
+        format!("+incdir+{}", dir.join("inc").display()),
+        "-G".into(),
+        "K=5".into(),
+        "-top".into(),
+        "top".into(),
+    ]
+    .to_vec();
+    let (code, design) = svcc::sv_rtl_args_to_sc(&args).expect("convert");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(design.tops, vec!["top".to_string()]);
+    assert!(code.contains("sc_dt::sc_uint<6>(a.read() + 5U)"), "{code}");
+}

@@ -46,7 +46,7 @@ pub mod elab {
     };
     /// Elaborated instances, symbols and items.
     pub use svlang::{
-        ElabItem, ElabItemKind, ElaboratedDesign, InstanceId, PortDir, RtlType, SymbolId,
+        ElabItem, ElabItemKind, ElaboratedDesign, InstanceId, PortConn, PortDir, RtlType, SymbolId,
         SymbolKind,
     };
 }

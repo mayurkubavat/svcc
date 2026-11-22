@@ -198,6 +198,24 @@ pub fn cname(name: &str) -> String {
     }
 }
 
+/// C++ class name for a module: as [`cname`], and clear of C library functions that live in
+/// the global namespace (a class called `read` or `sync` could not be named plainly).
+pub fn class_cname(name: &str) -> String {
+    const LIBC: &[&str] = &[
+        "abort", "abs", "access", "alarm", "atexit", "bind", "bsearch", "calloc", "chdir", "clock",
+        "close", "connect", "creat", "div", "dup", "exit", "fork", "free", "getenv", "index",
+        "kill", "link", "listen", "malloc", "open", "pause", "pipe", "poll", "putenv", "qsort",
+        "raise", "rand", "read", "realloc", "remove", "rename", "select", "send", "signal",
+        "sleep", "socket", "stat", "sync", "system", "time", "times", "truncate", "unlink",
+        "write",
+    ];
+    if LIBC.contains(&name) {
+        format!("{name}_")
+    } else {
+        cname(name)
+    }
+}
+
 fn sc_ty(ty: Ty) -> String {
     match (ty.w > 64, ty.s) {
         (false, false) => format!("sc_dt::sc_uint<{}>", ty.w),
@@ -333,6 +351,10 @@ struct WriteInfo {
     blocking: bool,
     nonblocking: bool,
     is_array: bool,
+    /// Array elements written with constant indices.
+    elems: BTreeSet<Vec<u64>>,
+    /// Some array element is written with a computed index.
+    dyn_elem: bool,
 }
 
 /// Per-process emission state.
@@ -366,6 +388,13 @@ impl<'a> Em<'a> {
             .iter()
             .find(|s| s.name == name)
             .map(|s| s.dims.as_slice())
+            .or_else(|| {
+                self.m
+                    .ports
+                    .iter()
+                    .find(|p| p.name == name)
+                    .map(|p| p.dims.as_slice())
+            })
             .unwrap_or(&[])
     }
 
@@ -400,20 +429,33 @@ impl<'a> Em<'a> {
             let _ = write!(out, " ({}:{})", m.file, m.line);
         }
         out.push('\n');
-        let _ = writeln!(out, "SC_MODULE({}) {{", cname(&m.name));
+        let _ = writeln!(out, "SC_MODULE({}) {{", class_cname(&m.name));
         for p in &m.ports {
             let cls = match p.dir {
                 Dir::In => "sc_core::sc_in",
                 Dir::Out => "sc_core::sc_out",
             };
-            let _ = writeln!(
-                out,
-                "  {}<{}> {}{{\"{}\"}};",
-                cls,
-                decl_ty(p.ty, p.scalar),
-                cname(&p.name),
-                p.name
-            );
+            if p.dims.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "  {}<{}> {}{{\"{}\"}};",
+                    cls,
+                    decl_ty(p.ty, p.scalar),
+                    cname(&p.name),
+                    p.name
+                );
+            } else {
+                let n: u64 = p.dims.iter().map(|d| *d as u64).product();
+                let _ = writeln!(
+                    out,
+                    "  sc_core::sc_vector<{}<{}>> {}{{\"{}\", {}}};",
+                    cls,
+                    decl_ty(p.ty, p.scalar),
+                    cname(&p.name),
+                    p.name,
+                    n
+                );
+            }
         }
         if !m.signals.is_empty() {
             out.push('\n');
@@ -467,7 +509,7 @@ impl<'a> Em<'a> {
             let _ = writeln!(
                 out,
                 "  {} {}{{\"{}\"}};",
-                cname(&i.module),
+                class_cname(&i.module),
                 cname(&i.name),
                 i.name
             );
@@ -511,7 +553,7 @@ impl<'a> Em<'a> {
             }
         }
         out.push('\n');
-        let _ = writeln!(out, "  SC_CTOR({}) {{", cname(&m.name));
+        let _ = writeln!(out, "  SC_CTOR({}) {{", class_cname(&m.name));
         out.push_str(&ctor);
         out.push_str("  }\n};\n\n");
         let _ = self.design;
@@ -654,11 +696,22 @@ impl<'a> Em<'a> {
                 let _ = writeln!(body, "    {}.write({});", cname(name), sh);
             } else {
                 let n: u64 = dims.iter().map(|d| *d as u64).product();
-                let _ = writeln!(
-                    body,
-                    "    for (unsigned k = 0; k < {n}; ++k) {}[k].write({sh}[k]);",
-                    cname(name)
-                );
+                match self.written_elems(&writes, name) {
+                    // Only the elements this process assigns are written back: the others
+                    // belong to other processes.
+                    Some(elems) => {
+                        for k in elems {
+                            let _ = writeln!(body, "    {}[{k}].write({sh}[{k}]);", cname(name));
+                        }
+                    }
+                    None => {
+                        let _ = writeln!(
+                            body,
+                            "    for (unsigned k = 0; k < {n}; ++k) {}[k].write({sh}[k]);",
+                            cname(name)
+                        );
+                    }
+                }
             }
         }
 
@@ -672,11 +725,15 @@ impl<'a> Em<'a> {
                 let terms: Vec<String> = edges
                     .iter()
                     .map(|e| {
-                        format!(
-                            "{}.{}()",
-                            cname(&e.sig),
-                            if e.posedge { "pos" } else { "neg" }
-                        )
+                        // Ports have edge finders; an internal signal exposes its events.
+                        let is_port = self.m.ports.iter().any(|p| p.name == e.sig);
+                        let ev = match (is_port, e.posedge) {
+                            (true, true) => "pos",
+                            (true, false) => "neg",
+                            (false, true) => "posedge_event",
+                            (false, false) => "negedge_event",
+                        };
+                        format!("{}.{}()", cname(&e.sig), ev)
                     })
                     .collect();
                 let _ = writeln!(ctor, "    sensitive << {};", terms.join(" << "));
@@ -691,8 +748,19 @@ impl<'a> Em<'a> {
                         Sens::Sig(n) | Sens::Elem(n, _) | Sens::Array(n) => n,
                     };
                     // A block is not sensitive to what it assigns itself, unless several
-                    // source blocks were merged and one reads what another drives.
-                    if writes.contains_key(n) && p.merged_from <= 1 {
+                    // source blocks were merged and one reads what another drives. For an
+                    // array this is decided per element.
+                    let own = match s {
+                        Sens::Sig(_) => writes.contains_key(n),
+                        Sens::Elem(_, i) => match self.written_elems(&writes, n) {
+                            Some(elems) => elems.contains(i),
+                            None => writes.contains_key(n),
+                        },
+                        Sens::Array(_) => {
+                            writes.contains_key(n) && self.written_elems(&writes, n).is_none()
+                        }
+                    };
+                    if own && p.merged_from <= 1 {
                         continue;
                     }
                     match s {
@@ -713,6 +781,33 @@ impl<'a> Em<'a> {
                 }
             }
         }
+    }
+
+    /// Flat indices of the elements of array `name` a process writes, or `None` when it
+    /// writes the array through a computed index (or does not write it).
+    fn written_elems(
+        &self,
+        writes: &BTreeMap<String, WriteInfo>,
+        name: &str,
+    ) -> Option<BTreeSet<u64>> {
+        let w = writes.get(name)?;
+        if w.dyn_elem || w.elems.is_empty() {
+            return None;
+        }
+        let dims = self.sig_dims(name);
+        let mut out = BTreeSet::new();
+        for e in &w.elems {
+            let mut flat = 0u64;
+            for (k, i) in e.iter().enumerate() {
+                let d = dims.get(k).copied().unwrap_or(1) as u64;
+                if *i >= d {
+                    return None;
+                }
+                flat = flat * d + i;
+            }
+            out.insert(flat);
+        }
+        Some(out)
     }
 
     fn sig_decl(&self, name: &str) -> (Ty, bool) {
@@ -756,8 +851,13 @@ impl<'a> Em<'a> {
                     self.expr_reads(sel, out);
                     for a in arms {
                         for p in &a.pats {
-                            if let Pat::Expr(e) = p {
-                                self.expr_reads(e, out);
+                            match p {
+                                Pat::Expr(e) => self.expr_reads(e, out),
+                                Pat::Range(lo, hi) => {
+                                    self.expr_reads(lo, out);
+                                    self.expr_reads(hi, out);
+                                }
+                                Pat::Const { .. } => {}
                             }
                         }
                         self.collect_reads(&a.body, out);
@@ -984,14 +1084,14 @@ impl<'a> Em<'a> {
             && arms.iter().all(|a| {
                 a.pats.iter().all(|p| match p {
                     Pat::Const { care, .. } => care[0] == mask64(ty.w),
-                    Pat::Expr(_) => false,
+                    Pat::Expr(_) | Pat::Range(..) => false,
                 })
             });
         let mut seen = BTreeSet::new();
         let distinct = arms.iter().all(|a| {
             a.pats.iter().all(|p| match p {
                 Pat::Const { value, .. } => seen.insert(value[0]),
-                Pat::Expr(_) => false,
+                Pat::Expr(_) | Pat::Range(..) => false,
             })
         });
         if full && distinct && !arms.is_empty() {
@@ -1061,6 +1161,14 @@ impl<'a> Em<'a> {
                         let v = self.ex(e, env);
                         let b = self.bits(v, ty);
                         tests.push(format!("{tmp} == {b}"));
+                    }
+                    Pat::Range(lo, hi) => {
+                        // Lowering only produces ranges for unsigned selectors.
+                        let l = self.ex(lo, env);
+                        let l = self.bits(l, ty);
+                        let h = self.ex(hi, env);
+                        let h = self.bits(h, ty);
+                        tests.push(format!("({tmp} >= {l} && {tmp} <= {h})"));
                     }
                 }
             }
@@ -1586,14 +1694,28 @@ impl<'a> Em<'a> {
                     let bits = self.bits(a, at);
                     val(format!("{t}(uint64_t({bits}) * {})", lit64(k, 64)), Rep::Sc)
                 } else {
-                    if *count > 64 {
-                        self.err(
-                            "replication of more than 64 copies into a vector wider than 64 bits",
-                        );
-                    }
                     let bits = self.bits(a, at);
-                    let ps = vec![bits; (*count).min(64) as usize];
-                    val(format!("{t}(({}))", ps.join(", ")), Rep::Sc)
+                    if *count <= 16 {
+                        let ps = vec![bits; *count as usize];
+                        val(format!("{t}(({}))", ps.join(", ")), Rep::Sc)
+                    } else {
+                        // Many copies: fill the vector in a loop.
+                        let ut = sc_ty(Ty::unsigned(ty.w));
+                        let (w, n) = (at.w, *count);
+                        let piece = if w == 1 {
+                            "_r[_k] = bool(_x);".to_string()
+                        } else {
+                            format!("_r.range(_k * {w} + {}, _k * {w}) = _x;", w - 1)
+                        };
+                        let fill = format!(
+                            "[&]() {{ const auto _x = {bits}; {ut} _r; for (int _k = 0; _k < {n}; ++_k) {piece} return _r; }}()"
+                        );
+                        if ty.s {
+                            val(format!("{t}({fill})"), Rep::Sc)
+                        } else {
+                            val(fill, Rep::Sc)
+                        }
+                    }
                 }
             }
             Expr::Slice {
@@ -1984,6 +2106,14 @@ fn collect_writes(stmts: &[Stmt], out: &mut BTreeMap<String, WriteInfo>) {
                 let w = out.entry(lhs.base.name().to_string()).or_default();
                 if lhs.sel.is_some() {
                     w.partial = true;
+                }
+                if let LvBase::Elem { idx, .. } = &lhs.base {
+                    match idx.iter().map(|e| e.as_u64()).collect::<Option<Vec<u64>>>() {
+                        Some(c) => {
+                            w.elems.insert(c);
+                        }
+                        None => w.dyn_elem = true,
+                    }
                 }
                 if *nonblocking {
                     w.nonblocking = true;
