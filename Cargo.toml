@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/svcc-ir",
+    "crates/svcc-svlang",
     "crates/svcc-front-sv",
     "crates/svcc-front-sc",
     "crates/svcc-passes",
@@ -27,6 +28,7 @@ svlang-lint = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0
 
 # Internal workspace crates
 svcc-ir = { path = "crates/svcc-ir", version = "0.1.0" }
+svcc-svlang = { path = "crates/svcc-svlang", version = "0.1.0" }
 svcc-front-sv = { path = "crates/svcc-front-sv", version = "0.1.0" }
 svcc-front-sc = { path = "crates/svcc-front-sc", version = "0.1.0" }
 svcc-passes = { path = "crates/svcc-passes", version = "0.1.0" }

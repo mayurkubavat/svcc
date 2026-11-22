@@ -212,9 +212,7 @@ name = "svcc-emit-sv"
 version = "0.1.0"
 dependencies = [
  "svcc-ir",
- "svlang",
- "svlang-lint",
- "svlang-model",
+ "svcc-svlang",
 ]
 
 [[package]]
@@ -224,7 +222,7 @@ dependencies = [
  "serde",
  "serde_json",
  "svcc-ir",
- "svlang",
+ "svcc-svlang",
 ]
 
 [[package]]
@@ -239,8 +237,7 @@ name = "svcc-front-sv"
 version = "0.1.0"
 dependencies = [
  "svcc-ir",
- "svlang",
- "svlang-model",
+ "svcc-svlang",
 ]
 
 [[package]]
@@ -256,6 +253,15 @@ name = "svcc-passes"
 version = "0.1.0"
 dependencies = [
  "svcc-ir",
+]
+
+[[package]]
+name = "svcc-svlang"
+version = "0.1.0"
+dependencies = [
+ "svlang",
+ "svlang-lint",
+ "svlang-model",
 ]
 
 [[package]]

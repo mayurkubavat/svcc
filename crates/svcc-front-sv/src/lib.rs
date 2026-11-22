@@ -1,7 +1,7 @@
 //! IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM front-end for `svcc-ir`.
 //!
-//! Powered by the pinned pure-Rust [`svlang`] + [`svlang_model`] SDK:
-//! 1. Parses and semantically analyzes SV/UVM compilation units via [`svlang::Compilation`].
+//! Powered by the pinned pure-Rust `svlang` + `svlang_model` SDK (through [`svcc_svlang`]):
+//! 1. Parses and semantically analyzes SV/UVM compilation units via [`svcc_svlang::syntax::Compilation`].
 //! 2. Lifts `typedef enum`, `clocking #1step`, and concurrent SVA (`assert/cover property`) items.
 //! 3. Lifts OOP/UVM hierarchy (`UvmKind`, `PhaseKind`, `Property`, `Method`, `SubComponentDecl`,
 //!    `TlmPortDecl`, `TlmConnection`) + RAL `uvm_reg` and `uvm_reg_block` maps.
@@ -21,9 +21,9 @@ use svcc_ir::{
     RalRegInstance, ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl, SvccError,
     TlmConnection, TlmPortDecl, TlmPortKind, UvmRole,
 };
-use svlang::{Compilation, NodeId, Severity, SyntaxKind, Tree};
-use svlang_model::ral::extract_ral_blocks;
-use svlang_model::{Design as SvModelDesign, PhaseKind as SvPhaseKind, UvmKind};
+use svcc_svlang::model::extract_ral_blocks;
+use svcc_svlang::model::{Design as SvModelDesign, PhaseKind as SvPhaseKind, UvmKind};
+use svcc_svlang::syntax::{Compilation, NodeId, Severity, SyntaxKind, Tree};
 
 #[derive(Clone, Debug)]
 pub struct SvFrontend {
@@ -76,8 +76,8 @@ impl Frontend for SvFrontend {
                         return false;
                     }
                     match d.stage {
-                        svlang::DiagnosticStage::Parser => true,
-                        svlang::DiagnosticStage::Preprocessor => {
+                        svcc_svlang::syntax::DiagnosticStage::Parser => true,
+                        svcc_svlang::syntax::DiagnosticStage::Preprocessor => {
                             !d.message.contains("unknown macro or directive `uvm_")
                                 && !(self.cst_fallback
                                     && d.message.contains("cannot find include file"))
@@ -366,7 +366,7 @@ impl Frontend for SvFrontend {
 }
 
 fn collect_oracle_param_consts(
-    oracle: &svlang::semantic::oracle::TypeOracle,
+    oracle: &svcc_svlang::syntax::TypeOracle,
     tree_idx: usize,
     tree: &Tree,
     node: NodeId,
@@ -395,7 +395,7 @@ fn collect_oracle_param_consts(
 }
 
 fn enrich_rtl_modules_from_elaboration(
-    elab: &svlang::Elaborated,
+    elab: &svcc_svlang::syntax::Elaborated,
     rtl_modules: &mut [svcc_ir::RtlModule],
 ) {
     for rtl_m in rtl_modules {

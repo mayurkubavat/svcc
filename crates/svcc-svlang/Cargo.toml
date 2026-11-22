@@ -1,0 +1,18 @@
+[package]
+name = "svcc-svlang"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Single svlang adapter for svcc: the only crate that depends on svlang, svlang-model and svlang-lint"
+
+[features]
+# `svlang-model` UVM/RAL design model (front end and emitted-SV lint gate)
+model = ["dep:svlang-model"]
+# `svlang-lint` formal-ready gate over emitted SV
+lint = ["model", "dep:svlang-lint"]
+
+[dependencies]
+svlang.workspace = true
+svlang-model = { workspace = true, optional = true }
+svlang-lint = { workspace = true, optional = true }

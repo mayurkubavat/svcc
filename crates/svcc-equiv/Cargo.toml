@@ -8,10 +8,10 @@ description = "Formal SMT-LIB2 (Z3 QF_BV) CRV, SVA BMC, Btor2 Sequential Equival
 
 [features]
 default = ["btor2-sec"]
-btor2-sec = ["dep:svlang"]
+btor2-sec = ["dep:svcc-svlang"]
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-svlang = { workspace = true, optional = true }
+svcc-svlang = { workspace = true, optional = true }
 svcc-ir.workspace = true

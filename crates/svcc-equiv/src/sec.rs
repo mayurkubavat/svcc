@@ -26,7 +26,7 @@ use std::fmt::Write;
 use std::time::Instant;
 use svcc_ir::{RtlModule, RtlPortDir, SvccError};
 #[cfg(feature = "btor2-sec")]
-use svlang::netlist::{lower_trees, LowerConfig, LowerOutcome};
+use svcc_svlang::{lower_sv_to_btor2, Btor2Error};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RtlSecReport {
@@ -78,29 +78,18 @@ pub fn build_sec_btor2(
 ) -> Result<String, SvccError> {
     let combined_sv =
         build_combined_sec_miter_sv(spec_mod, spec_sv_src, imp_mod, imp_sv_src, latency)?;
-    let tree = svlang::syntax::parse_source(&combined_sv, "svcc_sec_miter.sv", Default::default());
-    let mut netlist = match lower_trees(
-        &[tree],
-        &["svcc_sec_miter".to_string()],
-        &[],
-        &LowerConfig::default(),
-    ) {
-        LowerOutcome::Lowered(nl) => nl,
-        LowerOutcome::Unsupported(ds) | LowerOutcome::Error(ds) => {
-            let msg: Vec<String> = ds.iter().map(ToString::to_string).collect();
-            return Err(SvccError::new(
-                "svcc-equiv/netlist",
-                format!(
-                    "failed lowering SEC miter to sv-netlist:\n{}",
-                    msg.join("\n")
-                ),
-            ));
+    lower_sv_to_btor2(&combined_sv, "svcc_sec_miter.sv", "svcc_sec_miter").map_err(|e| match e {
+        Btor2Error::Netlist(msg) => SvccError::new(
+            "svcc-equiv/netlist",
+            format!(
+                "failed lowering SEC miter to sv-netlist:\n{}",
+                msg.join("\n")
+            ),
+        ),
+        Btor2Error::Write(e) => {
+            SvccError::new("svcc-equiv/btor2", format!("btor2 write failed: {e}"))
         }
-    };
-    let _ = netlist.compile_properties(&svlang::netlist::PropertyOptions::default());
-    let btor_model = svlang::btor2::write(&netlist, &svlang::btor2::Options::default())
-        .map_err(|e| SvccError::new("svcc-equiv/btor2", format!("btor2 write failed: {e:?}")))?;
-    Ok(btor_model.btor2)
+    })
 }
 
 /// Proves sequential equivalence (`latency = 0` or pipelined `latency = L`) between two SV RTL

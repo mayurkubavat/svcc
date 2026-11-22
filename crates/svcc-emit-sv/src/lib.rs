@@ -10,7 +10,7 @@ use svcc_ir::{
     ScalarKind, SchedOp, SvaPropertyDecl, SvccError, TargetCapabilities, TlmPortKind, UvmRole,
 };
 #[cfg(feature = "verify-svlang")]
-use svlang::{Compilation, DiagnosticStage, Severity};
+use svcc_svlang::{verify_emitted_sv, EmittedSvError};
 
 #[derive(Clone, Debug, Default)]
 pub struct SvEmitter;
@@ -51,53 +51,23 @@ impl SvEmitter {
         let sv_text = self.emit(module)?;
         #[cfg(feature = "verify-svlang")]
         {
-            let comp = Compilation::from_source("emitted_svcc.sv", &sv_text);
             let has_uvm_classes = !module.classes.is_empty();
-            let errs: Vec<_> = comp
-                .diagnostics()
-                .into_iter()
-                .filter(|d| {
-                    if d.severity != Severity::Error {
-                        return false;
-                    }
-                    match d.stage {
-                        DiagnosticStage::Parser => true,
-                        DiagnosticStage::Preprocessor => {
-                            !d.message.contains("unknown macro or directive `uvm_")
-                        }
-                        DiagnosticStage::Semantic => !has_uvm_classes,
-                        _ => false,
-                    }
-                })
-                .collect();
-            if !errs.is_empty() {
-                return Err(SvccError::new(
-                    "svcc-emit-sv/verify",
-                    format!(
-                        "emitted SV failed svlang verification at line {}: {}",
-                        errs[0].line, errs[0].message
-                    ),
-                ));
-            }
-
-            // Stage 3: In-memory `svlang-lint` semantic & formal-ready quality gate
-            let design = svlang_model::Design::from_sv(comp.design());
-            let session = svlang_lint::Session::new();
-            if let Ok(keep) = svlang_lint::rule_selection(Some("formal-ready"), false) {
-                let (files, findings) = session.lint_all(&design, comp.trees(), |id| {
-                    keep(id) && !(has_uvm_classes && id == "SV-CMP-001")
-                });
-                if let Some(err_f) = findings
-                    .iter()
-                    .find(|f| f.severity == svlang_lint::Severity::Error)
-                {
-                    let (_, ln, _) = err_f.position_in(&files);
+            match verify_emitted_sv("emitted_svcc.sv", &sv_text, has_uvm_classes) {
+                Ok(()) => {}
+                Err(EmittedSvError::Diagnostic { line, message }) => {
+                    return Err(SvccError::new(
+                        "svcc-emit-sv/verify",
+                        format!("emitted SV failed svlang verification at line {line}: {message}"),
+                    ));
+                }
+                Err(EmittedSvError::Lint {
+                    rule,
+                    line,
+                    message,
+                }) => {
                     return Err(SvccError::new(
                         "svcc-emit-sv/svlang-lint",
-                        format!(
-                            "emitted SV failed svlang-lint [{}] at line {}: {}",
-                            err_f.rule, ln, err_f.message
-                        ),
+                        format!("emitted SV failed svlang-lint [{rule}] at line {line}: {message}"),
                     ));
                 }
             }

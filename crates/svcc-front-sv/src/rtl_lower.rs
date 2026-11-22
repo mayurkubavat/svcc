@@ -5,7 +5,7 @@ use svcc_ir::{
     Provenance, RtlCombBlock, RtlModule, RtlPort, RtlPortDir, RtlSignal, RtlStmt, RtlSyncBlock,
     SourceLang,
 };
-use svlang::{NodeId, SyntaxKind, Tree};
+use svcc_svlang::syntax::{NodeId, SyntaxKind, Tree};
 
 pub fn try_lower_sv_module(filename: &str, tree: &Tree, mod_node: NodeId) -> Option<RtlModule> {
     let name = tree

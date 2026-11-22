@@ -7,6 +7,5 @@ license.workspace = true
 description = "IEEE 1800-2023 SystemVerilog & IEEE 1800.2 UVM front-end lowering svlang CST/semantic models into svcc-ir"
 
 [dependencies]
-svlang.workspace = true
-svlang-model.workspace = true
+svcc-svlang = { workspace = true, features = ["model"] }
 svcc-ir.workspace = true
