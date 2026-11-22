@@ -15,7 +15,7 @@ use svcc_equiv::{
 };
 use svcc_front_sc::ScFrontend;
 use svcc_front_sv::SvFrontend;
-use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, TargetCapabilities, UvirError};
+use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, SvccError, TargetCapabilities};
 use svcc_passes::PassPipeline;
 
 pub fn default_registry() -> LanguageRegistry {
@@ -28,7 +28,7 @@ pub fn default_registry() -> LanguageRegistry {
 }
 
 /// Compiles IEEE 1800-2023 SystemVerilog (RTL modules + UVM classes/SVA) into C++17 SystemC.
-pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, UvirError> {
+pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, SvccError> {
     let (mut module, _) = SvFrontend::new().lower_str(filename, sv_source)?;
     let emitter = ScEmitter::new();
     PassPipeline::for_target(emitter.capabilities()).run_all(&mut module)?;
@@ -37,7 +37,7 @@ pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, UvirError> {
 
 /// Compiles C++17 SystemC (`SC_MODULE`, `// svcc:c2rtl` functions, or UVM/CRAVE/FC4SC classes)
 /// into `svlang`-verified IEEE 1800-2023 SystemVerilog.
-pub fn sc_to_sv(filename: &str, cpp_source: &str) -> Result<String, UvirError> {
+pub fn sc_to_sv(filename: &str, cpp_source: &str) -> Result<String, SvccError> {
     let (mut module, _) = ScFrontend::new().lower_str(filename, cpp_source)?;
     PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023()).run_all(&mut module)?;
     SvEmitter::new().emit_and_verify(&module)
@@ -49,7 +49,7 @@ pub fn prove_sources_equivalent(
     lhs_source: &str,
     rhs_filename: &str,
     rhs_source: &str,
-) -> Result<Vec<EquivalenceReport>, UvirError> {
+) -> Result<Vec<EquivalenceReport>, SvccError> {
     let reg = default_registry();
     let detect = |p: &str| {
         if p.ends_with(".sv") || p.ends_with(".svh") {
@@ -74,7 +74,7 @@ pub fn prove_sources_equivalent(
     let mut reports = Vec::with_capacity(m_l.classes.len());
     for cls_l in &m_l.classes {
         let cls_r = m_r.find_class(&cls_l.name).ok_or_else(|| {
-            UvirError::new(
+            SvccError::new(
                 "svcc/equiv",
                 format!("class '{}' missing in {rhs_filename}", cls_l.name),
             )
@@ -100,7 +100,7 @@ pub fn prove_rtl_or_c2rtl_sec(
     imp_filename: &str,
     imp_source: &str,
     latency: u32,
-) -> Result<RtlSecReport, UvirError> {
+) -> Result<RtlSecReport, SvccError> {
     let sv_em = SvEmitter::new();
     let (spec_mod, spec_sv) = if spec_filename.ends_with(".sv") || spec_filename.ends_with(".svh") {
         let (m, _) = SvFrontend::new().lower_str(spec_filename, spec_source)?;
@@ -108,12 +108,12 @@ pub fn prove_rtl_or_c2rtl_sec(
             .rtl_modules
             .first()
             .cloned()
-            .ok_or_else(|| UvirError::new("svcc/sec", "no RTL module found in spec SV"))?;
+            .ok_or_else(|| SvccError::new("svcc/sec", "no RTL module found in spec SV"))?;
         (rmod, spec_source.to_string())
     } else {
         let (m, _) = ScFrontend::new().lower_str(spec_filename, spec_source)?;
         let rmod = m.rtl_modules.first().cloned().ok_or_else(|| {
-            UvirError::new(
+            SvccError::new(
                 "svcc/sec",
                 "no SC_MODULE or // svcc:c2rtl found in spec C++",
             )
@@ -128,7 +128,7 @@ pub fn prove_rtl_or_c2rtl_sec(
             .rtl_modules
             .first()
             .cloned()
-            .ok_or_else(|| UvirError::new("svcc/sec", "no RTL module found in imp SV"))?;
+            .ok_or_else(|| SvccError::new("svcc/sec", "no RTL module found in imp SV"))?;
         (rmod, imp_source.to_string())
     } else {
         let (m, _) = ScFrontend::new().lower_str(imp_filename, imp_source)?;
@@ -136,7 +136,7 @@ pub fn prove_rtl_or_c2rtl_sec(
             .rtl_modules
             .first()
             .cloned()
-            .ok_or_else(|| UvirError::new("svcc/sec", "no SC_MODULE found in imp C++"))?;
+            .ok_or_else(|| SvccError::new("svcc/sec", "no SC_MODULE found in imp C++"))?;
         let emitted = sv_em.emit_and_verify(&m)?;
         (rmod, emitted)
     };

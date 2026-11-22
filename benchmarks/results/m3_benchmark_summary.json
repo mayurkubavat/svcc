@@ -3,15 +3,15 @@
   "rq1_roundtrip_pass": 20,
   "rq1_c2rtl_count": 8,
   "rq1_c2rtl_pass": 8,
-  "rq1_median_sv2sc_us": 256,
-  "rq1_median_sc2sv_us": 669,
+  "rq1_median_sv2sc_us": 279,
+  "rq1_median_sc2sv_us": 689,
   "rq1_rows": [
     {
       "design": "01_apb4_timer_vip",
       "category": "UVM_CRV_VIP",
       "sv_lines": 50,
-      "avg_sv2sc_us": 227,
-      "avg_sc2sv_us": 669,
+      "avg_sv2sc_us": 219,
+      "avg_sc2sv_us": 689,
       "classes": 1,
       "rtl_modules": 0,
       "sva_properties": 0,
@@ -19,7 +19,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 5800,
+      "z3_roundtrip_us": 5508,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -28,8 +28,8 @@
       "design": "02_axi4_burst_vip",
       "category": "UVM_CRV_VIP",
       "sv_lines": 88,
-      "avg_sv2sc_us": 364,
-      "avg_sc2sv_us": 821,
+      "avg_sv2sc_us": 369,
+      "avg_sc2sv_us": 845,
       "classes": 4,
       "rtl_modules": 0,
       "sva_properties": 0,
@@ -37,7 +37,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 20992,
+      "z3_roundtrip_us": 20264,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -46,8 +46,8 @@
       "design": "03_pcie_tlp_hdr",
       "category": "UVM_CRV_VIP",
       "sv_lines": 48,
-      "avg_sv2sc_us": 236,
-      "avg_sc2sv_us": 656,
+      "avg_sv2sc_us": 279,
+      "avg_sc2sv_us": 664,
       "classes": 1,
       "rtl_modules": 0,
       "sva_properties": 0,
@@ -55,7 +55,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 5607,
+      "z3_roundtrip_us": 5405,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -64,8 +64,8 @@
       "design": "04_chi_coh_req",
       "category": "UVM_CRV_VIP",
       "sv_lines": 38,
-      "avg_sv2sc_us": 217,
-      "avg_sc2sv_us": 654,
+      "avg_sv2sc_us": 223,
+      "avg_sc2sv_us": 629,
       "classes": 1,
       "rtl_modules": 0,
       "sva_properties": 0,
@@ -73,7 +73,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 5347,
+      "z3_roundtrip_us": 5371,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -82,8 +82,8 @@
       "design": "05_eth_mac_frame",
       "category": "UVM_CRV_VIP",
       "sv_lines": 41,
-      "avg_sv2sc_us": 197,
-      "avg_sc2sv_us": 640,
+      "avg_sv2sc_us": 190,
+      "avg_sc2sv_us": 631,
       "classes": 1,
       "rtl_modules": 0,
       "sva_properties": 0,
@@ -91,7 +91,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 5764,
+      "z3_roundtrip_us": 5422,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -100,8 +100,8 @@
       "design": "06_ddr5_cmd_sched",
       "category": "UVM_CRV_VIP",
       "sv_lines": 59,
-      "avg_sv2sc_us": 266,
-      "avg_sc2sv_us": 716,
+      "avg_sv2sc_us": 265,
+      "avg_sc2sv_us": 719,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 0,
@@ -109,7 +109,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 10558,
+      "z3_roundtrip_us": 10354,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -118,8 +118,8 @@
       "design": "07_uart_16550_ral_sva",
       "category": "UVM_RAL_SVA",
       "sv_lines": 43,
-      "avg_sv2sc_us": 318,
-      "avg_sc2sv_us": 772,
+      "avg_sv2sc_us": 328,
+      "avg_sc2sv_us": 746,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 2,
@@ -127,7 +127,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 21861,
+      "z3_roundtrip_us": 21678,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -136,8 +136,8 @@
       "design": "08_dma_ch_ral_sva",
       "category": "UVM_RAL_SVA",
       "sv_lines": 42,
-      "avg_sv2sc_us": 313,
-      "avg_sc2sv_us": 745,
+      "avg_sv2sc_us": 312,
+      "avg_sc2sv_us": 757,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 2,
@@ -145,7 +145,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 19997,
+      "z3_roundtrip_us": 21508,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -154,8 +154,8 @@
       "design": "09_spi_master_ral_sva",
       "category": "UVM_RAL_SVA",
       "sv_lines": 41,
-      "avg_sv2sc_us": 306,
-      "avg_sc2sv_us": 703,
+      "avg_sv2sc_us": 324,
+      "avg_sc2sv_us": 688,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 1,
@@ -163,7 +163,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 14562,
+      "z3_roundtrip_us": 14844,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -172,8 +172,8 @@
       "design": "10_i2c_ctrl_ral_sva",
       "category": "UVM_RAL_SVA",
       "sv_lines": 39,
-      "avg_sv2sc_us": 368,
-      "avg_sc2sv_us": 952,
+      "avg_sv2sc_us": 291,
+      "avg_sc2sv_us": 755,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 2,
@@ -181,7 +181,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 23023,
+      "z3_roundtrip_us": 21135,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -190,8 +190,8 @@
       "design": "11_plic_irq_ral_sva",
       "category": "UVM_RAL_SVA",
       "sv_lines": 38,
-      "avg_sv2sc_us": 280,
-      "avg_sc2sv_us": 701,
+      "avg_sv2sc_us": 353,
+      "avg_sc2sv_us": 712,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 1,
@@ -199,7 +199,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 16067,
+      "z3_roundtrip_us": 15775,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -208,8 +208,8 @@
       "design": "12_wdog_tmr_ral_sva",
       "category": "UVM_RAL_SVA",
       "sv_lines": 38,
-      "avg_sv2sc_us": 279,
-      "avg_sc2sv_us": 701,
+      "avg_sv2sc_us": 302,
+      "avg_sc2sv_us": 766,
       "classes": 2,
       "rtl_modules": 0,
       "sva_properties": 1,
@@ -217,7 +217,7 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 15982,
+      "z3_roundtrip_us": 16237,
       "c2rtl_latency": null,
       "c2rtl_verdict": null,
       "c2rtl_z3_us": null
@@ -226,8 +226,8 @@
       "design": "13_alu32_pipe2",
       "category": "RTL_C2RTL",
       "sv_lines": 47,
-      "avg_sv2sc_us": 273,
-      "avg_sc2sv_us": 720,
+      "avg_sv2sc_us": 296,
+      "avg_sc2sv_us": 749,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -235,17 +235,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 6991,
+      "z3_roundtrip_us": 7327,
       "c2rtl_latency": 2,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 6568
+      "c2rtl_z3_us": 7292
     },
     {
       "design": "14_mac16_pipe2",
       "category": "RTL_C2RTL",
       "sv_lines": 34,
-      "avg_sv2sc_us": 225,
-      "avg_sc2sv_us": 623,
+      "avg_sv2sc_us": 236,
+      "avg_sc2sv_us": 640,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -253,17 +253,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 6123,
+      "z3_roundtrip_us": 6469,
       "c2rtl_latency": 2,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 5548
+      "c2rtl_z3_us": 6337
     },
     {
       "design": "15_crc8_step_comb",
       "category": "RTL_C2RTL",
       "sv_lines": 18,
-      "avg_sv2sc_us": 155,
-      "avg_sc2sv_us": 591,
+      "avg_sv2sc_us": 162,
+      "avg_sc2sv_us": 576,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -271,17 +271,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 9361,
+      "z3_roundtrip_us": 6846,
       "c2rtl_latency": 0,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 9128
+      "c2rtl_z3_us": 7079
     },
     {
       "design": "16_gray_enc16_pipe1",
       "category": "RTL_C2RTL",
       "sv_lines": 20,
-      "avg_sv2sc_us": 151,
-      "avg_sc2sv_us": 548,
+      "avg_sv2sc_us": 156,
+      "avg_sc2sv_us": 532,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -289,17 +289,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 6398,
+      "z3_roundtrip_us": 6016,
       "c2rtl_latency": 1,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 6017
+      "c2rtl_z3_us": 5467
     },
     {
       "design": "17_sat_sub16_pipe1",
       "category": "RTL_C2RTL",
       "sv_lines": 25,
-      "avg_sv2sc_us": 174,
-      "avg_sc2sv_us": 580,
+      "avg_sv2sc_us": 168,
+      "avg_sc2sv_us": 554,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -307,17 +307,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 6197,
+      "z3_roundtrip_us": 5872,
       "c2rtl_latency": 1,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 5857
+      "c2rtl_z3_us": 5634
     },
     {
       "design": "18_shifter32_pipe2",
       "category": "RTL_C2RTL",
       "sv_lines": 41,
-      "avg_sv2sc_us": 256,
-      "avg_sc2sv_us": 664,
+      "avg_sv2sc_us": 294,
+      "avg_sc2sv_us": 763,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -325,17 +325,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 6379,
+      "z3_roundtrip_us": 6957,
       "c2rtl_latency": 2,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 6742
+      "c2rtl_z3_us": 5945
     },
     {
       "design": "19_minmax32_pipe1",
       "category": "RTL_C2RTL",
       "sv_lines": 31,
-      "avg_sv2sc_us": 210,
-      "avg_sc2sv_us": 595,
+      "avg_sv2sc_us": 184,
+      "avg_sc2sv_us": 605,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -343,17 +343,17 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 5950,
+      "z3_roundtrip_us": 5813,
       "c2rtl_latency": 1,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 5658
+      "c2rtl_z3_us": 5465
     },
     {
       "design": "20_arb_prio4_comb",
       "category": "RTL_C2RTL",
       "sv_lines": 22,
-      "avg_sv2sc_us": 146,
-      "avg_sc2sv_us": 545,
+      "avg_sv2sc_us": 154,
+      "avg_sc2sv_us": 576,
       "classes": 0,
       "rtl_modules": 1,
       "sva_properties": 0,
@@ -361,10 +361,10 @@
       "clang_werror_pass": true,
       "svlang_pass": true,
       "z3_roundtrip_verdict": "EquivalentUnsat",
-      "z3_roundtrip_us": 6544,
+      "z3_roundtrip_us": 6857,
       "c2rtl_latency": 0,
       "c2rtl_verdict": "EquivalentUnsat",
-      "c2rtl_z3_us": 6383
+      "c2rtl_z3_us": 6770
     }
   ],
   "rq2_mutations": {
@@ -500,12 +500,12 @@
   "rq3_p6_cst_recovery": {
     "total_standalone_vips": 12,
     "hybrid_cst_valid": 12,
-    "strict_semantic_only_valid": 0,
+    "strict_semantic_only_valid": 4,
     "per_file": [
       {
         "file": "01_apb4_timer_vip.sv",
         "hybrid_valid": true,
-        "strict_semantic_only_valid": false
+        "strict_semantic_only_valid": true
       },
       {
         "file": "02_axi4_burst_vip.sv",
@@ -515,17 +515,17 @@
       {
         "file": "03_pcie_tlp_hdr.sv",
         "hybrid_valid": true,
-        "strict_semantic_only_valid": false
+        "strict_semantic_only_valid": true
       },
       {
         "file": "04_chi_coh_req.sv",
         "hybrid_valid": true,
-        "strict_semantic_only_valid": false
+        "strict_semantic_only_valid": true
       },
       {
         "file": "05_eth_mac_frame.sv",
         "hybrid_valid": true,
-        "strict_semantic_only_valid": false
+        "strict_semantic_only_valid": true
       },
       {
         "file": "06_ddr5_cmd_sched.sv",
@@ -567,33 +567,33 @@
   "rq4_p1_proto_scaling": [
     {
       "clauses_k": 8,
-      "monolithic_clang_o2_ms": 240.5,
-      "partitioned_b8_clang_o2_ms": 242.4,
-      "speedup_x": 0.99
+      "monolithic_clang_o2_ms": 245.9,
+      "partitioned_b8_clang_o2_ms": 246.2,
+      "speedup_x": 1.0
     },
     {
       "clauses_k": 24,
-      "monolithic_clang_o2_ms": 276.6,
-      "partitioned_b8_clang_o2_ms": 248.1,
-      "speedup_x": 1.11
+      "monolithic_clang_o2_ms": 290.5,
+      "partitioned_b8_clang_o2_ms": 255.7,
+      "speedup_x": 1.14
     },
     {
       "clauses_k": 48,
-      "monolithic_clang_o2_ms": 394.1,
-      "partitioned_b8_clang_o2_ms": 257.7,
-      "speedup_x": 1.53
+      "monolithic_clang_o2_ms": 394.3,
+      "partitioned_b8_clang_o2_ms": 261.5,
+      "speedup_x": 1.51
     },
     {
       "clauses_k": 80,
-      "monolithic_clang_o2_ms": 780.5,
-      "partitioned_b8_clang_o2_ms": 286.8,
-      "speedup_x": 2.72
+      "monolithic_clang_o2_ms": 780.7,
+      "partitioned_b8_clang_o2_ms": 291.8,
+      "speedup_x": 2.68
     },
     {
       "clauses_k": 120,
-      "monolithic_clang_o2_ms": 1685.3,
-      "partitioned_b8_clang_o2_ms": 307.1,
-      "speedup_x": 5.49
+      "monolithic_clang_o2_ms": 1845.4,
+      "partitioned_b8_clang_o2_ms": 295.1,
+      "speedup_x": 6.25
     }
   ]
 }

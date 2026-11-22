@@ -34,7 +34,7 @@ def rustc_ver() -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Record a verified uvir experiment/milestone result.")
+    parser = argparse.ArgumentParser(description="Record a verified svcc experiment/milestone result.")
     parser.add_argument("--milestone", required=True, help="Milestone ID, e.g. M0-scaffold")
     parser.add_argument("--title", required=True, help="Short result title")
     parser.add_argument("--command", required=True, help="Exact verification/benchmark command executed")
@@ -68,7 +68,7 @@ def main() -> None:
     journal_path = results_dir / "journal.md"
     if not journal_path.exists():
         journal_path.write_text(
-            "# `uvir` Engineering & Paper Result Journal\n\n"
+            "# `svcc` Engineering & Paper Result Journal\n\n"
             "Chronological log of verified compiler builds, Z3 equivalence proofs, and latency benchmarks.\n\n",
             encoding="utf-8",
         )

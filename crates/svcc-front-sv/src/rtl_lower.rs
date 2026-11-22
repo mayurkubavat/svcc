@@ -11,7 +11,7 @@ pub fn try_lower_sv_module(filename: &str, tree: &Tree, mod_node: NodeId) -> Opt
     let name = tree
         .child(mod_node, SyntaxKind::Name)
         .map(|n| tree.bare_text(n).trim().to_string())?;
-    if name == "uvir_sva_assertions" {
+    if name == "svcc_sva_assertions" {
         return None;
     }
 

@@ -1,4 +1,4 @@
-//! Formal Equivalence Verification for SV/UVM <-> C++17/SystemC over `UVIR`.
+//! Formal Equivalence Verification for SV/UVM <-> C++17/SystemC over `svcc-ir`.
 //!
 //! Provides three formal checks:
 //! 1. **Bit-Accurate CRV + Enum + `dist` Support Equivalence (`QF_BV` via Z3)**:
@@ -24,7 +24,7 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 use svcc_ir::{
     ClassDecl, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, EnumDecl, ExprId, InsideElem,
-    ScalarKind, SvaPropertyDecl, UvirError,
+    ScalarKind, SvaPropertyDecl, SvccError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,7 +63,7 @@ pub fn build_smtlib2_crv_miter(
     rhs_cls: &ClassDecl,
     rhs_arena: &CrvArena,
     rhs_enums: &[EnumDecl],
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     let mut vars: BTreeMap<String, (u32, bool)> = BTreeMap::new();
     for f in lhs_cls.fields.iter().chain(rhs_cls.fields.iter()) {
         if f.is_rand {
@@ -95,7 +95,7 @@ fn encode_class_hard_constraints(
     arena: &CrvArena,
     enums: &[EnumDecl],
     vars: &BTreeMap<String, (u32, bool)>,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     let mut terms = Vec::new();
 
     // Implicit IEEE 1800 enum legal-value domain constraints
@@ -166,7 +166,7 @@ fn encode_bv_expr(
     target_w: u32,
     arena: &CrvArena,
     vars: &BTreeMap<String, (u32, bool)>,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     match arena.get(id) {
         CrvExpr::Var(name) => {
             let (vw, signed) = vars.get(name).copied().unwrap_or((target_w, false));
@@ -230,7 +230,7 @@ fn encode_inside_elem_smt(
     el: &InsideElem,
     arena: &CrvArena,
     vars: &BTreeMap<String, (u32, bool)>,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     match el {
         InsideElem::Single(v) => {
             let v_bv = encode_bv_expr(*v, w, arena, vars)?;
@@ -252,7 +252,7 @@ fn encode_inside_elem_smt(
                 "(and ({ge} {t_bv} (bvsub {c_bv} {d_bv})) ({le} {t_bv} (bvadd {c_bv} {d_bv})))"
             ))
         }
-        InsideElem::TolerancePct { .. } => Err(UvirError::new(
+        InsideElem::TolerancePct { .. } => Err(SvccError::new(
             "svcc-equiv/smt",
             "run TargetLegalizerPass before SMT encoding of '+%-' tolerance",
         )),
@@ -263,7 +263,7 @@ fn encode_bool_expr(
     id: ExprId,
     arena: &CrvArena,
     vars: &BTreeMap<String, (u32, bool)>,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     match arena.get(id) {
         CrvExpr::BoolConst(b) => Ok(if *b { "true".into() } else { "false".into() }),
         CrvExpr::Var(name) => {
@@ -465,7 +465,7 @@ pub fn prove_class_equivalence(
     lhs_arena: &CrvArena,
     rhs_cls: &ClassDecl,
     rhs_arena: &CrvArena,
-) -> Result<EquivalenceReport, UvirError> {
+) -> Result<EquivalenceReport, SvccError> {
     prove_class_equivalence_with_enums(lhs_cls, lhs_arena, &[], rhs_cls, rhs_arena, &[])
 }
 
@@ -476,7 +476,7 @@ pub fn prove_class_equivalence_with_enums(
     rhs_cls: &ClassDecl,
     rhs_arena: &CrvArena,
     rhs_enums: &[EnumDecl],
-) -> Result<EquivalenceReport, UvirError> {
+) -> Result<EquivalenceReport, SvccError> {
     let smt =
         build_smtlib2_crv_miter(lhs_cls, lhs_arena, lhs_enums, rhs_cls, rhs_arena, rhs_enums)?;
     let smt_bytes = smt.len();
@@ -529,7 +529,7 @@ pub fn prove_class_equivalence_with_enums(
 pub fn prove_sva_bmc_equivalence(
     prop: &SvaPropertyDecl,
     extra_cycles: u32,
-) -> Result<SvaBmcReport, UvirError> {
+) -> Result<SvaBmcReport, SvccError> {
     let min_d = prop.min_delay;
     let max_d = prop.max_delay.max(min_d);
     let k = max_d + extra_cycles.max(4);
@@ -634,7 +634,7 @@ pub fn prove_sva_pair_equivalence(
     lhs: &SvaPropertyDecl,
     rhs: &SvaPropertyDecl,
     extra_cycles: u32,
-) -> Result<SvaBmcReport, UvirError> {
+) -> Result<SvaBmcReport, SvccError> {
     if lhs.is_cover != rhs.is_cover
         || lhs.antecedent.replace(' ', "") != rhs.antecedent.replace(' ', "")
         || lhs.consequent.replace(' ', "") != rhs.consequent.replace(' ', "")
@@ -719,7 +719,7 @@ pub fn prove_sva_cover_multiplicity_bmc(
     prop: &SvaPropertyDecl,
     extra_cycles: u32,
     use_per_age: bool,
-) -> Result<SvaBmcReport, UvirError> {
+) -> Result<SvaBmcReport, SvccError> {
     let min_d = prop.min_delay;
     let max_d = prop.max_delay.max(min_d);
     let k = max_d + extra_cycles.max(4);

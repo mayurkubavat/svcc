@@ -104,3 +104,17 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `workspace_rust_loc`: `12305`
 - **Notes**: Verified against mayurkubavat development forks of SystemC 3.0.3, UVM-SystemC, CRAVE, and FC4SC; ORCID vector badge + realigned TikZ Fig. 1 + balanced two-column refs.
 
+## [2026-11-22T00:55:19+00:00] `M4.1-svcc-ir-unification-and-sliced-dist-fix` — Unify UVIR -> svcc-ir/svcc_* across workspace and add hard-bound dist interval clipping + rational LCM scaling
+- **Commit**: `cfc730d` (`Darwin-arm64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)`)
+- **Command**: `./scripts/check.sh && python3 benchmarks/run_benchmarks.py && python3 benchmarks/run_m4_extended.py && make -C paper clean check arxiv-tar`
+- **Measured Metrics**:
+  - `arxiv_abstract_bytes`: `1919`
+  - `p1_k120_speedup_x`: `6.25`
+  - `p2_sliced_tvd_after`: `0.0016`
+  - `p2_sliced_tvd_before`: `0.0978`
+  - `p2_sliced_tvd_reduction_x`: `60.8`
+  - `p5_w10_speedup_x`: `341.3`
+  - `p6_cst_recovery`: `12/12 vs 4/12`
+  - `workspace_rust_loc`: `12600`
+- **Notes**: Zero uvir identifiers remaining; all 5 evaluated predictions (P1, P2, P3, P5, P6) confirmed; citation 10 removed.
+

@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Record a testable uvir prediction for later evaluation.")
+    parser = argparse.ArgumentParser(description="Record a testable svcc prediction for later evaluation.")
     parser.add_argument("--id", required=True, help="Prediction ID, e.g. P1")
     parser.add_argument("--area", required=True, help="Subsystem area (crv, sva, sched, types, frontend)")
     parser.add_argument("--hypothesis", required=True, help="Quantitative falsifiable prediction")

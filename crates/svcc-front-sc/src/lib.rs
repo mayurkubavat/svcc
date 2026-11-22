@@ -1,8 +1,8 @@
-//! IEEE 1666-2023 SystemC + UVM-SystemC + CRAVE + FC4SC front-end for `UVIR`.
+//! IEEE 1666-2023 SystemC + UVM-SystemC + CRAVE + FC4SC front-end for `svcc-ir`.
 //!
-//! Lifts C++17 verification classes, `enum class` types, `uvir_clocking_*` `#1step` samplers,
-//! `uvir_sva_*` bitmask pipeline observers, `crave::dist` weighted distributions, `uvm_reg_block`
-//! maps, component/TLM topologies, and `sc_spawn` cancel-token concurrency back into [`UvirModule`].
+//! Lifts C++17 verification classes, `enum class` types, `svcc_clocking_*` `#1step` samplers,
+//! `svcc_sva_*` bitmask pipeline observers, `crave::dist` weighted distributions, `uvm_reg_block`
+//! maps, component/TLM topologies, and `sc_spawn` cancel-token concurrency back into [`IrModule`].
 
 pub mod rtl_lift;
 
@@ -12,14 +12,14 @@ use svcc_ir::{
     BinKind, ClassDecl, ClockingDecl, ConstraintBlock, ConstraintClause, CovBin, CovergroupDecl,
     CoverpointDecl, CrossDecl, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, DistItem,
     DistWeightKind, EnumDecl, ExprId, FieldDecl, FieldOps, Frontend, FrontendMetrics, InsideElem,
-    JoinKind, MethodDecl, OwnershipMode, PhaseKind, Provenance, RalFieldMeta, RalMapSpec,
-    RalRegInstance, ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl,
-    TlmConnection, TlmPortDecl, TlmPortKind, UvirError, UvirModule, UvirType, UvmRole,
+    IrModule, IrType, JoinKind, MethodDecl, OwnershipMode, PhaseKind, Provenance, RalFieldMeta,
+    RalMapSpec, RalRegInstance, ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl,
+    SvccError, TlmConnection, TlmPortDecl, TlmPortKind, UvmRole,
 };
 
 pub trait CppAstExtractor: Send + Sync {
     fn backend_id(&self) -> &'static str;
-    fn extract(&self, filename: &str, source: &str) -> Result<UvirModule, UvirError>;
+    fn extract(&self, filename: &str, source: &str) -> Result<IrModule, SvccError>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -56,7 +56,7 @@ impl Frontend for ScFrontend {
         &self,
         filename: &str,
         source: &str,
-    ) -> Result<(UvirModule, FrontendMetrics), UvirError> {
+    ) -> Result<(IrModule, FrontendMetrics), SvccError> {
         let t0 = Instant::now();
         let module = self.extractor.extract(filename, source)?;
         let elapsed_us = t0.elapsed().as_micros() as u64;
@@ -88,8 +88,8 @@ impl CppAstExtractor for StructuralCppExtractor {
         "sc-uvm-structural-c++17"
     }
 
-    fn extract(&self, filename: &str, source: &str) -> Result<UvirModule, UvirError> {
-        let mut module = UvirModule::new(filename);
+    fn extract(&self, filename: &str, source: &str) -> Result<IrModule, SvccError> {
+        let mut module = IrModule::new(filename);
         module.enums = extract_cpp_enums(source);
         module.clockings = extract_cpp_clockings(source);
         module.properties = extract_cpp_sva_observers(source);
@@ -109,8 +109,8 @@ impl CppAstExtractor for StructuralCppExtractor {
 
         for (line_no, cls_hdr, body) in scan_cpp_classes(source) {
             let (name, base) = parse_class_header(&cls_hdr);
-            if name.starts_with("uvir_clocking_")
-                || name.starts_with("uvir_sva_")
+            if name.starts_with("svcc_clocking_")
+                || name.starts_with("svcc_sva_")
                 || name.starts_with("svcc_randc_")
             {
                 continue;
@@ -161,7 +161,7 @@ fn extract_cpp_enums(src: &str) -> Vec<EnumDecl> {
     let mut i = 0;
     while i < lines.len() {
         let l = lines[i].trim();
-        if let Some(rest) = l.strip_prefix("// uvir:enum ") {
+        if let Some(rest) = l.strip_prefix("// svcc:enum ") {
             if let Some((_, ws)) = rest.split_once("width=") {
                 pending_width = ws.trim().parse::<u32>().ok();
             }
@@ -212,7 +212,7 @@ fn extract_cpp_enums(src: &str) -> Vec<EnumDecl> {
 fn extract_cpp_clockings(src: &str) -> Vec<ClockingDecl> {
     let mut out = Vec::new();
     for line in src.lines() {
-        let Some(rest) = line.trim().strip_prefix("// uvir:clocking ") else {
+        let Some(rest) = line.trim().strip_prefix("// svcc:clocking ") else {
             continue;
         };
         let parts: Vec<&str> = rest.split_whitespace().collect();
@@ -253,7 +253,7 @@ fn extract_cpp_clockings(src: &str) -> Vec<ClockingDecl> {
 fn extract_cpp_sva_observers(src: &str) -> Vec<SvaPropertyDecl> {
     let mut out = Vec::new();
     for line in src.lines() {
-        let Some(rest) = line.trim().strip_prefix("// uvir:sva ") else {
+        let Some(rest) = line.trim().strip_prefix("// svcc:sva ") else {
             continue;
         };
         let mut kv: HashMap<&str, &str> = HashMap::new();
@@ -408,7 +408,7 @@ fn parse_sc_uvm_class(
     body: &str,
     enum_widths: &HashMap<String, u32>,
     arena: &mut CrvArena,
-) -> Result<ClassDecl, UvirError> {
+) -> Result<ClassDecl, SvccError> {
     let mut fields: Vec<FieldDecl> = Vec::new();
     let mut constraints: Vec<ConstraintBlock> = Vec::new();
     let mut subcomponents: Vec<SubComponentDecl> = Vec::new();
@@ -423,30 +423,30 @@ fn parse_sc_uvm_class(
 
     for raw_line in body.lines() {
         let trimmed_raw = raw_line.trim();
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:nocompare ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:nocompare ") {
             if let Some(f) = fields.iter_mut().find(|f| f.name == rest.trim()) {
                 f.ops.compare = false;
             }
             continue;
         }
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:nocopy ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:nocopy ") {
             if let Some(f) = fields.iter_mut().find(|f| f.name == rest.trim()) {
                 f.ops.copy = false;
             }
             continue;
         }
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:randc ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:randc ") {
             next_is_randc = Some(rest.trim().to_string());
             continue;
         }
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:enum_field ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:enum_field ") {
             let mut sp = rest.split_whitespace();
             if let (Some(fnm), Some(enm)) = (sp.next(), sp.next()) {
                 next_enum_field = Some((fnm.to_string(), enm.to_string()));
             }
             continue;
         }
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:subcomp ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:subcomp ") {
             let mut sp = rest.split_whitespace();
             if let (Some(cty), Some(cnm)) = (sp.next(), sp.next()) {
                 subcomponents.push(SubComponentDecl {
@@ -456,7 +456,7 @@ fn parse_sc_uvm_class(
             }
             continue;
         }
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:connect ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:connect ") {
             if let Some((lhs, rhs)) = rest.split_once("->") {
                 tlm_connections.push(TlmConnection {
                     initiator: lhs.trim().to_string(),
@@ -465,7 +465,7 @@ fn parse_sc_uvm_class(
             }
             continue;
         }
-        if let Some(rest) = trimmed_raw.strip_prefix("// uvir:ral_map ") {
+        if let Some(rest) = trimmed_raw.strip_prefix("// svcc:ral_map ") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
             if parts.len() >= 3 {
                 ral_map = Some(RalMapSpec {
@@ -533,7 +533,7 @@ fn parse_sc_uvm_class(
                 if let Some((ef_name, ename)) = &next_enum_field {
                     if ef_name == &f.name {
                         let ew = enum_widths.get(ename).copied().unwrap_or(f.ty.width);
-                        f.ty = UvirType::enum_ty(ename.clone(), ew);
+                        f.ty = IrType::enum_ty(ename.clone(), ew);
                         next_enum_field = None;
                     }
                 }
@@ -556,7 +556,7 @@ fn parse_sc_uvm_class(
                     let lsb = parts[3].parse::<u32>().unwrap_or(0);
                     let width = parts[4].parse::<u32>().unwrap_or(1);
                     if let Some(f) = fields.iter_mut().find(|f| f.name == fname) {
-                        f.ty = UvirType::bitvec(width, false);
+                        f.ty = IrType::bitvec(width, false);
                         f.ral_meta = Some(RalFieldMeta {
                             lsb,
                             width,
@@ -695,7 +695,7 @@ fn parse_cpp_sched_block(mbody: &str) -> Vec<SchedOp> {
     let mut i = 0usize;
     while i < lines.len() {
         let l = lines[i];
-        if let Some(rest) = l.strip_prefix("// uvir:fork ") {
+        if let Some(rest) = l.strip_prefix("// svcc:fork ") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
             let join = match parts.first().copied().unwrap_or("join_all") {
                 "join_any" => JoinKind::JoinAny,
@@ -754,14 +754,14 @@ fn parse_cpp_sched_block(mbody: &str) -> Vec<SchedOp> {
             });
             continue;
         }
-        if let Some(sig) = l.strip_prefix("// uvir:wait_posedge ") {
+        if let Some(sig) = l.strip_prefix("// svcc:wait_posedge ") {
             ops.push(SchedOp::WaitPosEdge {
                 signal: sig.trim().to_string(),
             });
             i += 2; // skip companion wait
             continue;
         }
-        if let Some(cb) = l.strip_prefix("// uvir:sample_1step ") {
+        if let Some(cb) = l.strip_prefix("// svcc:sample_1step ") {
             ops.push(SchedOp::SamplePreTimestep {
                 clocking_name: cb.trim().to_string(),
             });
@@ -896,22 +896,22 @@ fn parse_plain_cpp_member(line: &str, enum_widths: &HashMap<String, u32>) -> Opt
     })
 }
 
-pub fn map_cpp_type(cpp_ty: &str, enum_widths: &HashMap<String, u32>) -> UvirType {
+pub fn map_cpp_type(cpp_ty: &str, enum_widths: &HashMap<String, u32>) -> IrType {
     let t = cpp_ty.trim().trim_start_matches("std::");
     if let Some(&ew) = enum_widths.get(t) {
-        return UvirType::enum_ty(t, ew);
+        return IrType::enum_ty(t, ew);
     }
     match t {
-        "bool" => UvirType::bitvec(1, false),
-        "uint8_t" | "unsigned char" => UvirType::bitvec(8, false),
-        "int8_t" | "signed char" => UvirType::bitvec(8, true),
-        "uint16_t" | "unsigned short" => UvirType::bitvec(16, false),
-        "int16_t" | "short" => UvirType::bitvec(16, true),
-        "uint32_t" | "unsigned int" | "unsigned" => UvirType::bitvec(32, false),
-        "int32_t" | "int" => UvirType::bitvec(32, true),
-        "uint64_t" | "unsigned long long" => UvirType::bitvec(64, false),
-        "int64_t" | "long long" => UvirType::bitvec(64, true),
-        "string" => UvirType {
+        "bool" => IrType::bitvec(1, false),
+        "uint8_t" | "unsigned char" => IrType::bitvec(8, false),
+        "int8_t" | "signed char" => IrType::bitvec(8, true),
+        "uint16_t" | "unsigned short" => IrType::bitvec(16, false),
+        "int16_t" | "short" => IrType::bitvec(16, true),
+        "uint32_t" | "unsigned int" | "unsigned" => IrType::bitvec(32, false),
+        "int32_t" | "int" => IrType::bitvec(32, true),
+        "uint64_t" | "unsigned long long" => IrType::bitvec(64, false),
+        "int64_t" | "long long" => IrType::bitvec(64, true),
+        "string" => IrType {
             kind: ScalarKind::String,
             width: 0,
             signed: false,
@@ -921,12 +921,12 @@ pub fn map_cpp_type(cpp_ty: &str, enum_widths: &HashMap<String, u32>) -> UvirTyp
             if let (Some(lb), Some(rb)) = (t.find('<'), t.rfind('>')) {
                 let w = t[lb + 1..rb].trim().parse::<u32>().unwrap_or(32);
                 if t.contains("sc_lv") {
-                    return UvirType::logicvec(w, false);
+                    return IrType::logicvec(w, false);
                 }
                 let signed = t.contains("sc_int") || t.contains("sc_bigint");
-                return UvirType::bitvec(w, signed);
+                return IrType::bitvec(w, signed);
             }
-            UvirType::bitvec(32, false)
+            IrType::bitvec(32, false)
         }
     }
 }
@@ -1022,7 +1022,7 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
     parts
 }
 
-fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError> {
+fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, SvccError> {
     let s = strip_outer_parens(raw.trim());
 
     if let Some(inner) = s
@@ -1170,13 +1170,13 @@ fn parse_crave_expr(raw: &str, arena: &mut CrvArena) -> Result<ExprId, UvirError
         return Ok(arena.alloc(CrvExpr::Var(s.to_string())));
     }
 
-    Err(UvirError::new(
+    Err(SvccError::new(
         "svcc-front-sc/crave",
         format!("unable to parse CRAVE expression '{raw}'"),
     ))
 }
 
-fn parse_crave_dist_chain(chain: &str, arena: &mut CrvArena) -> Result<Vec<DistItem>, UvirError> {
+fn parse_crave_dist_chain(chain: &str, arena: &mut CrvArena) -> Result<Vec<DistItem>, SvccError> {
     let mut items = Vec::new();
     let mut rem = chain;
     while let Some(dot) = rem.find(".add") {

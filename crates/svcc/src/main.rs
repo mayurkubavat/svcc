@@ -14,7 +14,7 @@ use svcc_equiv::{
     prove_sva_cover_multiplicity_bmc, prove_sva_pair_equivalence, SmtVerdict,
 };
 use svcc_front_sv::SvFrontend;
-use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, TargetCapabilities, UvirError};
+use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, SvccError, TargetCapabilities};
 use svcc_passes::PassPipeline;
 
 fn build_registry() -> LanguageRegistry {
@@ -39,7 +39,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_cli() -> Result<(), UvirError> {
+fn run_cli() -> Result<(), SvccError> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         print_usage();
@@ -52,7 +52,7 @@ fn run_cli() -> Result<(), UvirError> {
         "sv2sc" => {
             let input = args
                 .get(1)
-                .ok_or_else(|| UvirError::new("cli", "usage: svcc sv2sc <in.sv> [-o <out.hpp>] [--partition-clauses B] [--no-cst-fallback] [--no-dist-lcm] [--force-bitmask-sva]"))?;
+                .ok_or_else(|| SvccError::new("cli", "usage: svcc sv2sc <in.sv> [-o <out.hpp>] [--partition-clauses B] [--no-cst-fallback] [--no-dist-lcm] [--force-bitmask-sva]"))?;
             let out_path = parse_opt_flag(&args[2..], "-o");
             let partition = parse_opt_flag(&args[2..], "--partition-clauses")
                 .and_then(|s| s.parse::<usize>().ok());
@@ -70,7 +70,7 @@ fn run_cli() -> Result<(), UvirError> {
         }
         "sc2sv" | "c2rtl" => {
             let input = args.get(1).ok_or_else(|| {
-                UvirError::new("cli", "usage: svcc sc2sv|c2rtl <in.hpp> [-o <out.sv>]")
+                SvccError::new("cli", "usage: svcc sc2sv|c2rtl <in.hpp> [-o <out.sv>]")
             })?;
             let out_path = parse_opt_flag(&args[2..], "-o");
             cmd_transpile(&reg, "sc-uvm", "sv-uvm", input, out_path.as_deref())
@@ -82,19 +82,19 @@ fn run_cli() -> Result<(), UvirError> {
             let input = positional_args(&args[1..])
                 .into_iter()
                 .next()
-                .ok_or_else(|| UvirError::new("cli", "missing input file for transpile"))?;
+                .ok_or_else(|| SvccError::new("cli", "missing input file for transpile"))?;
             cmd_transpile(&reg, &from, &to, &input, out_path.as_deref())
         }
         "roundtrip-check" => {
             let input = args.get(1).ok_or_else(|| {
-                UvirError::new("cli", "usage: svcc roundtrip-check <in.sv> [--shims <dir>]")
+                SvccError::new("cli", "usage: svcc roundtrip-check <in.sv> [--shims <dir>]")
             })?;
             let shim_dir = parse_opt_flag(&args[2..], "--shims");
             cmd_roundtrip_check(&reg, input, shim_dir.as_deref())
         }
         "prove-equiv" => {
             if args.len() < 3 {
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "cli",
                     "usage: svcc prove-equiv <lhs.{sv,hpp}> <rhs.{sv,hpp}>",
                 ));
@@ -104,7 +104,7 @@ fn run_cli() -> Result<(), UvirError> {
         "prove-sec" => {
             let pos = positional_args(&args[1..]);
             if pos.len() < 2 {
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "cli",
                     "usage: svcc prove-sec <spec.{sv,hpp}> <imp.{sv,hpp}> [--latency L]",
                 ));
@@ -117,13 +117,13 @@ fn run_cli() -> Result<(), UvirError> {
         "bench" => {
             let input = args
                 .get(1)
-                .ok_or_else(|| UvirError::new("cli", "usage: svcc bench <in.sv> [--iters N]"))?;
+                .ok_or_else(|| SvccError::new("cli", "usage: svcc bench <in.sv> [--iters N]"))?;
             let iters = parse_opt_flag(&args[2..], "--iters")
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(50);
             cmd_bench(&reg, input, iters)
         }
-        other => Err(UvirError::new(
+        other => Err(SvccError::new(
             "cli",
             format!("unknown subcommand '{other}' (run `svcc --help`)"),
         )),
@@ -164,7 +164,7 @@ fn positional_args(args: &[String]) -> Vec<String> {
     out
 }
 
-fn cmd_targets(reg: &LanguageRegistry) -> Result<(), UvirError> {
+fn cmd_targets(reg: &LanguageRegistry) -> Result<(), SvccError> {
     let profiles = [
         TargetCapabilities::sv_uvm_1800_2023(),
         TargetCapabilities::sc_uvm_crave_fc4sc(),
@@ -195,9 +195,9 @@ fn cmd_sv2sc_ext(
     no_cst_fallback: bool,
     no_dist_lcm: bool,
     force_bitmask_sva: bool,
-) -> Result<(), UvirError> {
+) -> Result<(), SvccError> {
     let src = fs::read_to_string(input_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {input_path}: {e}")))?;
     let fe = if no_cst_fallback {
         SvFrontend::strict_semantic_only()
     } else {
@@ -218,7 +218,7 @@ fn cmd_sv2sc_ext(
 
     if let Some(p) = out_path {
         fs::write(p, &emitted)
-            .map_err(|e| UvirError::new("io", format!("cannot write {p}: {e}")))?;
+            .map_err(|e| SvccError::new("io", format!("cannot write {p}: {e}")))?;
     } else {
         print!("{emitted}");
     }
@@ -231,15 +231,15 @@ fn cmd_transpile(
     to: &str,
     input_path: &str,
     out_path: Option<&str>,
-) -> Result<(), UvirError> {
+) -> Result<(), SvccError> {
     let src = fs::read_to_string(input_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {input_path}: {e}")))?;
     let fe = reg
         .frontend(from)
-        .ok_or_else(|| UvirError::new("cli", format!("unknown frontend '{from}'")))?;
+        .ok_or_else(|| SvccError::new("cli", format!("unknown frontend '{from}'")))?;
     let be = reg
         .backend(to)
-        .ok_or_else(|| UvirError::new("cli", format!("unknown backend '{to}'")))?;
+        .ok_or_else(|| SvccError::new("cli", format!("unknown backend '{to}'")))?;
 
     let (mut module, _) = fe.lower_str(input_path, &src)?;
     PassPipeline::for_target(be.capabilities()).run_all(&mut module)?;
@@ -252,7 +252,7 @@ fn cmd_transpile(
 
     if let Some(p) = out_path {
         fs::write(p, &emitted)
-            .map_err(|e| UvirError::new("io", format!("cannot write {p}: {e}")))?;
+            .map_err(|e| SvccError::new("io", format!("cannot write {p}: {e}")))?;
     } else {
         print!("{emitted}");
     }
@@ -263,9 +263,9 @@ fn cmd_roundtrip_check(
     reg: &LanguageRegistry,
     input_path: &str,
     shim_dir: Option<&str>,
-) -> Result<(), UvirError> {
+) -> Result<(), SvccError> {
     let src = fs::read_to_string(input_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {input_path}: {e}")))?;
     let sv_fe = reg.frontend("sv-uvm").unwrap();
     let sc_fe = reg.frontend("sc-uvm").unwrap();
     let sc_em = ScEmitter::new();
@@ -309,7 +309,7 @@ fn cmd_roundtrip_check(
             rep.coverage_isomorphic
         );
         if rep.hard_crv_verdict == SmtVerdict::CounterexampleSat || !rep.coverage_isomorphic {
-            return Err(UvirError::new(
+            return Err(SvccError::new(
                 "roundtrip",
                 format!("equivalence mismatch in '{}'", rep.class_name),
             ));
@@ -327,7 +327,7 @@ fn cmd_roundtrip_check(
             bmc.property_name, bmc.bound_cycles, bmc.verdict, bmc.solver_time_us, bmc.smtlib2_bytes
         );
         if bmc.verdict == SmtVerdict::CounterexampleSat {
-            return Err(UvirError::new(
+            return Err(SvccError::new(
                 "roundtrip/sva",
                 format!("SVA observer BMC mismatch in '{}'", prop.name),
             ));
@@ -346,7 +346,7 @@ fn cmd_roundtrip_check(
             sec.solver_time_us
         );
         if sec.verdict == SmtVerdict::CounterexampleSat {
-            return Err(UvirError::new(
+            return Err(SvccError::new(
                 "roundtrip/rtl",
                 format!("RTL SEC mismatch in '{}'", orig_rtl.name),
             ));
@@ -360,11 +360,11 @@ fn cmd_prove_equiv(
     reg: &LanguageRegistry,
     lhs_path: &str,
     rhs_path: &str,
-) -> Result<(), UvirError> {
+) -> Result<(), SvccError> {
     let lhs_src = fs::read_to_string(lhs_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {lhs_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {lhs_path}: {e}")))?;
     let rhs_src = fs::read_to_string(rhs_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {rhs_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {rhs_path}: {e}")))?;
 
     let lhs_fe = reg.frontend(detect_lang(lhs_path)).unwrap();
     let rhs_fe = reg.frontend(detect_lang(rhs_path)).unwrap();
@@ -378,7 +378,7 @@ fn cmd_prove_equiv(
 
     for cls_l in &m_l.classes {
         let cls_r = m_r.find_class(&cls_l.name).ok_or_else(|| {
-            UvirError::new(
+            SvccError::new(
                 "equiv",
                 format!("class '{}' missing in {rhs_path}", cls_l.name),
             )
@@ -393,7 +393,7 @@ fn cmd_prove_equiv(
         )?;
         println!("{}", serde_json::to_string_pretty(&rep).unwrap());
         if rep.hard_crv_verdict == SmtVerdict::CounterexampleSat || !rep.coverage_isomorphic {
-            return Err(UvirError::new("equiv", "equivalence check failed"));
+            return Err(SvccError::new("equiv", "equivalence check failed"));
         }
     }
 
@@ -403,7 +403,7 @@ fn cmd_prove_equiv(
             .iter()
             .find(|p| p.name == prop_l.name)
             .ok_or_else(|| {
-                UvirError::new(
+                SvccError::new(
                     "equiv/sva",
                     format!("SVA property '{}' missing in {rhs_path}", prop_l.name),
                 )
@@ -411,22 +411,22 @@ fn cmd_prove_equiv(
         let rep = prove_sva_pair_equivalence(prop_l, prop_r, 6)?;
         println!("{}", serde_json::to_string_pretty(&rep).unwrap());
         if rep.verdict == SmtVerdict::CounterexampleSat {
-            return Err(UvirError::new("equiv/sva", "SVA equivalence check failed"));
+            return Err(SvccError::new("equiv/sva", "SVA equivalence check failed"));
         }
     }
     Ok(())
 }
 
-fn cmd_prove_sec(spec_path: &str, imp_path: &str, latency: u32) -> Result<(), UvirError> {
+fn cmd_prove_sec(spec_path: &str, imp_path: &str, latency: u32) -> Result<(), SvccError> {
     let spec_src = fs::read_to_string(spec_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {spec_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {spec_path}: {e}")))?;
     let imp_src = fs::read_to_string(imp_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {imp_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {imp_path}: {e}")))?;
 
     let rep = prove_rtl_or_c2rtl_sec(spec_path, &spec_src, imp_path, &imp_src, latency)?;
     println!("{}", serde_json::to_string_pretty(&rep).unwrap());
     if rep.verdict == SmtVerdict::CounterexampleSat {
-        return Err(UvirError::new(
+        return Err(SvccError::new(
             "sec",
             format!(
                 "sequential equivalence check FAILED (SAT counterexample) between '{}' and '{}'",
@@ -458,9 +458,9 @@ struct BenchReport {
     coverage_isomorphic: bool,
 }
 
-fn cmd_bench(reg: &LanguageRegistry, input_path: &str, iters: usize) -> Result<(), UvirError> {
+fn cmd_bench(reg: &LanguageRegistry, input_path: &str, iters: usize) -> Result<(), SvccError> {
     let src = fs::read_to_string(input_path)
-        .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
+        .map_err(|e| SvccError::new("io", format!("cannot read {input_path}: {e}")))?;
     let sv_fe = reg.frontend("sv-uvm").unwrap();
     let sc_fe = reg.frontend("sc-uvm").unwrap();
     let sc_be = reg.backend("sc-uvm").unwrap();

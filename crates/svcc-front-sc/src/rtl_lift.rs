@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use svcc_ir::{
     Provenance, RtlCombBlock, RtlModule, RtlPort, RtlPortDir, RtlSignal, RtlStmt, RtlSyncBlock,
-    SourceLang, UvirError,
+    SourceLang, SvccError,
 };
 
 /// Enforces IEEE 1666.1 synthesizability boundaries on RTL `SC_MODULE` and `c2rtl` bodies.
@@ -12,7 +12,7 @@ fn check_ieee_1666_1_synthesizable(
     filename: &str,
     base_line: u32,
     body: &str,
-) -> Result<(), UvirError> {
+) -> Result<(), SvccError> {
     let forbidden = [
         (
             "new ",
@@ -39,7 +39,7 @@ fn check_ieee_1666_1_synthesizable(
         let code = raw_line.split("//").next().unwrap_or("");
         for (pat, msg) in forbidden {
             if code.contains(pat) {
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "svcc-front-sc/ieee1666.1",
                     format!("{}:{}: {}", filename, base_line + (offset as u32), msg),
                 ));
@@ -50,7 +50,7 @@ fn check_ieee_1666_1_synthesizable(
 }
 
 /// Extracts all `SC_MODULE(name) { ... }` RTL modules from C++17 SystemC source.
-pub fn extract_sc_rtl_modules(filename: &str, src: &str) -> Result<Vec<RtlModule>, UvirError> {
+pub fn extract_sc_rtl_modules(filename: &str, src: &str) -> Result<Vec<RtlModule>, SvccError> {
     let mut modules = Vec::new();
     let bytes = src.as_bytes();
     let mut i = 0usize;
@@ -114,7 +114,7 @@ fn parse_sc_module_body(
     line_no: u32,
     name: String,
     body: &str,
-) -> Result<RtlModule, UvirError> {
+) -> Result<RtlModule, SvccError> {
     let mut ports = Vec::new();
     let mut signals = Vec::new();
     let mut comb_methods: Vec<String> = Vec::new();
@@ -456,7 +456,7 @@ fn collect_sens_rec(stmts: &[RtlStmt], known: &BTreeSet<&str>, out: &mut BTreeSe
 
 /// Compiles `// svcc:c2rtl`-annotated untimed C++17 golden functions into SSA combinational
 /// [`RtlModule`]s with source-line provenance for `InFormal` `check_sec` / `svcc prove-sec`.
-pub fn extract_c2rtl_functions(filename: &str, src: &str) -> Result<Vec<RtlModule>, UvirError> {
+pub fn extract_c2rtl_functions(filename: &str, src: &str) -> Result<Vec<RtlModule>, SvccError> {
     let mut out = Vec::new();
     let lines: Vec<&str> = src.lines().collect();
     let mut i = 0usize;
@@ -495,7 +495,7 @@ pub fn extract_c2rtl_functions(filename: &str, src: &str) -> Result<Vec<RtlModul
             }
             let lb = chunk
                 .find('{')
-                .ok_or_else(|| UvirError::new("c2rtl", "missing '{' in c2rtl function"))?;
+                .ok_or_else(|| SvccError::new("c2rtl", "missing '{' in c2rtl function"))?;
             let rb = chunk.rfind('}').unwrap_or(chunk.len());
             let sig = chunk[..lb].trim();
             let fbody = &chunk[lb + 1..rb];
@@ -520,17 +520,17 @@ fn lower_c2rtl_function_ssa(
     line_no: u32,
     sig: &str,
     fbody: &str,
-) -> Result<RtlModule, UvirError> {
+) -> Result<RtlModule, SvccError> {
     let lp = sig
         .find('(')
-        .ok_or_else(|| UvirError::new("c2rtl", format!("bad c2rtl signature: {sig}")))?;
+        .ok_or_else(|| SvccError::new("c2rtl", format!("bad c2rtl signature: {sig}")))?;
     let rp = sig
         .rfind(')')
-        .ok_or_else(|| UvirError::new("c2rtl", format!("bad c2rtl signature: {sig}")))?;
+        .ok_or_else(|| SvccError::new("c2rtl", format!("bad c2rtl signature: {sig}")))?;
     let ret_and_name = sig[..lp].trim();
     let last_sp = ret_and_name
         .rfind(' ')
-        .ok_or_else(|| UvirError::new("c2rtl", "missing return type on c2rtl function"))?;
+        .ok_or_else(|| SvccError::new("c2rtl", "missing return type on c2rtl function"))?;
     let ret_ty_s = ret_and_name[..last_sp].trim();
     let fn_name = ret_and_name[last_sp + 1..].trim().to_string();
     let (ret_w, ret_signed) = parse_cpp_bitwidth_and_sign(ret_ty_s);
@@ -633,7 +633,7 @@ fn eval_c2rtl_lines(
     mut st: SsaState,
     filename: &str,
     line_no: u32,
-) -> Result<(SsaState, usize), UvirError> {
+) -> Result<(SsaState, usize), SvccError> {
     while i < lines.len() {
         let l = lines[i];
         if l == "}" || l.starts_with("} else") {
@@ -643,9 +643,9 @@ fn eval_c2rtl_lines(
         // Bounded `for (int idx = 0; idx < N; ++idx) { ... }` unroller
         if let Some(after_for) = l.strip_prefix("for") {
             let hdr = extract_paren(after_for.trim())
-                .ok_or_else(|| UvirError::new("c2rtl/loop", "malformed for-loop header"))?;
+                .ok_or_else(|| SvccError::new("c2rtl/loop", "malformed for-loop header"))?;
             let (ivar, lo, hi) = parse_bounded_for_header(&hdr).ok_or_else(|| {
-                UvirError::new(
+                SvccError::new(
                     "c2rtl/loop",
                     format!("{filename}:{line_no}: C2RTL loop bound must be a compile-time constant <= 64: '{hdr}'"),
                 )

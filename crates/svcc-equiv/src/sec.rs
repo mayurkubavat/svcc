@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 #[cfg(feature = "btor2-sec")]
 use std::time::Instant;
-use svcc_ir::{RtlModule, RtlPortDir, UvirError};
+use svcc_ir::{RtlModule, RtlPortDir, SvccError};
 #[cfg(feature = "btor2-sec")]
 use svlang::netlist::{lower_trees, LowerConfig, LowerOutcome};
 
@@ -48,7 +48,7 @@ pub fn build_combined_sec_miter_sv(
     imp_mod: &RtlModule,
     imp_sv_src: &str,
     latency: u32,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     let renamed_spec_name = format!("{}__svcc_spec", spec_mod.name);
     let renamed_imp_name = format!("{}__svcc_imp", imp_mod.name);
 
@@ -75,7 +75,7 @@ pub fn build_sec_btor2(
     imp_mod: &RtlModule,
     imp_sv_src: &str,
     latency: u32,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     let combined_sv =
         build_combined_sec_miter_sv(spec_mod, spec_sv_src, imp_mod, imp_sv_src, latency)?;
     let tree = svlang::syntax::parse_source(&combined_sv, "svcc_sec_miter.sv", Default::default());
@@ -88,7 +88,7 @@ pub fn build_sec_btor2(
         LowerOutcome::Lowered(nl) => nl,
         LowerOutcome::Unsupported(ds) | LowerOutcome::Error(ds) => {
             let msg: Vec<String> = ds.iter().map(ToString::to_string).collect();
-            return Err(UvirError::new(
+            return Err(SvccError::new(
                 "svcc-equiv/netlist",
                 format!(
                     "failed lowering SEC miter to sv-netlist:\n{}",
@@ -99,7 +99,7 @@ pub fn build_sec_btor2(
     };
     let _ = netlist.compile_properties(&svlang::netlist::PropertyOptions::default());
     let btor_model = svlang::btor2::write(&netlist, &svlang::btor2::Options::default())
-        .map_err(|e| UvirError::new("svcc-equiv/btor2", format!("btor2 write failed: {e:?}")))?;
+        .map_err(|e| SvccError::new("svcc-equiv/btor2", format!("btor2 write failed: {e:?}")))?;
     Ok(btor_model.btor2)
 }
 
@@ -113,7 +113,7 @@ pub fn prove_rtl_sec_equivalence(
     imp_sv_src: &str,
     latency: u32,
     extra_cycles: u32,
-) -> Result<RtlSecReport, UvirError> {
+) -> Result<RtlSecReport, SvccError> {
     let btor2 = build_sec_btor2(spec_mod, spec_sv_src, imp_mod, imp_sv_src, latency)?;
     let btor2_lines = btor2.lines().count();
 
@@ -151,7 +151,7 @@ pub fn build_sv_sec_miter(
     imp: &RtlModule,
     imp_sv_name: &str,
     latency: u32,
-) -> Result<String, UvirError> {
+) -> Result<String, SvccError> {
     // Identify clock and reset ports on `imp` (or synthesize a miter clock/reset when both are combinational)
     let clk_port = imp
         .ports
@@ -197,7 +197,7 @@ pub fn build_sv_sec_miter(
         .collect();
 
     if spec_outputs.is_empty() || imp_outputs.is_empty() {
-        return Err(UvirError::new(
+        return Err(SvccError::new(
             "svcc-equiv/sec",
             "both spec and imp RTL modules must declare at least one output port",
         ));
@@ -370,7 +370,7 @@ enum BtorLine {
 }
 
 #[cfg(feature = "btor2-sec")]
-fn unroll_btor2_to_smtlib2(btor2: &str, k_steps: u32) -> Result<String, UvirError> {
+fn unroll_btor2_to_smtlib2(btor2: &str, k_steps: u32) -> Result<String, SvccError> {
     let mut sorts: BTreeMap<u32, u32> = BTreeMap::new();
     let mut nodes: BTreeMap<u32, BtorLine> = BTreeMap::new();
     let mut inits: BTreeMap<u32, i64> = BTreeMap::new();
@@ -723,7 +723,7 @@ fn unroll_btor2_to_smtlib2(btor2: &str, k_steps: u32) -> Result<String, UvirErro
                         "implies" => format!("(bvor (bvnot {av}) {bv})"),
                         "iff" => format!("(ite (= {av} {bv}) #b1 #b0)"),
                         other => {
-                            return Err(UvirError::new(
+                            return Err(SvccError::new(
                                 "svcc-equiv/btor2-smt",
                                 format!("unsupported btor2 binary op '{other}'"),
                             ));

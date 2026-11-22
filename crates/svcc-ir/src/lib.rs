@@ -1,8 +1,8 @@
-//! Core Universal Verification Intermediate Representation (`UVIR`) for SV/UVM <-> C++17/SystemC.
+//! Core Universal Verification Intermediate Representation (`svcc-ir`) for SV/UVM <-> C++17/SystemC.
 //!
 //! `svcc-ir` models IEEE 1800-2023 SystemVerilog + IEEE 1800.2-2020 UVM and
 //! IEEE 1666-2023 SystemC 3.0.3 + UVM-SystemC + CRAVE + FC4SC across six dialects
-//! inside an arena-indexed [`UvirModule`]:
+//! inside an arena-indexed [`IrModule`]:
 //!
 //! 1. **`types`**: Bit-accurate 2-state/4-state vectors, enums (`EnumDecl`), signedness,
 //!    and GC-handle vs. C++17 RAII/TLM value-copy ownership (`OwnershipMode`).
@@ -26,7 +26,7 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ExprId(pub u32);
 
-/// Source language of a lowered [`UvirModule`].
+/// Source language of a lowered [`IrModule`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceLang {
     SystemVerilogUvm,
@@ -89,14 +89,14 @@ pub enum OwnershipMode {
 
 /// Canonical width-, sign-, and state-resolved type descriptor.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UvirType {
+pub struct IrType {
     pub kind: ScalarKind,
     pub width: u32,
     pub signed: bool,
     pub is_four_state: bool,
 }
 
-impl UvirType {
+impl IrType {
     pub fn bitvec(width: u32, signed: bool) -> Self {
         Self {
             kind: ScalarKind::BitVector,
@@ -265,7 +265,7 @@ pub struct TlmConnection {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldDecl {
     pub name: String,
-    pub ty: UvirType,
+    pub ty: IrType,
     pub is_rand: bool,
     pub is_randc: bool,
     pub ops: FieldOps,
@@ -296,7 +296,7 @@ pub struct MethodDecl {
     pub body_ops: Vec<SchedOp>,
 }
 
-/// Canonical UVM/OOP class representation in `UVIR`.
+/// Canonical UVM/OOP class representation in `svcc-ir`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClassDecl {
     pub name: String,
@@ -601,11 +601,11 @@ pub struct SvaPropertyDecl {
 }
 
 // ============================================================================
-// Top-Level `UvirModule` & SV <-> C++17 Capability Architecture
+// Top-Level `IrModule` & SV <-> C++17 Capability Architecture
 // ============================================================================
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UvirModule {
+pub struct IrModule {
     pub name: String,
     pub crv_arena: CrvArena,
     pub enums: Vec<EnumDecl>,
@@ -687,7 +687,7 @@ pub struct RtlModule {
     pub provenance: Provenance,
 }
 
-impl UvirModule {
+impl IrModule {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -709,12 +709,12 @@ impl UvirModule {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UvirError {
+pub struct SvccError {
     pub stage: &'static str,
     pub message: String,
 }
 
-impl UvirError {
+impl SvccError {
     pub fn new(stage: &'static str, message: impl Into<String>) -> Self {
         Self {
             stage,
@@ -723,13 +723,13 @@ impl UvirError {
     }
 }
 
-impl fmt::Display for UvirError {
+impl fmt::Display for SvccError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}] {}", self.stage, self.message)
     }
 }
 
-impl std::error::Error for UvirError {}
+impl std::error::Error for SvccError {}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FrontendMetrics {
@@ -756,18 +756,18 @@ pub trait Frontend: Send + Sync {
         &self,
         filename: &str,
         source: &str,
-    ) -> Result<(UvirModule, FrontendMetrics), UvirError>;
+    ) -> Result<(IrModule, FrontendMetrics), SvccError>;
 }
 
 pub trait TransformPass: Send + Sync {
     fn name(&self) -> &'static str;
-    fn run(&self, module: &mut UvirModule) -> Result<PassStats, UvirError>;
+    fn run(&self, module: &mut IrModule) -> Result<PassStats, SvccError>;
 }
 
 pub trait BackendEmitter: Send + Sync {
     fn target_name(&self) -> &'static str;
     fn capabilities(&self) -> TargetCapabilities;
-    fn emit(&self, module: &UvirModule) -> Result<String, UvirError>;
+    fn emit(&self, module: &IrModule) -> Result<String, SvccError>;
 }
 
 pub trait DialectExtension: Send + Sync {
@@ -911,7 +911,7 @@ mod tests {
 
     #[test]
     fn crv_arena_and_dist_roundtrip_json_cleanly() {
-        let mut m = UvirModule::new("unit");
+        let mut m = IrModule::new("unit");
         let v = m.crv_arena.alloc(CrvExpr::Var("addr".into()));
         let lo = m.crv_arena.alloc(CrvExpr::Const {
             value: 0x1000,
@@ -932,7 +932,7 @@ mod tests {
             }],
         });
         let json = serde_json::to_string(&m).expect("serialize");
-        let back: UvirModule = serde_json::from_str(&json).expect("deserialize");
+        let back: IrModule = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.crv_arena.get(dist), m.crv_arena.get(dist));
     }
 }

@@ -11,29 +11,29 @@ struct expr {
   constexpr expr(const T&) {}
 };
 
-#define UVIR_CRAVE_BINOP(OP) \
+#define SVCC_CRAVE_BINOP(OP) \
   inline constexpr expr operator OP(expr, expr) { return {}; } \
   template <typename R> inline constexpr expr operator OP(expr, const R&) { return {}; } \
   template <typename L> inline constexpr expr operator OP(const L&, expr) { return {}; }
 
-UVIR_CRAVE_BINOP(==)
-UVIR_CRAVE_BINOP(!=)
-UVIR_CRAVE_BINOP(<)
-UVIR_CRAVE_BINOP(<=)
-UVIR_CRAVE_BINOP(>)
-UVIR_CRAVE_BINOP(>=)
-UVIR_CRAVE_BINOP(+)
-UVIR_CRAVE_BINOP(-)
-UVIR_CRAVE_BINOP(*)
-UVIR_CRAVE_BINOP(%)
-UVIR_CRAVE_BINOP(&)
-UVIR_CRAVE_BINOP(|)
-UVIR_CRAVE_BINOP(^)
-UVIR_CRAVE_BINOP(<<)
-UVIR_CRAVE_BINOP(>>)
-UVIR_CRAVE_BINOP(&&)
-UVIR_CRAVE_BINOP(||)
-#undef UVIR_CRAVE_BINOP
+SVCC_CRAVE_BINOP(==)
+SVCC_CRAVE_BINOP(!=)
+SVCC_CRAVE_BINOP(<)
+SVCC_CRAVE_BINOP(<=)
+SVCC_CRAVE_BINOP(>)
+SVCC_CRAVE_BINOP(>=)
+SVCC_CRAVE_BINOP(+)
+SVCC_CRAVE_BINOP(-)
+SVCC_CRAVE_BINOP(*)
+SVCC_CRAVE_BINOP(%)
+SVCC_CRAVE_BINOP(&)
+SVCC_CRAVE_BINOP(|)
+SVCC_CRAVE_BINOP(^)
+SVCC_CRAVE_BINOP(<<)
+SVCC_CRAVE_BINOP(>>)
+SVCC_CRAVE_BINOP(&&)
+SVCC_CRAVE_BINOP(||)
+#undef SVCC_CRAVE_BINOP
 
 inline constexpr expr operator!(expr) { return {}; }
 inline constexpr expr operator~(expr) { return {}; }

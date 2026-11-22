@@ -1,4 +1,4 @@
-//! IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM front-end for `UVIR`.
+//! IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM front-end for `svcc-ir`.
 //!
 //! Powered by the pinned pure-Rust [`svlang`] + [`svlang_model`] SDK:
 //! 1. Parses and semantically analyzes SV/UVM compilation units via [`svlang::Compilation`].
@@ -16,10 +16,10 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use svcc_ir::{
     BinKind, ClassDecl, ClockingDecl, ConstraintBlock, CovBin, CovergroupDecl, CoverpointDecl,
-    CrossDecl, CrvArena, EnumDecl, FieldDecl, FieldOps, Frontend, FrontendMetrics, JoinKind,
-    MethodDecl, OwnershipMode, PhaseKind, Provenance, RalFieldMeta, RalMapSpec, RalRegInstance,
-    ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl, TlmConnection, TlmPortDecl,
-    TlmPortKind, UvirError, UvirModule, UvirType, UvmRole,
+    CrossDecl, CrvArena, EnumDecl, FieldDecl, FieldOps, Frontend, FrontendMetrics, IrModule,
+    IrType, JoinKind, MethodDecl, OwnershipMode, PhaseKind, Provenance, RalFieldMeta, RalMapSpec,
+    RalRegInstance, ScalarKind, SchedOp, SourceLang, SubComponentDecl, SvaPropertyDecl, SvccError,
+    TlmConnection, TlmPortDecl, TlmPortKind, UvmRole,
 };
 use svlang::{Compilation, NodeId, Severity, SyntaxKind, Tree};
 use svlang_model::ral::extract_ral_blocks;
@@ -63,7 +63,7 @@ impl Frontend for SvFrontend {
         &self,
         filename: &str,
         source: &str,
-    ) -> Result<(UvirModule, FrontendMetrics), UvirError> {
+    ) -> Result<(IrModule, FrontendMetrics), SvccError> {
         let t_parse = Instant::now();
         let comp = Compilation::from_source(filename, source);
         let trees = comp.trees();
@@ -88,7 +88,7 @@ impl Frontend for SvFrontend {
                 .collect();
             if !syntax_errs.is_empty() {
                 let first = syntax_errs[0];
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "svcc-front-sv/parse",
                     format!(
                         "{}:{}:{}: {}",
@@ -111,7 +111,7 @@ impl Frontend for SvFrontend {
             }
         }
 
-        let mut module = UvirModule::new(filename);
+        let mut module = IrModule::new(filename);
         let mut total_constraints = 0usize;
         let mut total_covergroups = 0usize;
 
@@ -238,7 +238,7 @@ impl Frontend for SvFrontend {
                 for rf in &reg_spec.fields {
                     fields.push(FieldDecl {
                         name: rf.name.clone(),
-                        ty: UvirType::bitvec(rf.width, false),
+                        ty: IrType::bitvec(rf.width, false),
                         is_rand: rf.access != "RO",
                         is_randc: false,
                         ops: FieldOps::default(),
@@ -1090,13 +1090,13 @@ fn map_phase_kind(name: &str, sv_phase: SvPhaseKind) -> PhaseKind {
     }
 }
 
-pub fn parse_sv_property_type(raw_ty: &str, enum_widths: &HashMap<String, u32>) -> UvirType {
+pub fn parse_sv_property_type(raw_ty: &str, enum_widths: &HashMap<String, u32>) -> IrType {
     let t = raw_ty.trim();
     if let Some(&ew) = enum_widths.get(t) {
-        return UvirType::enum_ty(t, ew);
+        return IrType::enum_ty(t, ew);
     }
     if t == "string" {
-        return UvirType {
+        return IrType {
             kind: ScalarKind::String,
             width: 0,
             signed: false,
@@ -1104,7 +1104,7 @@ pub fn parse_sv_property_type(raw_ty: &str, enum_widths: &HashMap<String, u32>) 
         };
     }
     if t == "real" || t == "shortreal" {
-        return UvirType {
+        return IrType {
             kind: ScalarKind::Real,
             width: 64,
             signed: true,
@@ -1130,7 +1130,7 @@ pub fn parse_sv_property_type(raw_ty: &str, enum_widths: &HashMap<String, u32>) 
         "integer" => (32, true, true),
         "time" => (64, false, true),
         other if !other.is_empty() => {
-            return UvirType {
+            return IrType {
                 kind: ScalarKind::ClassRef(other.to_string()),
                 width: 64,
                 signed: false,
@@ -1165,9 +1165,9 @@ pub fn parse_sv_property_type(raw_ty: &str, enum_widths: &HashMap<String, u32>) 
     };
 
     if four_state {
-        UvirType::logicvec(width, signed)
+        IrType::logicvec(width, signed)
     } else {
-        UvirType::bitvec(width, signed)
+        IrType::bitvec(width, signed)
     }
 }
 
@@ -1275,7 +1275,7 @@ fn extract_class_constraints(
     cls_node: NodeId,
     arena: &mut CrvArena,
     enum_consts: &[(String, u64, u32)],
-) -> Result<Vec<ConstraintBlock>, UvirError> {
+) -> Result<Vec<ConstraintBlock>, SvccError> {
     let mut blocks = Vec::new();
     for ch in tree.children(cls_node) {
         if tree.kind(ch) != SyntaxKind::ConstraintDecl {
@@ -1303,7 +1303,7 @@ fn collect_constraint_clauses(
     arena: &mut CrvArena,
     enum_consts: &[(String, u64, u32)],
     out: &mut Vec<svcc_ir::ConstraintClause>,
-) -> Result<(), UvirError> {
+) -> Result<(), SvccError> {
     for item in tree.children(block_node) {
         if tree.kind(item) != SyntaxKind::ConstraintItem {
             continue;

@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import tempfile
 import time
@@ -24,9 +23,6 @@ SHIMS = REPO / "testdata" / "cpp_shims"
 OUT_DIR = REPO / "benchmarks" / "results"
 
 ACCELLERA_ROOT = Path("/Users/mkubavat/.local/opt/accellera")
-SCRATCH_PROBE = Path(
-    "/Users/mkubavat/.gemini/antigravity/brain/c02df0dc-019e-4cc2-8559-f5119f51aeb2/scratch/accellera_probe"
-)
 
 
 def eval_p3_cover_multiplicity() -> dict:
@@ -245,16 +241,49 @@ def eval_rq5_external_third_party() -> dict:
     }
 
 
+def eval_live_accellera_probe() -> dict:
+    probe_src = REPO / "benchmarks" / "live_crave_probe.cpp"
+    with tempfile.TemporaryDirectory(prefix="svcc_live_crave_") as tmpdir:
+        tmp = Path(tmpdir)
+        bin_path = tmp / "probe_bin"
+        inc_flags = [
+            f"-I{ACCELLERA_ROOT / 'systemc' / 'include'}",
+            f"-I{ACCELLERA_ROOT / 'uvm-systemc' / 'include'}",
+            f"-I{ACCELLERA_ROOT / 'crave' / 'include'}",
+            f"-I{ACCELLERA_ROOT / 'crave' / 'include' / 'crave2uvm'}",
+            f"-I{ACCELLERA_ROOT / 'fc4sc' / 'include'}",
+            f"-I{ACCELLERA_ROOT / 'fc4sc' / 'include' / 'fc4sc'}",
+            "-I/opt/homebrew/include",
+            "-Wno-inconsistent-missing-override",
+        ]
+        link_flags = [
+            f"-L{ACCELLERA_ROOT / 'systemc' / 'lib'}",
+            f"-Wl,-rpath,{ACCELLERA_ROOT / 'systemc' / 'lib'}",
+            f"-L{ACCELLERA_ROOT / 'uvm-systemc' / 'lib'}",
+            f"-Wl,-rpath,{ACCELLERA_ROOT / 'uvm-systemc' / 'lib'}",
+            "-L/opt/homebrew/lib",
+            "-Wl,-rpath,/opt/homebrew/lib",
+            str(ACCELLERA_ROOT / "crave" / "lib" / "libcrave.a"),
+            str(ACCELLERA_ROOT / "crave" / "lib" / "libmetaSMT.a"),
+            str(ACCELLERA_ROOT / "crave" / "lib" / "libcudd.a"),
+            str(ACCELLERA_ROOT / "crave" / "lib" / "libz3.a"),
+            "-lboost_filesystem",
+            "-luvm-systemc",
+            "-lsystemc",
+            "-lpthread",
+        ]
+        subprocess.run(
+            ["clang++", "-std=c++17", "-O2", str(probe_src), *inc_flags, *link_flags, "-o", str(bin_path)],
+            check=True,
+        )
+        subprocess.run([str(bin_path)], cwd=str(tmp), check=True)
+        return json.loads((tmp / "live_crave_results.json").read_text())
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    # Copy reproducible live Accellera probe source if available
-    live_probe_src = REPO / "benchmarks" / "live_crave_probe.cpp"
-    if (SCRATCH_PROBE / "probe.cpp").exists() and not live_probe_src.exists():
-        shutil.copy2(SCRATCH_PROBE / "probe.cpp", live_probe_src)
-
-    live_json_path = SCRATCH_PROBE / "live_crave_results.json"
-    assert live_json_path.exists(), "Expected verified live_crave_results.json from probe_bin"
-    live_crave = json.loads(live_json_path.read_text())
+    print("==> Compiling & Running Live Accellera SystemC + UVM-SystemC + CRAVE + FC4SC Probe...")
+    live_crave = eval_live_accellera_probe()
 
     print("==> Running Prediction P3 C++17 Cover Multiplicity & 10^7-Cycle Throughput Sweep...")
     p3_data = eval_p3_cover_multiplicity()

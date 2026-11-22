@@ -24,7 +24,7 @@
           "tvd_vs_ieee": 0.005474,
           "jsd_bits_vs_ieee": 2.6e-05,
           "chi2_vs_ieee": 14.521784,
-          "elapsed_ms": 4170.05025
+          "elapsed_ms": 5832.493208
         },
         "lcm_scaled_weighted_range": {
           "counts": [
@@ -36,7 +36,7 @@
           "tvd_vs_ieee": 0.002044,
           "jsd_bits_vs_ieee": 4e-06,
           "chi2_vs_ieee": 2.276096,
-          "elapsed_ms": 8466.520125
+          "elapsed_ms": 4233.317417
         },
         "tvd_unscaled_vs_lcm": 0.00434,
         "naive_int_floor_per_elem": {
@@ -69,6 +69,16 @@
           ],
           "tvd_vs_ieee": 0.100915,
           "chi2_vs_ieee": 4812.816281
+        },
+        "constrained_x_ge_1_svcc_sliced_lcm": {
+          "counts": [
+            0,
+            38483,
+            38601,
+            22916
+          ],
+          "tvd_vs_ieee": 0.001609,
+          "chi2_vs_ieee": 1.639833
         }
       },
       "case2_0_15_split5_16_per5": {
@@ -95,7 +105,7 @@
           "tvd_vs_ieee": 0.0043,
           "jsd_bits_vs_ieee": 3.4e-05,
           "chi2_vs_ieee": 18.69938,
-          "elapsed_ms": 5345.850125
+          "elapsed_ms": 5523.252541
         },
         "lcm_scaled_weighted_range": {
           "counts": [
@@ -120,7 +130,7 @@
           "tvd_vs_ieee": 0.00432,
           "jsd_bits_vs_ieee": 3.6e-05,
           "chi2_vs_ieee": 20.10432,
-          "elapsed_ms": 5364.564375
+          "elapsed_ms": 5581.124625
         },
         "tvd_unscaled_vs_lcm": 0.00359,
         "naive_int_floor_per_elem": {
@@ -192,6 +202,29 @@
           ],
           "tvd_vs_ieee": 0.076313,
           "chi2_vs_ieee": 2844.84854
+        },
+        "constrained_x_ge_8_svcc_sliced_lcm": {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4158,
+            4214,
+            4148,
+            4206,
+            4215,
+            4146,
+            4133,
+            4117,
+            66663
+          ],
+          "tvd_vs_ieee": 0.00135,
+          "chi2_vs_ieee": 2.538095
         }
       }
     },
@@ -203,41 +236,41 @@
           "W": 4,
           "domain_size": 16,
           "unique_values": 16,
-          "total_ms": 26.0872,
-          "mean_us_per_call": 1630.4479,
-          "p50_us_per_call": 1605.751,
-          "p99_us_per_call": 2358.999,
-          "last_step_us": 1663.708
+          "total_ms": 18.5851,
+          "mean_us_per_call": 1161.5677,
+          "p50_us_per_call": 1161.708,
+          "p99_us_per_call": 1665.583,
+          "last_step_us": 1218.542
         },
         {
           "W": 6,
           "domain_size": 64,
           "unique_values": 64,
-          "total_ms": 176.2725,
-          "mean_us_per_call": 2754.2572,
-          "p50_us_per_call": 2760.958,
-          "p99_us_per_call": 4682.875,
-          "last_step_us": 3917.5
+          "total_ms": 122.9158,
+          "mean_us_per_call": 1920.5586,
+          "p50_us_per_call": 1833.707,
+          "p99_us_per_call": 3216.084,
+          "last_step_us": 2973.417
         },
         {
           "W": 8,
           "domain_size": 256,
           "unique_values": 256,
-          "total_ms": 1842.1357,
-          "mean_us_per_call": 7195.8424,
-          "p50_us_per_call": 7357.125,
-          "p99_us_per_call": 12958.916,
-          "last_step_us": 12858.458
+          "total_ms": 1404.6591,
+          "mean_us_per_call": 5486.9495,
+          "p50_us_per_call": 5461.25,
+          "p99_us_per_call": 10169.458,
+          "last_step_us": 10240.541
         },
         {
           "W": 10,
           "domain_size": 1024,
           "unique_values": 1024,
-          "total_ms": 28630.1388,
-          "mean_us_per_call": 27959.12,
-          "p50_us_per_call": 25225.749,
-          "p99_us_per_call": 68025.875,
-          "last_step_us": 41382.375
+          "total_ms": 26402.0326,
+          "mean_us_per_call": 25783.2349,
+          "p50_us_per_call": 24341.708,
+          "p99_us_per_call": 65923.625,
+          "last_step_us": 46197.958
         }
       ],
       "crave_native_randc": [
@@ -245,51 +278,51 @@
           "W": 4,
           "domain_size": 16,
           "unique_values": 16,
-          "total_ms": 0.8996,
-          "mean_us_per_call": 56.2266,
-          "p50_us_per_call": 14.25,
-          "p99_us_per_call": 682.625,
-          "last_step_us": 13.375
+          "total_ms": 0.9819,
+          "mean_us_per_call": 61.3698,
+          "p50_us_per_call": 14.666,
+          "p99_us_per_call": 755.625,
+          "last_step_us": 14.25
         },
         {
           "W": 8,
           "domain_size": 256,
           "unique_values": 256,
-          "total_ms": 4.3607,
-          "mean_us_per_call": 17.034,
-          "p50_us_per_call": 14.666,
-          "p99_us_per_call": 43.125,
-          "last_step_us": 15.708
+          "total_ms": 4.6978,
+          "mean_us_per_call": 18.3506,
+          "p50_us_per_call": 15.791,
+          "p99_us_per_call": 26.792,
+          "last_step_us": 15.541
         },
         {
           "W": 10,
           "domain_size": 1024,
           "unique_values": 1024,
-          "total_ms": 17.1358,
-          "mean_us_per_call": 16.7342,
-          "p50_us_per_call": 15.375,
-          "p99_us_per_call": 34.292,
-          "last_step_us": 15.375
+          "total_ms": 17.9223,
+          "mean_us_per_call": 17.5022,
+          "p50_us_per_call": 16.125,
+          "p99_us_per_call": 28.125,
+          "last_step_us": 15.75
         },
         {
           "W": 12,
           "domain_size": 4096,
           "unique_values": 4096,
-          "total_ms": 72.4658,
-          "mean_us_per_call": 17.6918,
-          "p50_us_per_call": 16.458,
-          "p99_us_per_call": 32.25,
-          "last_step_us": 16.5
+          "total_ms": 75.3113,
+          "mean_us_per_call": 18.3865,
+          "p50_us_per_call": 17.375,
+          "p99_us_per_call": 32.916,
+          "last_step_us": 18.166
         },
         {
           "W": 16,
           "domain_size": 65536,
           "unique_values": 65536,
-          "total_ms": 1863.399,
-          "mean_us_per_call": 28.4332,
-          "p50_us_per_call": 27.208,
-          "p99_us_per_call": 72.333,
-          "last_step_us": 24.5
+          "total_ms": 1413.922,
+          "mean_us_per_call": 21.5747,
+          "p50_us_per_call": 21.083,
+          "p99_us_per_call": 36.875,
+          "last_step_us": 16.75
         }
       ],
       "svcc_randc_feistel_pure": [
@@ -297,51 +330,51 @@
           "W": 4,
           "domain_size": 16,
           "unique_values": 16,
-          "total_ms": 0.0001,
-          "mean_us_per_call": 0.0046,
-          "p50_us_per_call": 0.0046,
-          "p99_us_per_call": 0.0046,
-          "last_step_us": 0.0046
+          "total_ms": 0.0,
+          "mean_us_per_call": 0.0031,
+          "p50_us_per_call": 0.0031,
+          "p99_us_per_call": 0.0031,
+          "last_step_us": 0.0031
         },
         {
           "W": 8,
           "domain_size": 256,
           "unique_values": 256,
-          "total_ms": 0.0011,
-          "mean_us_per_call": 0.0042,
-          "p50_us_per_call": 0.0042,
-          "p99_us_per_call": 0.0042,
-          "last_step_us": 0.0042
+          "total_ms": 0.0007,
+          "mean_us_per_call": 0.0028,
+          "p50_us_per_call": 0.0028,
+          "p99_us_per_call": 0.0028,
+          "last_step_us": 0.0028
         },
         {
           "W": 10,
           "domain_size": 1024,
           "unique_values": 1024,
-          "total_ms": 0.0037,
-          "mean_us_per_call": 0.0037,
-          "p50_us_per_call": 0.0037,
-          "p99_us_per_call": 0.0037,
-          "last_step_us": 0.0037
+          "total_ms": 0.0029,
+          "mean_us_per_call": 0.0029,
+          "p50_us_per_call": 0.0029,
+          "p99_us_per_call": 0.0029,
+          "last_step_us": 0.0029
         },
         {
           "W": 12,
           "domain_size": 4096,
           "unique_values": 4096,
-          "total_ms": 0.0175,
-          "mean_us_per_call": 0.0043,
-          "p50_us_per_call": 0.0043,
-          "p99_us_per_call": 0.0043,
-          "last_step_us": 0.0043
+          "total_ms": 0.0123,
+          "mean_us_per_call": 0.003,
+          "p50_us_per_call": 0.003,
+          "p99_us_per_call": 0.003,
+          "last_step_us": 0.003
         },
         {
           "W": 16,
           "domain_size": 65536,
           "unique_values": 65536,
-          "total_ms": 0.3107,
-          "mean_us_per_call": 0.0047,
-          "p50_us_per_call": 0.0047,
-          "p99_us_per_call": 0.0047,
-          "last_step_us": 0.0047
+          "total_ms": 0.2027,
+          "mean_us_per_call": 0.0031,
+          "p50_us_per_call": 0.0031,
+          "p99_us_per_call": 0.0031,
+          "last_step_us": 0.0031
         }
       ],
       "svcc_randc_feistel_in_crave_item": [
@@ -349,51 +382,51 @@
           "W": 4,
           "domain_size": 16,
           "unique_values": 16,
-          "total_ms": 3.1361,
-          "mean_us_per_call": 196.0078,
-          "p50_us_per_call": 121.625,
-          "p99_us_per_call": 1382.917,
-          "last_step_us": 121.292
+          "total_ms": 2.0329,
+          "mean_us_per_call": 127.0547,
+          "p50_us_per_call": 84.709,
+          "p99_us_per_call": 831.792,
+          "last_step_us": 84.291
         },
         {
           "W": 8,
           "domain_size": 256,
           "unique_values": 256,
-          "total_ms": 28.591,
-          "mean_us_per_call": 111.6836,
-          "p50_us_per_call": 117.708,
-          "p99_us_per_call": 208.042,
-          "last_step_us": 88.208
+          "total_ms": 20.4178,
+          "mean_us_per_call": 79.7568,
+          "p50_us_per_call": 82.958,
+          "p99_us_per_call": 126.125,
+          "last_step_us": 65.75
         },
         {
           "W": 10,
           "domain_size": 1024,
           "unique_values": 1024,
-          "total_ms": 108.8105,
-          "mean_us_per_call": 106.2603,
-          "p50_us_per_call": 100.834,
-          "p99_us_per_call": 183.708,
-          "last_step_us": 131.125
+          "total_ms": 77.3501,
+          "mean_us_per_call": 75.5372,
+          "p50_us_per_call": 79.041,
+          "p99_us_per_call": 134.5,
+          "last_step_us": 86.875
         },
         {
           "W": 12,
           "domain_size": 4096,
           "unique_values": 4096,
-          "total_ms": 389.1603,
-          "mean_us_per_call": 95.0098,
-          "p50_us_per_call": 95.458,
-          "p99_us_per_call": 150.084,
-          "last_step_us": 100.708
+          "total_ms": 348.2206,
+          "mean_us_per_call": 85.0148,
+          "p50_us_per_call": 88.542,
+          "p99_us_per_call": 172.959,
+          "last_step_us": 96.959
         },
         {
           "W": 16,
           "domain_size": 65536,
           "unique_values": 65536,
-          "total_ms": 5027.1308,
-          "mean_us_per_call": 76.7079,
-          "p50_us_per_call": 80.125,
-          "p99_us_per_call": 135.0,
-          "last_step_us": 83.709
+          "total_ms": 5042.1238,
+          "mean_us_per_call": 76.9367,
+          "p50_us_per_call": 82.208,
+          "p99_us_per_call": 116.25,
+          "last_step_us": 83.667
         }
       ]
     }
@@ -420,8 +453,8 @@
         "burst_per_age_got": 8,
         "rand10m_bitmask_hits": 1198516,
         "rand10m_per_age_hits": 4919037,
-        "bitmask_ns_per_cycle": 0.96,
-        "per_age_ns_per_cycle": 2.18,
+        "bitmask_ns_per_cycle": 0.95,
+        "per_age_ns_per_cycle": 2.17,
         "undercount_ratio_rand10m": 4.1
       },
       {
@@ -433,7 +466,7 @@
         "rand10m_bitmask_hits": 1198826,
         "rand10m_per_age_hits": 6486209,
         "bitmask_ns_per_cycle": 1.01,
-        "per_age_ns_per_cycle": 2.36,
+        "per_age_ns_per_cycle": 2.39,
         "undercount_ratio_rand10m": 5.41
       },
       {
@@ -445,7 +478,7 @@
         "rand10m_bitmask_hits": 1198658,
         "rand10m_per_age_hits": 7343656,
         "bitmask_ns_per_cycle": 1.02,
-        "per_age_ns_per_cycle": 3.88,
+        "per_age_ns_per_cycle": 3.92,
         "undercount_ratio_rand10m": 6.13
       }
     ]

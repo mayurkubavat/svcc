@@ -35,7 +35,7 @@ fn apb4_roundtrip_clang_svlang_and_z3_proof() {
         .expect("sc emit & clang++ -Werror");
     assert!(cpp_out.contains("apb_timer_item(const apb_timer_item& rhs)"));
     assert!(cpp_out.contains("set_sv_signedness(true)"));
-    assert!(cpp_out.contains("// uvir:nocompare seq_tag"));
+    assert!(cpp_out.contains("// svcc:nocompare seq_tag"));
 
     let (mut m_sc, _) = sc_fe
         .lower_str("apb_timer_item.hpp", &cpp_out)
@@ -81,7 +81,7 @@ fn axi4_enum_dist_randc_clocking_fork_env_full_roundtrip() {
         .emit_and_verify_clang(&m_sv, &shim_dir())
         .expect("axi4 clang++ -Werror");
     assert!(cpp_out.contains("enum class axi_burst_e : uint8_t"));
-    assert!(cpp_out.contains("struct uvir_clocking_cb : public sc_core::sc_module"));
+    assert!(cpp_out.contains("struct svcc_clocking_cb : public sc_core::sc_module"));
     assert!(cpp_out.contains(".add_weighted_range("));
     assert!(cpp_out.contains("sc_core::sc_spawn"));
     assert!(cpp_out.contains("this->drv->item_ap.connect(scb->analysis_export)"));
@@ -134,7 +134,7 @@ fn uart_ral_block_and_pipelined_sva_bmc_roundtrip() {
         .expect("uart clang++ -Werror");
     assert!(cpp_out.contains("uvm::uvm_randomized_reg"));
     assert!(cpp_out.contains("this->default_map->add_reg(ctrl, 0x0ULL, \"RW\");"));
-    assert!(cpp_out.contains("class uvir_sva_ap_tx_start_busy : public sc_core::sc_module"));
+    assert!(cpp_out.contains("class svcc_sva_ap_tx_start_busy : public sc_core::sc_module"));
 
     for prop in &m_sv.properties {
         let bmc = prove_sva_bmc_equivalence(prop, 6).expect("sva bmc");
@@ -159,7 +159,7 @@ fn rtl_sv_to_sc_module_clang_svlang_and_btor2_sec_roundtrip() {
     let sc_em = ScEmitter::new();
     let sv_em = SvEmitter::new();
 
-    // 1. Lower synthesizable 2-stage pipelined SV RTL -> UVIR `rtl` dialect
+    // 1. Lower synthesizable 2-stage pipelined SV RTL -> svcc-ir `rtl` dialect
     let (mut m_sv, metrics) = sv_fe.lower_str("alu_pipe_rtl.sv", sv_src).expect("rtl sv");
     assert_eq!(metrics.rtl_modules_lowered, 1);
     PassPipeline::for_target(sc_em.capabilities())
@@ -372,6 +372,57 @@ endmodule
         &m_sv2.classes[0],
         &m_sv2.crv_arena,
         &m_sv2.enums,
+    )
+    .unwrap();
+    assert_eq!(eq.hard_crv_verdict, SmtVerdict::EquivalentUnsat);
+}
+
+#[test]
+fn p2_sliced_dist_clips_weighted_range_and_proves_z3_roundtrip_equiv() {
+    let sv_src = r#"
+class sliced_dist_item extends uvm_sequence_item;
+  rand bit [3:0] x;
+  rand bit [4:0] y;
+
+  `uvm_object_utils(sliced_dist_item)
+
+  constraint c_sliced {
+    x >= 4'd1;
+    x dist { [4'd0 : 4'd2] :/ 10, 4'd3 := 2 };
+    y >= 5'd8;
+    y dist { [5'd0 : 5'd15] :/ 5, 5'd16 := 5 };
+  }
+endclass
+"#;
+    let (m_orig_raw, _) = SvFrontend::new().lower_str("sliced.sv", sv_src).unwrap();
+    let mut m_sc_target = m_orig_raw.clone();
+    PassPipeline::for_target(TargetCapabilities::sc_uvm_crave_fc4sc())
+        .run_all(&mut m_sc_target)
+        .unwrap();
+
+    let shim_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/cpp_shims");
+    let sc_code = ScEmitter::new()
+        .emit_and_verify_clang(&m_sc_target, &shim_dir)
+        .expect("clang++ clean on sliced dist");
+
+    // Case 1: [0:2]:/10, 3:=2 under x >= 1 -> [1:2] :/ 10, 3 := 3 (exact conditional probs 5/13, 5/13, 3/13)
+    assert!(sc_code.contains(".add_weighted_range(1U, 2U, 10U).add(3U, 3U)"));
+    // Case 2: [0:15]:/5, 16:=5 under y >= 8 -> [8:15] :/ 8, 16 := 16 (exact conditional probs 1/24 .. 16/24)
+    assert!(sc_code.contains(".add_weighted_range(8U, 15U, 8U).add(0x10U, 16U)"));
+
+    // Verify Z3 QF_BV proves EquivalentUnsat against the unclipped raw SV spec!
+    let mut m_sv_spec = m_orig_raw;
+    PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023())
+        .run_all(&mut m_sv_spec)
+        .unwrap();
+    let eq = prove_class_equivalence_with_enums(
+        &m_sv_spec.classes[0],
+        &m_sv_spec.crv_arena,
+        &m_sv_spec.enums,
+        &m_sc_target.classes[0],
+        &m_sc_target.crv_arena,
+        &m_sc_target.enums,
     )
     .unwrap();
     assert_eq!(eq.hard_crv_verdict, SmtVerdict::EquivalentUnsat);

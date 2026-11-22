@@ -603,6 +603,8 @@ int sc_main(int argc, char* argv[]) {
   std::vector<double> p2_c1_cond_target = {0.0, 5.0 / 13.0, 5.0 / 13.0, 3.0 / 13.0};
   auto p2_c1_cond_unscaled = run_p2_constrained_case(0, 2, 10, 3, 2, 1, p2_c1_cond_target, N_P2, 12345);
   auto p2_c1_cond_lcm = run_p2_constrained_case(0, 2, 30, 3, 6, 1, p2_c1_cond_target, N_P2, 12345);
+  // svcc sliced+LCM lowering: [1:2] :/ 10, 3 := 3
+  auto p2_c1_cond_svcc_sliced = run_p2_constrained_case(1, 2, 10, 3, 3, 1, p2_c1_cond_target, N_P2, 12345);
 
   // Case 2: x dist { [0:15] :/ 5, 16 := 5 }
   std::vector<double> p2_c2_target(17, 1.0 / 32.0);
@@ -617,19 +619,23 @@ int sc_main(int argc, char* argv[]) {
   p2_c2_cond_target[16] = 2.0 / 3.0;
   auto p2_c2_cond_unscaled = run_p2_constrained_case(0, 15, 5, 16, 5, 8, p2_c2_cond_target, N_P2, 54321);
   auto p2_c2_cond_lcm = run_p2_constrained_case(0, 15, 80, 16, 80, 8, p2_c2_cond_target, N_P2, 54321);
+  // svcc sliced+LCM lowering: [8:15] :/ 8, 16 := 16
+  auto p2_c2_cond_svcc_sliced = run_p2_constrained_case(8, 15, 8, 16, 16, 8, p2_c2_cond_target, N_P2, 54321);
 
   std::cout << "  -> Case1 [0:2]:/10, 3:=2 | unscaled TVD=" << p2_c1_unscaled.tvd_vs_ieee
             << " chi2=" << p2_c1_unscaled.chi2_vs_ieee
             << " | LCM TVD=" << p2_c1_lcm.tvd_vs_ieee
             << " chi2=" << p2_c1_lcm.chi2_vs_ieee
             << " | int-floor TVD=" << p2_c1_int_floor.tvd_vs_ieee
-            << " | constrained(x>=1) TVD=" << p2_c1_cond_unscaled.tvd_vs_ieee << std::endl;
+            << " | constrained(x>=1) raw TVD=" << p2_c1_cond_unscaled.tvd_vs_ieee
+            << " -> svcc sliced+LCM TVD=" << p2_c1_cond_svcc_sliced.tvd_vs_ieee << std::endl;
   std::cout << "  -> Case2 [0:15]:/5, 16:=5 | unscaled TVD=" << p2_c2_unscaled.tvd_vs_ieee
             << " chi2=" << p2_c2_unscaled.chi2_vs_ieee
             << " | LCM TVD=" << p2_c2_lcm.tvd_vs_ieee
             << " chi2=" << p2_c2_lcm.chi2_vs_ieee
             << " | int-floor TVD=" << p2_c2_int_floor.tvd_vs_ieee
-            << " | constrained(x>=8) TVD=" << p2_c2_cond_unscaled.tvd_vs_ieee << std::endl;
+            << " | constrained(x>=8) raw TVD=" << p2_c2_cond_unscaled.tvd_vs_ieee
+            << " -> svcc sliced+LCM TVD=" << p2_c2_cond_svcc_sliced.tvd_vs_ieee << std::endl;
 
   std::cout << "[3/3] Running Prediction P5 (CRAVE history-exclusion vs native randc vs Feistel)..." << std::endl;
   std::vector<P5Result> p5_hist;
@@ -740,6 +746,11 @@ int sc_main(int argc, char* argv[]) {
   out << "        \"counts\": " << vec_u64_json(p2_c1_cond_lcm.counts) << ",\n";
   out << "        \"tvd_vs_ieee\": " << p2_c1_cond_lcm.tvd_vs_ieee << ",\n";
   out << "        \"chi2_vs_ieee\": " << p2_c1_cond_lcm.chi2_vs_ieee << "\n";
+  out << "      },\n";
+  out << "      \"constrained_x_ge_1_svcc_sliced_lcm\": {\n";
+  out << "        \"counts\": " << vec_u64_json(p2_c1_cond_svcc_sliced.counts) << ",\n";
+  out << "        \"tvd_vs_ieee\": " << p2_c1_cond_svcc_sliced.tvd_vs_ieee << ",\n";
+  out << "        \"chi2_vs_ieee\": " << p2_c1_cond_svcc_sliced.chi2_vs_ieee << "\n";
   out << "      }\n";
   out << "    },\n";
   out << "    \"case2_0_15_split5_16_per5\": {\n";
@@ -773,6 +784,11 @@ int sc_main(int argc, char* argv[]) {
   out << "        \"counts\": " << vec_u64_json(p2_c2_cond_lcm.counts) << ",\n";
   out << "        \"tvd_vs_ieee\": " << p2_c2_cond_lcm.tvd_vs_ieee << ",\n";
   out << "        \"chi2_vs_ieee\": " << p2_c2_cond_lcm.chi2_vs_ieee << "\n";
+  out << "      },\n";
+  out << "      \"constrained_x_ge_8_svcc_sliced_lcm\": {\n";
+  out << "        \"counts\": " << vec_u64_json(p2_c2_cond_svcc_sliced.counts) << ",\n";
+  out << "        \"tvd_vs_ieee\": " << p2_c2_cond_svcc_sliced.tvd_vs_ieee << ",\n";
+  out << "        \"chi2_vs_ieee\": " << p2_c2_cond_svcc_sliced.chi2_vs_ieee << "\n";
   out << "      }\n";
   out << "    }\n";
   out << "  },\n";

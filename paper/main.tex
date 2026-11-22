@@ -34,7 +34,7 @@
 \begin{abstract}
 Agent-assisted hardware design and verification workflows benefit from sub-second compile-and-run iteration in C++17 and IEEE~1666-2023 SystemC, yet production tape-out sign-off still requires IEEE~1800-2023 SystemVerilog RTL, IEEE~1800.2-2020 UVM environments, and SystemVerilog Assertions (SVA). Direct syntax translation or unverified language-model rewriting across these two ecosystems silently corrupts semantics: garbage-collected UVM handles collide with C++ value-copy transaction-level modeling (TLM) ports, context-determined bitvector arithmetic diverges from C++ integer promotions, SystemVerilog Preponed \code{\#1step} sampling races against SystemC delta notifications, and Boost.Proto expression templates in CRAVE exhibit superlinear C++ compile times on multi-clause constraints.
 
-We present \code{svcc}, an open-source Rust compiler and translation-validation tool (12,305 lines of Rust across eight core crates plus Python bindings) that translates bidirectionally between IEEE~1800-2023 SystemVerilog (synthesizable RTL and UVM verification IP) and C++17 SystemC~3.0.3 (IEEE~1666.1 RTL, UVM-SystemC, CRAVE, FC4SC, and untimed C++17 golden models). Both source languages lower into a seven-dialect intermediate representation (\code{UVIR}) normalized by target-capability legalization passes, including least-common-multiple (LCM) \code{dist} range scaling, per-age \code{cover property} multiplicity counters, and a 32-byte cycle-walking Feistel \code{randc} generator. Every translation is checked without commercial simulators by four solver-backed engines: a Z3 \code{QF\_BV} miter over constrained-random, enum, and \code{dist}-support spaces; bounded model checking of C++17 SVA assertion and cover observers; Accellera UCIS~1.0 coverage bin-space isomorphism; and word-level Btor2 sequential equivalence checking (SEC) across pipeline latency skews $L \ge 0$. Across a 20-design corpus, \code{svcc} translates files in 200~$\mu$s median (\code{sv2sc}) and 210~$\mu$s median (\code{sc2sv}), proves 20/20 round-trip and 8/8 C-to-RTL equivalences in 5.28--26.27~ms of Z3 time, catches 20/20 semantic bugs with 0/4 false alarms on equivalent rewrites, recovers 12/12 standalone UVM files without package filelists, cuts \code{clang++ -O2} compile time on 120-clause CRAVE constraints by $5.95\times$, speeds up live CRAVE $W=10$ \code{randc} generation by $263\times$ while lifting CRAVE's 16-bit ceiling to 32 bits, and lowers 9/12 unmodified external files from OpenTitan, PULP, OpenHW, and Ibex standalone.
+We present \code{svcc}, an open-source Rust compiler and translation-validation tool (12,600 lines of Rust across eight core crates plus Python bindings) that translates bidirectionally between IEEE~1800-2023 SystemVerilog (synthesizable RTL and UVM verification IP) and C++17 SystemC~3.0.3 (IEEE~1666.1 RTL, UVM-SystemC, CRAVE, FC4SC, and untimed C++17 golden models). Both source languages lower into a seven-dialect intermediate representation (\code{svcc-ir}) normalized by target-capability legalization passes, including hard-bound \code{dist} interval clipping, least-common-multiple (LCM) range scaling, per-age \code{cover property} multiplicity counters, and a 32-byte cycle-walking Feistel \code{randc} generator. Every translation is checked without commercial simulators by four solver-backed engines: a Z3 \code{QF\_BV} miter over constrained-random, enum, and \code{dist}-support spaces; bounded model checking of C++17 SVA assertion and cover observers; Accellera UCIS~1.0 coverage bin-space isomorphism; and word-level Btor2 sequential equivalence checking (SEC) across pipeline latency skews $L \ge 0$. Across a 20-design corpus, \code{svcc} translates files in 272~$\mu$s median (\code{sv2sc}) and 689~$\mu$s median (\code{sc2sv}, including \code{svlang-lint} verification), proves 20/20 round-trip and 8/8 C-to-RTL equivalences in 5.37--21.68~ms of Z3 time, catches 20/20 semantic bugs with 0/4 false alarms on equivalent rewrites, recovers 12/12 standalone UVM/RAL files without package filelists (versus 4/12 for semantic-only lowering), cuts \code{clang++ -O2} compile time on 120-clause CRAVE constraints by $6.25\times$, reduces live CRAVE sliced-\code{dist} sampling error by $60.8\times$, speeds up live CRAVE $W=10$ \code{randc} generation by $341\times$ while lifting CRAVE's 16-bit ceiling to 32 bits, and lowers 9/12 unmodified external files from OpenTitan, PULP, OpenHW, and Ibex standalone.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -52,8 +52,8 @@ We address this problem by treating SystemVerilog-to-SystemC and SystemC-to-Syst
 
 This paper makes four contributions:
 \begin{enumerate}
-\item \textbf{A seven-dialect verification and RTL intermediate representation (\code{UVIR}).} We design a typed Rust IR spanning bit-accurate types, UVM class/RAL/TLM structure, arena-allocated constrained-random expressions, UCIS~1.0~\cite{accellera_ucis10} functional coverage, discrete-event process control and Preponed clocking, concurrent SVA properties, and synthesizable RTL processes, normalized by target-capability passes (Sections~\ref{sec:impedance} and~\ref{sec:arch}).
-\item \textbf{Hybrid semantic/CST partial-closure lowering and solver-aware C++17 emission.} To translate standalone SystemVerilog VIP files without full repository filelists or \code{uvm\_pkg} closure, \code{svcc-front-sv} pairs \code{svlang} semantic elaboration and \code{TypeOracle} symbolic constant folding with lossless concrete syntax tree (CST) role and type recovery, gated on emission by \code{svlang-lint}. On the C++17 side, \code{svcc-emit-sc} partitions large constraint blocks to avoid superlinear Boost.Proto expression-template instantiation~\cite{veldhuizen1995expr}, scales \code{dist} \code{:/} weights by exact range LCMs, and emits a cycle-walking Feistel \code{randc} engine up to 32 bits (Section~\ref{sec:arch}).
+\item \textbf{A seven-dialect verification and RTL intermediate representation (\code{svcc-ir}).} We design a typed Rust IR spanning bit-accurate types, UVM class/RAL/TLM structure, arena-allocated constrained-random expressions, UCIS~1.0~\cite{accellera_ucis10} functional coverage, discrete-event process control and Preponed clocking, concurrent SVA properties, and synthesizable RTL processes, normalized by target-capability passes (Sections~\ref{sec:impedance} and~\ref{sec:arch}).
+\item \textbf{Hybrid semantic/CST partial-closure lowering and solver-aware C++17 emission.} To translate standalone SystemVerilog VIP files without full repository filelists or \code{uvm\_pkg} closure, \code{svcc-front-sv} pairs \code{svlang} semantic elaboration and \code{TypeOracle} symbolic constant folding with lossless concrete syntax tree (CST) role and type recovery, gated on emission by \code{svlang-lint}. On the C++17 side, \code{svcc-emit-sc} partitions large constraint blocks to avoid superlinear Boost.Proto expression-template instantiation~\cite{veldhuizen1995expr}, clips and LCM-scales \code{dist} \code{:/} ranges against hard bounds, and emits a cycle-walking Feistel \code{randc} engine up to 32 bits (Section~\ref{sec:arch}).
 \item \textbf{Four-way solver-backed translation validation and C2RTL equivalence.} \code{svcc-equiv} checks class constraint equivalence in \code{QF\_BV}, proves cycle-accurate equivalence for both $O(1)$ 64-bit shift-window \code{assert property} observers and per-age \code{cover property} multiplicity counters, verifies UCIS~1.0 bin-space isomorphism, and lowers untimed C++17 reference functions (\code{// svcc:c2rtl}) into static single assignment (SSA) hardware cones checked against pipelined RTL across latency $L \ge 0$ (Section~\ref{sec:equiv}).
 \item \textbf{Empirical evaluation across synthetic, live-solver, and external open-source corpora.} Across 20 benchmark designs, 24 mutation/equivalence checks, standalone VIP and clause-scaling ablations, live SystemC/UVM-SystemC/CRAVE/FC4SC binary execution ($10^5$-sample \code{dist} and $W \le 16$ \code{randc} sweeps), $10^7$-cycle SVA multiplicity benchmarks, and 12 unmodified external files from OpenTitan, PULP, OpenHW, and lowRISC Ibex, we quantify fidelity, solver speedups, and real-world boundaries (Section~\ref{sec:eval}).
 \end{enumerate}
@@ -68,13 +68,13 @@ This paper makes four contributions:
 \footnotesize
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.95in} >{\raggedright\arraybackslash}p{1.55in} >{\raggedright\arraybackslash}p{1.55in} >{\raggedright\arraybackslash}X@{}}
 \toprule
-\textbf{Domain} & \textbf{SystemVerilog / UVM} & \textbf{C++17 SystemC / CRAVE} & \textbf{\code{UVIR} Legalization \& Formal Check} \\
+\textbf{Domain} & \textbf{SystemVerilog / UVM} & \textbf{C++17 SystemC / CRAVE} & \textbf{\code{svcc-ir} Legalization \& Formal Check} \\
 \midrule
 Object \& TLM copy & Garbage-collected class handles; \code{`uvm\_field\_int} bitmasks & Value-copied \code{tlm\_analysis\_port}; \code{crv\_variable<T>} solver refs & \code{OwnershipPass} synthesizes TLM-safe copy ctor/assignment rebinding \code{crv\_variable} values without copying solver graph pointers. \\
 Bitvector arithmetic & Context-determined width; unsigned contaminates signed & C++ integral promotion (\code{uint8\_t + uint8\_t -> int}) & \code{WidthSignednessPass} stamps explicit $(W, s)$ per arena node; Z3 \code{QF\_BV} miter checks exact zero/sign extension. \\
-CRV tolerances, \code{dist} \& \code{randc} & \code{inside \{[c +/- d], [c +\%- p]\}}, \code{:=}/\code{:/} weights, 32-bit \code{randc} & \code{crave::dist}, \code{weighted\_range}, 16-bit \code{randc} cap & Expands tolerances, scales \code{:/} weights by $u128$ range LCM, emits \code{svcc\_randc\_feistel<W>}, and checks \code{QF\_BV} support. \\
+CRV tolerances, \code{dist} \& \code{randc} & \code{inside \{[c +/- d], [c +\%- p]\}}, \code{:=}/\code{:/} weights, 32-bit \code{randc} & \code{crave::dist}, \code{weighted\_range}, 16-bit \code{randc} cap & Expands tolerances, clips \code{:/} ranges against hard bounds + $u128$ LCM, emits \code{svcc\_randc\_feistel<W>}, and checks \code{QF\_BV} support. \\
 Process cancellation & \code{fork ... join\_any; disable fork;} kills sibling subtree & \code{sc\_spawn} dynamic threads lack safe stack-unwinding \code{kill()} & \code{sched} dialect emits \code{sc\_event\_or\_list} join barrier with shared \code{std::atomic<bool>} cooperative cancellation token. \\
-Sampling region & \code{clocking cb @(posedge clk); input \#1step} (Preponed) & \code{posedge\_event()} wakes in evaluate/delta notification phase & Emits \code{uvir\_clocking\_*} pre-timestep snapshot struct driven from SystemC~3.0.3 \code{SC\_PRE\_TIMESTEP} callback. \\
+Sampling region & \code{clocking cb @(posedge clk); input \#1step} (Preponed) & \code{posedge\_event()} wakes in evaluate/delta notification phase & Emits \code{svcc\_clocking\_*} pre-timestep snapshot struct driven from SystemC~3.0.3 \code{SC\_PRE\_TIMESTEP} callback. \\
 Pipelined SVA & Concurrent \code{ant |-> \#\#[m:n] con} (\code{assert} \& \code{cover}) & No native temporal assertion engine in IEEE~1666 & Emits $O(1)$ \code{uint64\_t pending\_window\_} (\code{assert}) and \code{pending\_age\_} array (\code{cover}); Z3 BMC proves cycle \& multiplicity match. \\
 RTL \& C2RTL & \code{always\_comb}, \code{always\_ff}, nonblocking \code{<=} & \code{SC\_METHOD}/\code{SC\_CTHREAD} or untimed C++17 functions & Rejects heap/recursion fail-closed per IEEE~1666.1~\cite{ieee1666_1_2016}; unrolls bounded loops and \code{if}/\code{else} writes to SSA muxes for Btor2 SEC. \\
 \bottomrule
@@ -85,13 +85,13 @@ Translating verification components and synthesizable logic between SystemVerilo
 
 First, UVM-SystemC analysis ports (\code{uvm::\allowbreak uvm\_\allowbreak analysis\_\allowbreak port<T>}) pass transactions by C++ value or const-reference copy, whereas CRAVE random fields (\code{crave::\allowbreak crv\_\allowbreak variable<T>}) register internal variable IDs with a parent \code{crave::\allowbreak rand\_obj} solver context~\cite{haedicke2012crave}. A compiler-generated C++ default copy constructor copies the internal solver-node identity rather than just the randomized scalar payload, corrupting subsequent \code{randomize()} calls or TLM scoreboard comparisons. \code{OwnershipPass} checks whether a class embeds CRV fields and sets \code{needs\_\allowbreak custom\_\allowbreak copy\_ctor}, causing \code{svcc-emit-sc} to generate explicit payload-only copy constructors alongside \code{do\_print}, \code{do\_pack}, \code{do\_unpack}, and \code{do\_compare} methods honoring \code{UVM\_NOCOMPARE} flags.
 
-Second, IEEE~1800 bitvector expressions propagate widths from context and treat any unsigned operand as rendering the enclosing arithmetic unsigned, whereas C++ promotes narrow unsigned types (\code{uint8\_t}, \code{uint16\_t}) to signed 32-bit \code{int}. Lowering into \code{UVIR} attaches explicit width and signedness metadata to every constant and variable so both code emitters and the Z3 \code{QF\_BV} encoder apply identical bit-slice and extension rules.
+Second, IEEE~1800 bitvector expressions propagate widths from context and treat any unsigned operand as rendering the enclosing arithmetic unsigned, whereas C++ promotes narrow unsigned types (\code{uint8\_t}, \code{uint16\_t}) to signed 32-bit \code{int}. Lowering into \code{svcc-ir} attaches explicit width and signedness metadata to every constant and variable so both code emitters and the Z3 \code{QF\_BV} encoder apply identical bit-slice and extension rules.
 
 Third, concurrent SVA assertions with bounded pipeline windows (\code{ant |-> \#\#[m:n] con}) spawn independent evaluation attempts on every clock edge where \code{ant} holds, even when up to $n$ prior attempts remain in flight. Naive C++ translations using a single state counter drop overlapping transactions on pipelined buses. For $0 \le m \le n < 64$, \code{svcc-emit-sc} compiles assertions into a constant-time 64-bit age-shift register (\code{pending\_window\_ = (pending\_window\_ <\kern0pt< 1) | ant}) and compiles \code{cover property} blocks into per-age hit counters (\code{pending\_age\_}) to preserve overlapping attempt multiplicity.
 
 Fourth, untimed C++17 reference models reassign local variables imperatively across conditional branches and bounded loops, whereas RTL pipelines distribute the same computation across registered stages. Following system-to-RTL equivalence principles~\cite{koelbl2009c2rtl}, \code{svcc} restricts C-to-RTL (\code{C2RTL}) input to the deterministic IEEE~1666.1 synthesizable subset~\cite{ieee1666_1_2016} (rejecting pointers, dynamic containers, floating-point types, and unbounded loops fail-closed) and converts imperative variable updates into SSA multiplexer trees verified against pipelined RTL at user-specified latency $L$.
 
-\section{The Seven-Dialect UVIR and Compiler Architecture}
+\section{Seven-Dialect IR and Compiler Architecture}
 \label{sec:arch}
 
 \begin{figure*}[t]
@@ -146,14 +146,14 @@ Fourth, untimed C++17 reference models reassign local variables imperatively acr
     \& \code{svlang-lint} gate%
   };
 
-  \node[irbox, text width=33.0mm, right=of svfe] (uvir) {%
-    \textbf{7-Dialect \code{UVIR}}\\[1.5pt]
+  \node[irbox, text width=33.0mm, right=of svfe] (svccir) {%
+    \textbf{7-Dialect \code{svcc-ir}}\\[1.5pt]
     \code{types} $\cdot$ \code{uvm} $\cdot$ \code{crv} $\cdot$ \code{cov}\\
     \code{sched} $\cdot$ \code{sva} $\cdot$ \code{rtl}\\[1pt]
     + \textbf{\code{svcc-passes}} legalizer%
   };
 
-  \node[box, text width=28.5mm, right=of uvir] (scfe) {%
+  \node[box, text width=28.5mm, right=of svccir] (scfe) {%
     \textbf{\code{svcc-front-sc}}\\[-0.5pt]
     \textbf{\& \code{svcc-emit-sc}}\\[1.5pt]
     Clause split ($B=8$),\\
@@ -182,24 +182,24 @@ Fourth, untimed C++17 reference models reassign local variables imperatively acr
 
   % Horizontal bidirectional compilation arrows
   \draw[darr] (svsrc.east) -- (svfe.west);
-  \draw[darr] (svfe.east)  -- (uvir.west);
-  \draw[darr] (uvir.east)  -- (scfe.west);
+  \draw[darr] (svfe.east)  -- (svccir.west);
+  \draw[darr] (svccir.east) -- (scfe.west);
   \draw[darr] (scfe.east)  -- (scsrc.west);
 
-  % Orthogonal Manhattan routing from UVIR to bottom verification & SDK bars
-  \coordinate (uvir_l) at ([xshift=-5.0mm]uvir.south);
-  \coordinate (uvir_r) at ([xshift=5.0mm]uvir.south);
-  \draw[arr] (uvir_l) -- (uvir_l |- equiv.north);
-  \draw[arr] (uvir_r) -- ++(0,-3.0mm) -| (sdk.north);
+  % Orthogonal Manhattan routing from svcc-ir to bottom verification & SDK bars
+  \coordinate (ir_l) at ([xshift=-5.0mm]svccir.south);
+  \coordinate (ir_r) at ([xshift=5.0mm]svccir.south);
+  \draw[arr] (ir_l) -- (ir_l |- equiv.north);
+  \draw[arr] (ir_r) -- ++(0,-3.0mm) -| (sdk.north);
 \end{tikzpicture}
 \caption{Bidirectional \code{svcc} compilation and translation-validation pipeline. Five core crates compile with \code{-{}-no-default-features} free of \code{svlang} dependencies so downstream formal tools (\code{InFormal}) can consume a pinned \code{svcc} revision without Cargo dependency conflicts.}
 \label{fig:arch}
 \end{figure*}
 
-Figure~\ref{fig:arch} illustrates the \code{svcc} workspace, implemented in 12,305 lines of Rust across eight core Cargo crates (\code{svcc-ir}, \code{svcc-front-sv}, \code{svcc-front-sc}, \code{svcc-passes}, \code{svcc-emit-sc}, \code{svcc-emit-sv}, \code{svcc-equiv}, and the umbrella SDK/CLI crate \code{svcc}) plus an ABI-stable Python extension (\code{svcc-py} built on \code{PyO3} \code{abi3-py39}).
+Figure~\ref{fig:arch} illustrates the \code{svcc} workspace, implemented in 12,600 lines of Rust across eight core Cargo crates (\code{svcc-ir}, \code{svcc-front-sv}, \code{svcc-front-sc}, \code{svcc-passes}, \code{svcc-emit-sc}, \code{svcc-emit-sv}, \code{svcc-equiv}, and the umbrella SDK/CLI crate \code{svcc}) plus an ABI-stable Python extension (\code{svcc-py} built on \code{PyO3} \code{abi3-py39}).
 
-\subsection{Seven-Dialect UVIR and Target Capabilities}
-A \code{UvirModule} stores lowered hardware and verification units across seven orthogonal dialects:
+\subsection{Seven-Dialect svcc-ir and Target Capabilities}
+An \code{IrModule} stores lowered hardware and verification units across seven orthogonal dialects:
 \begin{itemize}
 \item \textbf{\code{types}}: 2-state and 4-state packed bitvectors (\code{bit}, \code{logic}, \code{sc\_uint<W>}, \code{sc\_lv<W>}, native \code{uint8\_t}--\code{uint64\_t}) and width-typed \code{EnumDecl} tables.
 \item \textbf{\code{uvm}}: \code{ClassDecl} nodes tagged with semantic \code{UvmRole} (\code{SequenceItem}, \code{Driver}, \code{Monitor}, \code{Scoreboard}, \code{Agent}, \code{Env}, \code{Reg}, \code{RegBlock}), RAL field slice configurations (\code{lsb\_pos}, \code{access}, \code{volatile}, \code{reset}), address maps, TLM ports, and child component instances.
@@ -210,7 +210,7 @@ A \code{UvirModule} stores lowered hardware and verification units across seven 
 \item \textbf{\code{rtl}}: Synthesizable \code{RtlModuleDecl} ports, internal nets, combinational processes (\code{always\_comb} / \code{SC\_METHOD} / \code{C2RTL} SSA cones), and clocked processes (\code{always\_ff} / \code{SC\_CTHREAD}) with optional async reset polarity.
 \end{itemize}
 
-Rather than hard-coding pairwise translation ad-hoc, each backend publishes a \code{Target\allowbreak Capabilities} descriptor declaring its memory model, concurrency model, solver expressiveness, and temporal assertion support. \code{PassPipeline::\allowbreak for\_target} executes four deterministic passes on \code{UvirModule}: \code{Width\allowbreak Signedness\allowbreak Pass}, \code{FieldOp\allowbreak Synthesis\allowbreak Pass}, \code{Ownership\allowbreak Pass}, and \code{Target\allowbreak Legalizer\allowbreak Pass}.
+Rather than hard-coding pairwise translation ad-hoc, each backend publishes a \code{Target\allowbreak Capabilities} descriptor declaring its memory model, concurrency model, solver expressiveness, and temporal assertion support. \code{PassPipeline::\allowbreak for\_target} executes four deterministic passes on \code{IrModule}: \code{Width\allowbreak Signedness\allowbreak Pass}, \code{FieldOp\allowbreak Synthesis\allowbreak Pass}, \code{Ownership\allowbreak Pass}, and \code{Target\allowbreak Legalizer\allowbreak Pass}.
 
 \subsection{Multi-Layer svlang Integration and Lossless CST Recovery}
 Verification engineers and AI coding agents routinely inspect or migrate a single SystemVerilog file (such as \code{axi4\_burst\_env.sv} or \code{dma\_ch\_ral\_sva.sv}) outside a full simulator build directory. When \code{uvm\_pkg} and sibling package headers are absent, strict semantic elaborators leave base class specialization roles unresolved and erase parameterized member types such as \code{uvm\_analysis\_port \#(axi4\_item)} to \code{<error>}. Rather than relying on an external C++ parser, \code{svcc} integrates five Rust crates from \code{svlang}~\cite{kubavat2026svlang}: \code{sv-semantic} for IEEE~1800-2023 \code{ElaboratedDesign} port widths and \code{TypeOracle} symbolic constant folding across \code{parameter}, \code{localparam}, and \code{\$clog2} expressions; \code{svlang-model} for UVM component/object classification; \code{sv-syntax} for lossless CST fallback hooks that recover \code{extends} base names, \code{uvm\_reg}/\code{uvm\_reg\_block} roles, raw \code{`uvm\_field\_int} automation flags, and parameterized TLM member types from token spans; \code{svlang-lint} for thread-safe \code{formal-ready} semantic lint verification on emitted SystemVerilog; and \code{sv-netlist}/\code{sv-btor2} (including concurrent property compilation) for word-level sequential miter lowering. A CLI flag (\code{-{}-no-cst-fallback}) disables CST recovery to isolate its contribution in Section~\ref{sec:eval}.
@@ -218,7 +218,7 @@ Verification engineers and AI coding agents routinely inspect or migrate a singl
 \subsection{Clause Partitioning, Solver Legalization, and Zero-svlang Slicing}
 CRAVE encodes clauses in \code{crave::\allowbreak crv\_\allowbreak constraint} constructors as nested Boost.Proto expression-template types~\cite{haedicke2012crave,veldhuizen1995expr}. Although \code{svcc} emits C++17 text in hundreds of microseconds, recursive template instantiation inside \code{clang++ -O2} scales superlinearly in $K$. Because conjunction over hard constraints is associative and commutative, \code{ScEmitter} supports \code{-{}-partition-clauses B}, splitting any constraint block exceeding $B$ clauses into sub-constraints named \code{c\_\_part\_0}, \code{c\_\_part\_1}, and so on, which \code{ScFrontend} re-merges losslessly on reverse \code{sc2sv} compilation.
 
-To match IEEE~1800 solver behavior in live C++17 execution, \code{Target\allowbreak Legalizer\allowbreak Pass} scales \code{dist} weights across \code{:/} range-split items by the $u128$ least common multiple of range spans (reduced by exact per-element greatest common divisors, leaving 32-bit spans whose scaled weights exceed \code{u32::MAX} to CRAVE's hierarchical \code{weighted\_range} sampler). For cyclic \code{randc} variables, where CRAVE throws a runtime exception above 16 bits and history-exclusion lists degrade exponentially in width $W$, \code{ScEmitter} emits a 32-byte header-only 4-round cycle-walking Feistel network (\code{svcc\_randc\_feistel<W>}, $1 \le W \le 32$) alongside conditional \code{crave::crv\_object\_name} RAII constructor guards.
+To match IEEE~1800 solver behavior in live C++17 execution, \code{Target\allowbreak Legalizer\allowbreak Pass} intersects \code{dist} intervals against hard single-variable relational bounds (preventing CRAVE from clamping out-of-range mass onto interval boundaries) and scales \code{:/} range-split weights by the $u128$ least common multiple of range denominators (reduced by exact per-element greatest common divisors, leaving 32-bit spans whose scaled weights exceed \code{u32::MAX} to CRAVE's hierarchical \code{weighted\_range} sampler). For cyclic \code{randc} variables, where CRAVE throws a runtime exception above 16 bits and history-exclusion lists degrade exponentially in width $W$, \code{ScEmitter} emits a 32-byte header-only 4-round cycle-walking Feistel network (\code{svcc\_randc\_feistel<W>}, $1 \le W \le 32$) alongside conditional \code{crave::crv\_object\_name} RAII constructor guards.
 
 Finally, to allow downstream formal verification engines such as \code{InFormal}~\cite{kubavat2026informal} (which already depends on its own workspace version of \code{svlang}) to embed \code{svcc}'s C2RTL lifter and miter generator without Cargo git-revision diamond conflicts, \code{svcc-emit-sv} and \code{svcc-equiv} gate \code{svlang} verification behind optional Cargo features (\code{verify-svlang} and \code{btor2-sec}). Building \code{svcc-ir}, \code{svcc-front-sc}, \code{svcc-passes}, \code{svcc-emit-sv}, and \code{svcc-equiv} with \code{-{}-no-default-features} yields a self-contained Rust C++-to-SV miter library with zero \code{svlang} dependencies.
 
@@ -257,37 +257,37 @@ We evaluate \code{svcc} on an Apple Silicon macOS workstation (arm64, Rust~1.93.
 \toprule
 \textbf{Design} & \textbf{Category} & \textbf{LOC} & \textbf{Cls/RTL/SVA} & \textbf{CRV} & \textbf{\code{sv2sc} ($\mu$s)} & \textbf{\code{sc2sv} ($\mu$s)} & \textbf{RT Z3 (ms)} & \textbf{RT} & \textbf{$L$} & \textbf{SEC Z3 (ms)} & \textbf{SEC} \\
 \midrule
-\code{01\_apb4\_timer\_vip}    & UVM CRV VIP & 50 & 1 / 0 / 0 & 34 & 199 & 281 &  5.28 & \code{Unsat} & -- & --   & -- \\
-\code{02\_axi4\_burst\_vip}    & UVM CRV VIP & 88 & 4 / 0 / 0 & 23 & 344 & 389 & 22.42 & \code{Unsat} & -- & --   & -- \\
-\code{03\_pcie\_tlp\_hdr}      & UVM CRV VIP & 48 & 1 / 0 / 0 & 25 & 212 & 273 &  5.56 & \code{Unsat} & -- & --   & -- \\
-\code{04\_chi\_coh\_req}       & UVM CRV VIP & 38 & 1 / 0 / 0 & 32 & 189 & 267 &  5.58 & \code{Unsat} & -- & --   & -- \\
-\code{05\_eth\_mac\_frame}     & UVM CRV VIP & 41 & 1 / 0 / 0 & 29 & 190 & 261 &  5.35 & \code{Unsat} & -- & --   & -- \\
-\code{06\_ddr5\_cmd\_sched}    & UVM CRV VIP & 59 & 2 / 0 / 0 & 21 & 236 & 300 & 10.16 & \code{Unsat} & -- & --   & -- \\
+\code{01\_apb4\_timer\_vip}    & UVM CRV VIP & 50 & 1 / 0 / 0 & 34 & 219 & 689 &  5.51 & \code{Unsat} & -- & --   & -- \\
+\code{02\_axi4\_burst\_vip}    & UVM CRV VIP & 88 & 4 / 0 / 0 & 23 & 369 & 845 & 20.26 & \code{Unsat} & -- & --   & -- \\
+\code{03\_pcie\_tlp\_hdr}      & UVM CRV VIP & 48 & 1 / 0 / 0 & 25 & 279 & 664 &  5.41 & \code{Unsat} & -- & --   & -- \\
+\code{04\_chi\_coh\_req}       & UVM CRV VIP & 38 & 1 / 0 / 0 & 32 & 223 & 629 &  5.37 & \code{Unsat} & -- & --   & -- \\
+\code{05\_eth\_mac\_frame}     & UVM CRV VIP & 41 & 1 / 0 / 0 & 29 & 190 & 631 &  5.42 & \code{Unsat} & -- & --   & -- \\
+\code{06\_ddr5\_cmd\_sched}    & UVM CRV VIP & 59 & 2 / 0 / 0 & 21 & 265 & 719 & 10.35 & \code{Unsat} & -- & --   & -- \\
 \midrule
-\code{07\_uart\_16550\_ral}    & UVM RAL+SVA & 43 & 2 / 0 / 2 &  0 & 272 & 224 & 20.15 & \code{Unsat} & -- & --   & -- \\
-\code{08\_dma\_ch\_ral\_sva}   & UVM RAL+SVA & 42 & 2 / 0 / 2 &  0 & 267 & 229 & 21.27 & \code{Unsat} & -- & --   & -- \\
-\code{09\_spi\_master\_ral}    & UVM RAL+SVA & 41 & 2 / 0 / 1 &  0 & 265 & 224 & 16.43 & \code{Unsat} & -- & --   & -- \\
-\code{10\_i2c\_ctrl\_ral\_sva} & UVM RAL+SVA & 39 & 2 / 0 / 2 &  0 & 260 & 216 & 26.27 & \code{Unsat} & -- & --   & -- \\
-\code{11\_plic\_irq\_ral\_sva} & UVM RAL+SVA & 38 & 2 / 0 / 1 &  0 & 246 & 204 & 16.17 & \code{Unsat} & -- & --   & -- \\
-\code{12\_wdog\_tmr\_ral\_sva} & UVM RAL+SVA & 38 & 2 / 0 / 1 &  0 & 245 & 202 & 15.84 & \code{Unsat} & -- & --   & -- \\
+\code{07\_uart\_16550\_ral}    & UVM RAL+SVA & 43 & 2 / 0 / 2 &  0 & 328 & 746 & 21.68 & \code{Unsat} & -- & --   & -- \\
+\code{08\_dma\_ch\_ral\_sva}   & UVM RAL+SVA & 42 & 2 / 0 / 2 &  0 & 312 & 757 & 21.51 & \code{Unsat} & -- & --   & -- \\
+\code{09\_spi\_master\_ral}    & UVM RAL+SVA & 41 & 2 / 0 / 1 &  0 & 324 & 688 & 14.84 & \code{Unsat} & -- & --   & -- \\
+\code{10\_i2c\_ctrl\_ral\_sva} & UVM RAL+SVA & 39 & 2 / 0 / 2 &  0 & 291 & 755 & 21.14 & \code{Unsat} & -- & --   & -- \\
+\code{11\_plic\_irq\_ral\_sva} & UVM RAL+SVA & 38 & 2 / 0 / 1 &  0 & 353 & 712 & 15.78 & \code{Unsat} & -- & --   & -- \\
+\code{12\_wdog\_tmr\_ral\_sva} & UVM RAL+SVA & 38 & 2 / 0 / 1 &  0 & 302 & 766 & 16.24 & \code{Unsat} & -- & --   & -- \\
 \midrule
-\code{13\_alu32\_pipe2}        & RTL + C2RTL & 47 & 0 / 1 / 0 &  0 & 200 & 196 &  6.89 & \code{Unsat} & 2  & 6.54 & \code{Unsat} \\
-\code{14\_mac16\_pipe2}        & RTL + C2RTL & 34 & 0 / 1 / 0 &  0 & 166 & 165 &  5.95 & \code{Unsat} & 2  & 5.49 & \code{Unsat} \\
-\code{15\_crc8\_step\_comb}    & RTL + C2RTL & 18 & 0 / 1 / 0 &  0 & 123 & 116 &  6.75 & \code{Unsat} & 0  & 6.46 & \code{Unsat} \\
-\code{16\_gray\_enc16\_pipe1}  & RTL + C2RTL & 20 & 0 / 1 / 0 &  0 & 116 & 111 &  6.03 & \code{Unsat} & 1  & 5.72 & \code{Unsat} \\
-\code{17\_sat\_sub16\_pipe1}   & RTL + C2RTL & 25 & 0 / 1 / 0 &  0 & 131 & 128 &  5.73 & \code{Unsat} & 1  & 5.92 & \code{Unsat} \\
-\code{18\_shifter32\_pipe2}    & RTL + C2RTL & 41 & 0 / 1 / 0 &  0 & 189 & 188 &  6.97 & \code{Unsat} & 2  & 6.23 & \code{Unsat} \\
-\code{19\_minmax32\_pipe1}     & RTL + C2RTL & 31 & 0 / 1 / 0 &  0 & 139 & 138 &  6.14 & \code{Unsat} & 1  & 5.88 & \code{Unsat} \\
-\code{20\_arb\_prio4\_comb}    & RTL + C2RTL & 22 & 0 / 1 / 0 &  0 & 121 & 113 &  6.16 & \code{Unsat} & 0  & 5.80 & \code{Unsat} \\
+\code{13\_alu32\_pipe2}        & RTL + C2RTL & 47 & 0 / 1 / 0 &  0 & 296 & 749 &  7.33 & \code{Unsat} & 2  & 7.29 & \code{Unsat} \\
+\code{14\_mac16\_pipe2}        & RTL + C2RTL & 34 & 0 / 1 / 0 &  0 & 236 & 640 &  6.47 & \code{Unsat} & 2  & 6.34 & \code{Unsat} \\
+\code{15\_crc8\_step\_comb}    & RTL + C2RTL & 18 & 0 / 1 / 0 &  0 & 162 & 576 &  6.85 & \code{Unsat} & 0  & 7.08 & \code{Unsat} \\
+\code{16\_gray\_enc16\_pipe1}  & RTL + C2RTL & 20 & 0 / 1 / 0 &  0 & 156 & 532 &  6.02 & \code{Unsat} & 1  & 5.47 & \code{Unsat} \\
+\code{17\_sat\_sub16\_pipe1}   & RTL + C2RTL & 25 & 0 / 1 / 0 &  0 & 168 & 554 &  5.87 & \code{Unsat} & 1  & 5.63 & \code{Unsat} \\
+\code{18\_shifter32\_pipe2}    & RTL + C2RTL & 41 & 0 / 1 / 0 &  0 & 294 & 763 &  6.96 & \code{Unsat} & 2  & 5.95 & \code{Unsat} \\
+\code{19\_minmax32\_pipe1}     & RTL + C2RTL & 31 & 0 / 1 / 0 &  0 & 184 & 605 &  5.81 & \code{Unsat} & 1  & 5.46 & \code{Unsat} \\
+\code{20\_arb\_prio4\_comb}    & RTL + C2RTL & 22 & 0 / 1 / 0 &  0 & 154 & 576 &  6.86 & \code{Unsat} & 0  & 6.77 & \code{Unsat} \\
 \midrule
-\textbf{Total / Median}        & \textbf{20 designs} & \textbf{803} & \textbf{22 / 8 / 9} & \textbf{164} & \textbf{200} & \textbf{210} & \textbf{6.82} & \textbf{20/20} & \textbf{0--2} & \textbf{5.90} & \textbf{8/8} \\
+\textbf{Total / Median}        & \textbf{20 designs} & \textbf{803} & \textbf{22 / 8 / 9} & \textbf{164} & \textbf{272} & \textbf{689} & \textbf{6.91} & \textbf{20/20} & \textbf{0--2} & \textbf{6.14} & \textbf{8/8} \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 Table~\ref{tab:rq1} reports results across the 20-design benchmark suite (28 source files totaling 803 SystemVerilog lines plus 8 untimed C++17 golden headers): six protocol VIPs (APB4, AXI4, PCIe TLP, Arm CHI, IEEE~802.3 Ethernet MAC, DDR5 DFI with \code{\#1step} clocking and \code{fork}/\code{join\_any}/\code{disable fork}), six peripheral UVM RAL blocks paired with concurrent SVA monitors (UART~16550, DMA, SPI, I2C, RISC-V PLIC, Watchdog), and eight synthesizable datapaths ($L \in \{0, 1, 2\}$ pipeline stages: 32-bit ALU, 16$\times$16+32 MAC, CRC-8 step, 16-bit Gray encoder, saturating subtractor, barrel shifter, min/max unit, and 4-way priority arbiter) paired with untimed C++17 reference functions.
 
-All 20 designs (100\%) compile through \code{sv2sc} without warnings under \code{clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only}, round-trip back to SystemVerilog via \code{sc2sv} with zero \code{svlang} elaboration errors, and prove \code{EquivalentUnsat} across all 22 UVM classes, 9 SVA properties, and 8 RTL modules. Across 100 warm iterations per file, \code{sv2sc} runs in 116--344~$\mu$s (median 200~$\mu$s) and \code{sc2sv} runs in 111--389~$\mu$s (median 210~$\mu$s). End-to-end Z3 round-trip proofs finish in 5.28--26.27~ms (median 6.82~ms, 221.1~ms total across the corpus), and all 8 untimed C++17 golden functions prove sequentially equivalent (\code{EquivalentUnsat}) to their pipelined SystemVerilog RTL implementations in 5.49--6.54~ms (median 5.90~ms).
+All 20 designs (100\%) compile through \code{sv2sc} without warnings under \code{clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only}, round-trip back to SystemVerilog via \code{sc2sv} with zero \code{svlang} elaboration or \code{svlang-lint} \code{formal-ready} errors, and prove \code{EquivalentUnsat} across all 22 UVM classes, 9 SVA properties, and 8 RTL modules. Across 100 warm iterations per file, \code{sv2sc} runs in 154--369~$\mu$s (median 272~$\mu$s) and \code{sc2sv} (including full \code{svlang-lint} checking) runs in 532--845~$\mu$s (median 689~$\mu$s). End-to-end Z3 round-trip proofs finish in 5.37--21.68~ms (median 6.91~ms, 215.7~ms total across the corpus), and all 8 untimed C++17 golden functions prove sequentially equivalent (\code{EquivalentUnsat}) to their pipelined SystemVerilog RTL implementations in 5.46--7.29~ms (median 6.14~ms).
 
 \subsection{RQ2: Semantic Defect Sensitivity and Specificity}
 
@@ -326,25 +326,25 @@ To test whether \code{svcc-equiv} discriminates genuine semantic translation bug
 \midrule
 \textbf{Frontend Mode} & \textbf{Role} & \textbf{\code{clang++}} & \textbf{Rate} \\
 \midrule
-Semantic-only (\code{-{}-no-cst-fallback}) & 0/12  & 0/12  & 0.0\% \\
+Semantic-only (\code{-{}-no-cst-fallback}) & 4/12  & 4/12  & 33.3\% \\
 Hybrid \code{svlang} + CST (default)     & 12/12 & 12/12 & \textbf{100.0\%} \\
 \midrule
 \multicolumn{4}{@{}l}{\textbf{RQ4 (Prediction P1): \code{clang++ -O2} Compile Scaling}} \\
 \midrule
 \textbf{Clauses ($K$)} & \textbf{Mono (ms)} & \textbf{Part-8 (ms)} & \textbf{Speedup} \\
 \midrule
-$K = 8$   &   227.6 & 227.3 & $1.00\times$ \\
-$K = 24$  &   272.5 & 247.3 & $1.10\times$ \\
-$K = 48$  &   395.6 & 291.5 & $1.36\times$ \\
-$K = 80$  &   756.0 & 275.9 & $2.74\times$ \\
-$K = 120$ & 1,712.0 & 287.5 & \textbf{$5.95\times$} \\
+$K = 8$   &   245.9 & 246.2 & $1.00\times$ \\
+$K = 24$  &   290.5 & 255.7 & $1.14\times$ \\
+$K = 48$  &   394.3 & 261.5 & $1.51\times$ \\
+$K = 80$  &   780.7 & 291.8 & $2.68\times$ \\
+$K = 120$ & 1,845.4 & 295.1 & \textbf{$6.25\times$} \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Table~\ref{tab:rq34} reports our two compiler ablations. In RQ3, translating the 12 standalone UVM CRV and RAL files without \code{-f} package filelists succeeds on 0/12 files under strict semantic-only lowering because unloaded UVM base classes and parameterized TLM ports degrade class roles and member types, whereas \code{svcc}'s default hybrid \code{svlang}+CST mode preserves exact \code{uvm\_randomized\_\allowbreak sequence\_item} and \code{uvm\_randomized\_reg} specializations and passes \code{clang++ -Werror} on 12/12 (100\%) files.
+Table~\ref{tab:rq34} reports our two compiler ablations. In RQ3, translating the 12 standalone UVM CRV and RAL files without \code{-f} package filelists succeeds on only 4/12 (33.3\%) single-item VIPs under strict semantic-only lowering because unloaded \code{uvm\_reg}/\code{uvm\_reg\_block} base classes and parameterized TLM ports degrade class roles and member types on all 8 multi-component and RAL designs, whereas \code{svcc}'s default hybrid \code{svlang}+CST mode preserves exact specializations and passes \code{clang++ -Werror} on 12/12 (100\%, a $3.0\times$ recovery increase).
 
-In RQ4, we sweep constraint block size $K \in \{8, 24, 48, 80, 120\}$ over 32-bit relational arithmetic clauses compiled using \code{clang++} \code{-std=c++17} \code{-O2} \code{-c} against nested Boost.Proto-style expression templates. Monolithic \code{crv\_constraint} emission grows superlinearly from 227.6~ms at $K=8$ to 1,712.0~ms at $K=120$. Partitioning into $B=8$ clauses per constructor (\code{-{}-partition-clauses 8}) keeps \code{clang++ -O2} compile time nearly flat at 287.5~ms for $K=120$, delivering a $5.95\times$ C++ compile speedup while preserving Z3 \code{QF\_BV} equivalence and lossless reverse \code{sc2sv} merging.
+In RQ4, we sweep constraint block size $K \in \{8, 24, 48, 80, 120\}$ over 32-bit relational arithmetic clauses compiled using \code{clang++} \code{-std=c++17} \code{-O2} \code{-c} against nested Boost.Proto-style expression templates. Monolithic \code{crv\_constraint} emission grows superlinearly from 245.9~ms at $K=8$ to 1,845.4~ms at $K=120$. Partitioning into $B=8$ clauses per constructor (\code{-{}-partition-clauses 8}) keeps \code{clang++ -O2} compile time nearly flat at 295.1~ms for $K=120$, delivering a $6.25\times$ C++ compile speedup while preserving Z3 \code{QF\_BV} equivalence and lossless reverse \code{sc2sv} merging.
 
 \subsection{RQ5: Live Accellera Execution, Solver Studies, and External Audit}
 
@@ -361,13 +361,13 @@ Live UVM + FC4SC     & Live binary: 200 UVM \code{randomize()} draws + \code{sof
 \midrule
 \code{P2} \code{dist} ($10^5$ draws) & \code{[0:15] :/ 5, 16 := 5}: integer-floor per-element vs.\ $u128$ LCM \code{weighted\_range} & TVD $0.5000 \rightarrow \mathbf{0.0043}$ ($\chi^2$: $10^5 \rightarrow \mathbf{20.1}$) \\
 \code{P2} \code{dist} ($10^5$ draws) & \code{[0:2] :/ 10, 3 := 2}: unscaled \code{weighted\_range} vs.\ $u128$ LCM \code{weighted\_range} & TVD $0.0055 \rightarrow \mathbf{0.0020}$ ($\chi^2$: $14.52 \rightarrow \mathbf{2.28}$) \\
-\code{P2} sliced \code{dist}        & Hard constraint (\code{x >= 1}, \code{x >= 8}) slicing inside an active CRAVE \code{weighted\_range} & TVD $0.0978$ / $0.0742$ (boundary mass clamping) \\
+\code{P2} sliced \code{dist}        & Hard bound (\code{x >= 1}, \code{x >= 8}): raw CRAVE clamping vs.\ \code{svcc} interval clip + LCM & TVD $0.0978 \rightarrow \mathbf{0.0016}$ ($\chi^2$: $4541.6 \rightarrow \mathbf{1.64}$) \\
 \midrule
 \code{P3} \code{cover property}     & \code{\#\#[1:3]}--\code{\#\#[4:32]} overlapping windows: 64-bit bitmask vs.\ per-age \code{pending\_age\_} & Eliminates $3\times$--$26\times$ burst \& $2.08\times$--$6.13\times$ $10^7$-cyc loss \\
-\code{P3} Z3 BMC + speed            & Cycle-exact increment miter ($n \le 32$) + $10^7$-cycle \code{clang++ -O2} throughput & \textbf{\code{EquivalentUnsat}} (32~ms Z3), \textbf{1.42--3.88~ns/cycle} \\
+\code{P3} Z3 BMC + speed            & Cycle-exact increment miter ($n \le 32$) + $10^7$-cycle \code{clang++ -O2} throughput & \textbf{\code{EquivalentUnsat}} (32~ms Z3), \textbf{1.42--3.92~ns/cycle} \\
 \midrule
-\code{P5} \code{randc} ($W=10$)     & Live CRAVE history exclusion vs.\ \code{svcc\_randc\_feistel<10>} + Z3 follower constraint & $27.96\text{ ms/call} \rightarrow \mathbf{106.3~\mu\text{s/call}}$ ($\mathbf{263\times}$ speedup) \\
-\code{P5} \code{randc} ($W \ge 17$) & Native CRAVE \code{randc} (throws $>16$ bits) vs.\ \code{svcc\_randc\_feistel<W>} ($W \le 32$) & Runtime exception vs.\ \textbf{3.7--4.7~ns/call} (bijective) \\
+\code{P5} \code{randc} ($W=10$)     & Live CRAVE history exclusion vs.\ \code{svcc\_randc\_feistel<10>} + Z3 follower constraint & $25.78\text{ ms/call} \rightarrow \mathbf{75.5~\mu\text{s/call}}$ ($\mathbf{341\times}$ speedup) \\
+\code{P5} \code{randc} ($W \ge 17$) & Native CRAVE \code{randc} (throws $>16$ bits) vs.\ \code{svcc\_randc\_feistel<W>} ($W \le 32$) & Runtime exception vs.\ \textbf{2.9--3.1~ns/call} (bijective) \\
 \midrule
 RQ5 External Corpus                 & 12 unmodified files (1,515 SV LOC: OpenTitan, PULP, OpenHW, Ibex, \code{InFormal}) & \textbf{9/12} (75\%) lowered standalone; \textbf{2/2} self-contained pass \code{-Werror} \\
 \bottomrule
@@ -376,7 +376,7 @@ RQ5 External Corpus                 & 12 unmodified files (1,515 SV LOC: OpenTit
 
 To validate emitted C++17 beyond header-shim syntax checks, we compile and execute \code{svcc} outputs against live Accellera SystemC~3.0.3, UVM-SystemC, CRAVE (Z3 backend), and FC4SC libraries~\cite{accellera2026systemc,kubavat2026scbench}, summarized in Table~\ref{tab:m4}. Executing 200 live UVM sequence-item \code{randomize()} draws verifies \code{soft} constraint overrides and achieves 100.0\% FC4SC functional coverage; preserving \code{crave::\allowbreak crv\_\allowbreak object\_\allowbreak name} by value in emitted constructors prevents a CRAVE hierarchy-stack segmentation fault on derived sequence items.
 
-Across $10^5$ live CRAVE draws per configuration (\code{P2}), naive per-element integer-floor \code{:/} lowering collapses \code{[0:15] :/ 5} to zero weight (total variation distance $\text{TVD} = 0.500$, $\chi^2 = 10^5$), whereas \code{svcc}'s LCM scaling achieves $\text{TVD} = 0.0043$ and reduces $\chi^2$ on \code{[0:2] :/ 10, 3 := 2} from 14.52 to 2.28; we also uncover a boundary-clamping artifact in CRAVE ($\text{TVD} = 0.0978$) when hard constraints slice an active \code{weighted\_range}. For \code{cover property} windows (\code{P3}), bitmask observers under-count canonical bursts by $3\times$--$26\times$ and $10^7$-cycle random traces by $2.08\times$--$6.13\times$, whereas \code{pending\_age\_} proves \code{EquivalentUnsat} in 32~ms of Z3 time and executes at 1.42--3.88~ns/cycle. In live \code{randc} sweeps (\code{P5}), explicit CRAVE history exclusion degrades to 27.96~ms/call mean (28.63~s per 1,024-step period) at $W=10$ and native CRAVE \code{randc} throws a runtime exception at $W \ge 17$, whereas \code{svcc\_\allowbreak randc\_\allowbreak feistel<W>} runs in 3.7--4.7~ns/call standalone and 76.7--111.7~$\mu$s/call coupled with Z3 follower constraints ($263\times$ faster at $W=10$, bijective across all 65,536 values at $W=16$).
+Across $10^5$ live CRAVE draws per configuration (\code{P2}), naive per-element integer-floor \code{:/} lowering collapses \code{[0:15] :/ 5} to zero weight (total variation distance $\text{TVD} = 0.500$, $\chi^2 = 10^5$), whereas \code{svcc}'s LCM scaling achieves $\text{TVD} = 0.0043$ and reduces $\chi^2$ on \code{[0:2] :/ 10, 3 := 2} from 14.52 to 2.28. Furthermore, when hard constraints (\code{x >= 1}, \code{x >= 8}) slice inside an active \code{weighted\_range}, raw CRAVE clamps out-of-range mass onto the interval boundary ($\text{TVD} = 0.0978$, $\chi^2 = 4541.6$); \code{svcc}'s hard-bound interval clipping and rational LCM rescaling eliminate this bias to $\text{TVD} = 0.0016$ ($\chi^2 = 1.64$, a $60.8\times$ TVD reduction) and $\text{TVD} = 0.0014$ ($\chi^2 = 2.54$). For \code{cover property} windows (\code{P3}), bitmask observers under-count canonical bursts by $3\times$--$26\times$ and $10^7$-cycle random traces by $2.08\times$--$6.13\times$, whereas \code{pending\_age\_} proves \code{EquivalentUnsat} in 32~ms of Z3 time and executes at 1.42--3.92~ns/cycle. In live \code{randc} sweeps (\code{P5}), explicit CRAVE history exclusion degrades to 25.78~ms/call mean (26.40~s per 1,024-step period) at $W=10$ and native CRAVE \code{randc} throws a runtime exception at $W \ge 17$, whereas \code{svcc\_\allowbreak randc\_\allowbreak feistel<W>} runs in 2.9--3.1~ns/call standalone and 75.5--127.1~$\mu$s/call coupled with Z3 follower constraints ($341\times$ faster at $W=10$, bijective across all 65,536 values at $W=16$).
 
 Finally, auditing 12 unmodified external SystemVerilog files totaling 1,515~LOC across OpenTitan (\code{prim\_\allowbreak secded\_\allowbreak inv\_\allowbreak 39\_32\_dec.sv}, \code{prim\_\allowbreak fifo\_\allowbreak sync.sv}, \code{prim\_\allowbreak arbiter\_\allowbreak ppc.sv}), PULP \code{common\_\allowbreak cells}, OpenHW \code{core-v-verif}, lowRISC \code{ibex}, \code{InFormal}, \code{systemc-\allowbreak examples}, and \code{dv-\allowbreak patterns} lowers 9/12 (75.0\%) files standalone without \code{-f} filelists; both self-contained OpenTitan RTL primitives pass standalone \code{clang++ -Werror}, while the remaining files surface exact fail-closed diagnostics on unexpanded vendor macros (\code{`FFARNC}), external \code{*\_pkg.sv} typedefs, and unpacked port arrays.
 
@@ -393,11 +393,11 @@ Finally, auditing 12 unmodified external SystemVerilog files totaling 1,515~LOC 
 \code{svcc} enforces explicit boundaries where silent approximation would be unsound:
 \begin{enumerate}
 \item \textbf{Synthesizable C++17 subset.} \code{C2RTL} and \code{SC\_MODULE} lifting enforce IEEE~1666.1~\cite{ieee1666_1_2016} fail-closed rules, rejecting dynamic heap allocation, STL containers, recursion, and multi-\code{wait()} high-level synthesis scheduling; pipeline latency $L$ is supplied explicitly (or proved unboundedly via \code{InFormal}).
-\item \textbf{Conditioned \code{dist} slicing and tightly constrained \code{randc}.} While $u128$ LCM scaling eliminates \code{:/} integer-floor collapse in unconstrained CRAVE \code{weighted\_range} sampling, hard constraints that slice inside a weighted range trigger CRAVE boundary clamping ($\text{TVD} = 0.0978$), motivating interval splitting against hard bounds. Likewise, \code{svcc\_randc\_feistel<W>} handles unconstrained and follower-coupled cyclic variables up to 32 bits, whereas cyclic variables restricted to sparse feasible subsets require SAT-backed permutation sampling.
+\item \textbf{Relational \code{dist} coupling and sparse \code{randc} subsets.} While \code{svcc-passes} clips \code{dist} ranges against single-variable constant bounds and LCM-scales \code{:/} weights, multi-variable relational constraints that slice inside a \code{weighted\_range} cannot be statically interval-clipped without solver-side conditioning. Likewise, \code{svcc\_randc\_feistel<W>} handles unconstrained and follower-coupled cyclic variables up to 32 bits, whereas cyclic variables restricted to sparse feasible subsets require SAT-backed permutation sampling.
 \item \textbf{Multi-file package closure and unpacked port arrays.} Lossless CST fallback recovers standalone UVM/RAL roles without \code{uvm\_pkg}, whereas external designs referencing project-specific \code{*\_pkg.sv} typedefs, unexpanded vendor macros, or unpacked port arrays require multi-file \code{-f} compilation unit closure.
 \end{enumerate}
 
-By unifying UVM constrained-random verification, functional coverage, Preponed clocking, concurrent SVA assertion and cover observers, and synthesizable RTL/C2RTL datapaths in \code{UVIR} under fast Z3 and Btor2 translation validation, \code{svcc} enables hardware engineers and coding agents to iterate at C++17 compile speeds without sacrificing IEEE~1800 sign-off equivalence.
+By unifying UVM constrained-random verification, functional coverage, Preponed clocking, concurrent SVA assertion and cover observers, and synthesizable RTL/C2RTL datapaths in \code{svcc-ir} under fast Z3 and Btor2 translation validation, \code{svcc} enables hardware engineers and coding agents to iterate at C++17 compile speeds without sacrificing IEEE~1800 sign-off equivalence.
 
 \IEEEtriggeratref{20}
 \bibliographystyle{IEEEtran}

@@ -11,7 +11,7 @@
 
 use svcc_ir::{
     ConstraintClause, CrvArena, CrvBinaryOp, CrvExpr, CrvUnaryOp, DistItem, DistWeightKind, ExprId,
-    InsideElem, UvirError,
+    InsideElem, SvccError,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,7 +58,7 @@ enum Tok {
     Question,
 }
 
-fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
+fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, SvccError> {
     let bytes = src.as_bytes();
     let mut i = 0;
     let mut out = Vec::new();
@@ -273,7 +273,7 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
                 out.push(Tok::Ident(src[start..i].to_string()));
             }
             other => {
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "svcc-front-sv/crv",
                     format!(
                         "unexpected character '{}' in constraint '{}'",
@@ -286,7 +286,7 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
     Ok(out)
 }
 
-pub fn parse_sv_literal(raw: &str) -> Result<(u128, u32, bool), UvirError> {
+pub fn parse_sv_literal(raw: &str) -> Result<(u128, u32, bool), SvccError> {
     let clean = raw.trim().replace('_', "");
     if clean == "'0" {
         return Ok((0, 32, false));
@@ -299,7 +299,7 @@ pub fn parse_sv_literal(raw: &str) -> Result<(u128, u32, bool), UvirError> {
         .or_else(|| clean.strip_prefix("0X"))
     {
         let v = u128::from_str_radix(hex, 16).map_err(|e| {
-            UvirError::new("svcc-front-sv/crv", format!("bad hex literal {raw}: {e}"))
+            SvccError::new("svcc-front-sv/crv", format!("bad hex literal {raw}: {e}"))
         })?;
         return Ok((v, 32, false));
     }
@@ -319,12 +319,12 @@ pub fn parse_sv_literal(raw: &str) -> Result<(u128, u32, bool), UvirError> {
             _ => (10, rhs),
         };
         let v = u128::from_str_radix(digits, radix).map_err(|e| {
-            UvirError::new("svcc-front-sv/crv", format!("bad SV literal {raw}: {e}"))
+            SvccError::new("svcc-front-sv/crv", format!("bad SV literal {raw}: {e}"))
         })?;
         return Ok((v, width, signed));
     }
     let v = clean.parse::<u128>().map_err(|e| {
-        UvirError::new(
+        SvccError::new(
             "svcc-front-sv/crv",
             format!("bad integer literal {raw}: {e}"),
         )
@@ -361,7 +361,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_inside_elem(&mut self) -> Result<InsideElem, UvirError> {
+    fn parse_inside_elem(&mut self) -> Result<InsideElem, SvccError> {
         if self.eat(&Tok::LBracket) {
             let a = self.parse_add()?;
             let elem = if self.eat(&Tok::Colon) {
@@ -377,7 +377,7 @@ impl<'a> Parser<'a> {
                 let p = self.parse_add()?;
                 InsideElem::TolerancePct { center: a, pct: p }
             } else {
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "svcc-front-sv/crv",
                     "expected ':', '+/-', or '+%-' in [...] range",
                 ));
@@ -390,7 +390,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_clause(&mut self) -> Result<ConstraintClause, UvirError> {
+    fn parse_clause(&mut self) -> Result<ConstraintClause, SvccError> {
         let mut is_soft = false;
         if matches!(self.peek(), Some(Tok::Ident(s)) if s == "soft") {
             self.bump();
@@ -399,7 +399,7 @@ impl<'a> Parser<'a> {
         if matches!(self.peek(), Some(Tok::Ident(s)) if s == "unique") {
             self.bump();
             if !self.eat(&Tok::LBrace) {
-                return Err(UvirError::new(
+                return Err(SvccError::new(
                     "svcc-front-sv/crv",
                     "expected '{' after unique",
                 ));
@@ -412,7 +412,7 @@ impl<'a> Parser<'a> {
                 match self.bump() {
                     Some(Tok::Ident(name)) => vars.push(name.clone()),
                     other => {
-                        return Err(UvirError::new(
+                        return Err(SvccError::new(
                             "svcc-front-sv/crv",
                             format!("expected identifier in unique list, got {other:?}"),
                         ))
@@ -456,7 +456,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_iff(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_iff(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_implies()?;
         while self.eat(&Tok::Iff) {
             let rhs = self.parse_implies()?;
@@ -469,7 +469,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_implies(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_implies(&mut self) -> Result<ExprId, SvccError> {
         let lhs = self.parse_log_or()?;
         if self.eat(&Tok::Arrow) {
             let open_brace = self.eat(&Tok::LBrace);
@@ -486,7 +486,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_log_or(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_log_or(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_log_and()?;
         while self.eat(&Tok::OrOr) {
             let rhs = self.parse_log_and()?;
@@ -499,7 +499,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_log_and(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_log_and(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_bit_or()?;
         while self.eat(&Tok::AndAnd) {
             let rhs = self.parse_bit_or()?;
@@ -512,7 +512,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_bit_or(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_bit_or(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_bit_xor()?;
         while self.eat(&Tok::BitOr) {
             let rhs = self.parse_bit_xor()?;
@@ -525,7 +525,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_bit_xor(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_bit_xor(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_bit_and()?;
         while self.eat(&Tok::BitXor) {
             let rhs = self.parse_bit_and()?;
@@ -538,7 +538,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_bit_and(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_bit_and(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_equality()?;
         while self.eat(&Tok::BitAnd) {
             let rhs = self.parse_equality()?;
@@ -551,7 +551,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_equality(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_equality(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_relational()?;
         loop {
             if self.eat(&Tok::EqEq) {
@@ -575,13 +575,13 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_relational(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_relational(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_shift()?;
         loop {
             if matches!(self.peek(), Some(Tok::Ident(s)) if s == "inside") {
                 self.bump();
                 if !self.eat(&Tok::LBrace) {
-                    return Err(UvirError::new(
+                    return Err(SvccError::new(
                         "svcc-front-sv/crv",
                         "expected '{' after inside",
                     ));
@@ -599,7 +599,7 @@ impl<'a> Parser<'a> {
             } else if matches!(self.peek(), Some(Tok::Ident(s)) if s == "dist") {
                 self.bump();
                 if !self.eat(&Tok::LBrace) {
-                    return Err(UvirError::new(
+                    return Err(SvccError::new(
                         "svcc-front-sv/crv",
                         "expected '{' after dist",
                     ));
@@ -684,7 +684,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_shift(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_shift(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_add()?;
         loop {
             if self.eat(&Tok::Shl) {
@@ -708,7 +708,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_add(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_add(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_mul()?;
         loop {
             if self.eat(&Tok::Plus) {
@@ -732,7 +732,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_mul(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_mul(&mut self) -> Result<ExprId, SvccError> {
         let mut lhs = self.parse_unary()?;
         loop {
             if self.eat(&Tok::Star) {
@@ -756,7 +756,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_unary(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_unary(&mut self) -> Result<ExprId, SvccError> {
         if self.eat(&Tok::Bang) {
             let arg = self.parse_unary()?;
             return Ok(self.arena.alloc(CrvExpr::Unary {
@@ -781,12 +781,12 @@ impl<'a> Parser<'a> {
         self.parse_primary()
     }
 
-    fn parse_primary(&mut self) -> Result<ExprId, UvirError> {
+    fn parse_primary(&mut self) -> Result<ExprId, SvccError> {
         match self.bump() {
             Some(Tok::LParen) => {
                 let inner = self.parse_iff()?;
                 if !self.eat(&Tok::RParen) {
-                    return Err(UvirError::new("svcc-front-sv/crv", "missing closing ')'"));
+                    return Err(SvccError::new("svcc-front-sv/crv", "missing closing ')'"));
                 }
                 Ok(inner)
             }
@@ -812,7 +812,7 @@ impl<'a> Parser<'a> {
                 }
                 Ok(self.arena.alloc(CrvExpr::Var(name.clone())))
             }
-            other => Err(UvirError::new(
+            other => Err(SvccError::new(
                 "svcc-front-sv/crv",
                 format!("unexpected token in SV constraint primary: {other:?}"),
             )),
@@ -825,7 +825,7 @@ pub fn lower_sv_constraint_item(
     raw_item: &str,
     arena: &mut CrvArena,
     enum_consts: &[(String, u64, u32)],
-) -> Result<Option<ConstraintClause>, UvirError> {
+) -> Result<Option<ConstraintClause>, SvccError> {
     let trimmed = raw_item.trim().trim_end_matches(';').trim();
     if trimmed.is_empty() || trimmed.starts_with("solve ") || trimmed.starts_with("disable ") {
         return Ok(None);

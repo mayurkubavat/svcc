@@ -1,6 +1,6 @@
 # `svcc` — SystemVerilog <-> C/C++ (SystemC/UVM) Bidirectional Compiler & Prover
 
-`svcc` is a high-performance Rust compiler, SDK, and Z3 formal equivalence prover translating bidirectionally between **IEEE 1800-2023 SystemVerilog / IEEE 1800.2-2020 UVM (`sv-uvm`)** and **IEEE 1666-2023 SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC (`sc-uvm`, C++17)** over a 6-dialect intermediate representation (`UVIR`).
+`svcc` is a high-performance Rust compiler, SDK, and Z3 formal equivalence prover translating bidirectionally between **IEEE 1800-2023 SystemVerilog / IEEE 1800.2-2020 UVM (`sv-uvm`)** and **IEEE 1666-2023 SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC (`sc-uvm`, C++17)** over a 6-dialect intermediate representation (`svcc-ir`).
 
 ## Workspace & Packaging Layout
 
