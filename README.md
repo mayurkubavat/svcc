@@ -7,7 +7,7 @@
 - **`crates/svcc`**: Top-level Rust SDK (`use svcc::{sv_to_sc, sc_to_sv, prove_sources_equivalent, compile_cpp_to_btor2};`) + `svcc` CLI binary.
 - **`crates/svcc-{ir,front-sv,front-sc,passes,equiv,emit-sc,emit-sv}`**: Modular front ends (`svlang` semantic + lossless CST recovery, `svlang-lint` emission gate, C++17 clause splitter & SSA lowers), semantic legalizer (`P2`/`P3`/`P5` CRAVE passes), and Z3 `QF_BV` / SVA BMC / UCIS 1.0 / Btor2 SEC provers.
 - **`bindings/python`**: `maturin` + `PyO3` Python SDK (`svcc-py`).
-- **`benchmarks/`**: 20-design benchmark suite (`run_m3_benchmarks.py`), live Accellera SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC evaluation (`run_m4_extended.py`), and external open-source corpus audit (`ibex`, `cv32e40p`, `uvm-verilator`, `accellera-crave`).
+- **`benchmarks/`**: 20-design benchmark suite (`run_benchmarks.py`), live Accellera SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC evaluation (`run_m4_extended.py`), and external open-source corpus audit (`ibex`, `cv32e40p`, `uvm-verilator`, `accellera-crave`).
 - **`paper/`**: Technical report source (`paper/main.tex`, `paper/refs.bib`) and compiled PDF (`paper/main.pdf`).
 
 ## Quick Start
@@ -21,7 +21,7 @@ cargo run --release -p svcc -- roundtrip-check testdata/sv/axi4_burst_env.sv --s
 cargo run --release -p svcc -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims testdata/cpp_shims
 
 # Reproduce benchmark suite and live Accellera CRAVE / external corpus measurements
-python3 benchmarks/run_m3_benchmarks.py
+python3 benchmarks/run_benchmarks.py
 python3 benchmarks/run_m4_extended.py
 ```
 
