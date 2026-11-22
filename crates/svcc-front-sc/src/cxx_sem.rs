@@ -2022,8 +2022,13 @@ pub(crate) fn reads(
                 on_expr(sel, out);
                 for a in arms {
                     for p in &a.pats {
-                        if let Pat::Expr(e) = p {
-                            on_expr(e, out);
+                        match p {
+                            Pat::Expr(e) => on_expr(e, out),
+                            Pat::Range(lo, hi) => {
+                                on_expr(lo, out);
+                                on_expr(hi, out);
+                            }
+                            Pat::Const { .. } => {}
                         }
                     }
                     reads(&a.body, fn_reads, out);

@@ -105,12 +105,20 @@ pub fn prove_rtl(
     let (code, design) = crate::sv_rtl_to_sc(filename, sv_source, &tops)?;
     let code = opts.header.clone().unwrap_or(code);
     let top = single_top(&design)?;
-    let outputs: Vec<String> = top
-        .ports
-        .iter()
-        .filter(|p| p.dir == Dir::Out)
-        .map(|p| p.name.clone())
-        .collect();
+    // An array port is one output per element, named as the netlist names them.
+    let mut outputs: Vec<String> = Vec::new();
+    for p in top.ports.iter().filter(|p| p.dir == Dir::Out) {
+        match p.dims.as_slice() {
+            [] => outputs.push(p.name.clone()),
+            [n] => outputs.extend((0..*n).map(|i| format!("{}[{i}]", p.name))),
+            _ => {
+                return Err(SvccError::new(
+                    "svcc/prove-model",
+                    format!("output '{}' is a multi-dimensional array port", p.name),
+                ))
+            }
+        }
+    }
     let spec = svcc_equiv::sec::sv_to_btor2(sv_source, filename, &top.definition)?;
     let popts = PairOptions {
         bound: opts.bound,
@@ -138,12 +146,16 @@ pub fn prove_rtl(
 
     let (generated_cpp, cpp_unchecked) = match svcc_front_sc::hdl_lift::lift_hdl_design(&code) {
         Ok(lifted) => {
-            let ltop = lifted.module(&top.name).ok_or_else(|| {
-                SvccError::new(
-                    "svcc/prove",
-                    format!("generated header has no module '{}'", top.name),
-                )
-            })?;
+            // A module whose name is reserved in C++ is written with a trailing underscore.
+            let ltop = lifted
+                .module(&top.name)
+                .or_else(|| lifted.module(&format!("{}_", top.name)))
+                .ok_or_else(|| {
+                    SvccError::new(
+                        "svcc/prove",
+                        format!("generated header has no module '{}'", top.name),
+                    )
+                })?;
             let cpp = design_to_btor2(&lifted, &ltop.name, "svcc_sc__")?;
             let copts = PairOptions {
                 imp_flag: Some(UB_FLAG.to_string()),
@@ -329,6 +341,13 @@ pub enum RtlFileItem {
         top: String,
         reason: String,
     },
+    /// Outside what the proof models (more than one clock, a computed clock, a
+    /// multi-dimensional array port, a construct the netlist does not lower). Neither proved
+    /// nor refuted.
+    NotCovered {
+        top: String,
+        reason: String,
+    },
 }
 
 /// Runs [`prove_rtl`] on every top module of a source file. Returns an empty list for a file
@@ -353,9 +372,23 @@ pub fn prove_rtl_file(
             top: Some(m.definition.clone()),
             ..opts.clone()
         };
-        out.push(RtlFileItem::Proved(Box::new(prove_rtl(
-            filename, sv_source, &o,
-        )?)));
+        match prove_rtl(filename, sv_source, &o) {
+            Ok(r) => out.push(RtlFileItem::Proved(Box::new(r))),
+            // The netlist or the Btor2 model does not take the design: a limit of the
+            // proof model, not a difference.
+            Err(e) if is_model_limit(&e) => out.push(RtlFileItem::NotCovered {
+                top: m.definition.clone(),
+                reason: e.to_string(),
+            }),
+            Err(e) => return Err(e),
+        }
     }
     Ok(out)
+}
+
+fn is_model_limit(e: &SvccError) -> bool {
+    matches!(
+        e.stage,
+        "svcc-equiv/btor2" | "svcc-equiv/netlist" | "svcc/prove-model"
+    )
 }

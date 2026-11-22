@@ -127,6 +127,13 @@ impl<'a> Em<'a> {
             .iter()
             .find(|s| s.name == name)
             .map(|s| s.dims.clone())
+            .or_else(|| {
+                self.m
+                    .ports
+                    .iter()
+                    .find(|p| p.name == name)
+                    .map(|p| p.dims.clone())
+            })
             .unwrap_or_default()
     }
 
@@ -140,7 +147,7 @@ impl<'a> Em<'a> {
             .ports
             .iter()
             .map(|p| {
-                format!(
+                let mut d = format!(
                     "  {} {} {}",
                     match p.dir {
                         Dir::In => "input",
@@ -148,7 +155,11 @@ impl<'a> Em<'a> {
                     },
                     decl(p.ty),
                     p.name
-                )
+                );
+                for n in &p.dims {
+                    let _ = write!(d, " [0:{}]", n.saturating_sub(1));
+                }
+                d
             })
             .collect();
         let _ = writeln!(out, "module {}{} (", self.prefix, m.name);
@@ -561,6 +572,19 @@ impl<'a> Em<'a> {
                     Pat::Expr(e) => {
                         let ev = self.fit(e, Ty::unsigned(ty.w));
                         tests.push(format!("{{{t} == {ev}}}"));
+                    }
+                    Pat::Range(lo, hi) => {
+                        let l = self.fit(lo, ty);
+                        let h = self.fit(hi, ty);
+                        let (a, b) = if ty.s {
+                            (
+                                format!("{{$signed({t}) >= $signed({l})}}"),
+                                format!("{{$signed({t}) <= $signed({h})}}"),
+                            )
+                        } else {
+                            (format!("{{{t} >= {l}}}"), format!("{{{t} <= {h}}}"))
+                        };
+                        tests.push(format!("{{{a} & {b}}}"));
                     }
                 }
             }

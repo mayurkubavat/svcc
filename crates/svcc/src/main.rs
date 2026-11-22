@@ -31,12 +31,21 @@ fn detect_lang(path: &str) -> &'static str {
 fn main() -> ExitCode {
     match run_cli() {
         Ok(()) => ExitCode::SUCCESS,
+        // A design outside what the proof models is neither proved nor refuted.
+        Err(e) if e.stage == NOT_COVERED => {
+            eprintln!("not covered: {}", e.message);
+            ExitCode::from(3)
+        }
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
         }
     }
 }
+
+/// Error stage (and exit code 3) of `rtl-prove` when nothing failed but some module could not
+/// be put to the proof.
+const NOT_COVERED: &str = "rtl-prove/not-covered";
 
 fn run_cli() -> Result<(), SvccError> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -100,8 +109,10 @@ fn run_cli() -> Result<(), SvccError> {
             Ok(())
         }
         "rtl-cosim" => {
-            let (design_args, own) =
-                split_design_args(&args[1..], &["--top", "--steps", "--seed", "--keep", "--header"]);
+            let (design_args, own) = split_design_args(
+                &args[1..],
+                &["--top", "--steps", "--seed", "--keep", "--header"],
+            );
             let input = design_args.first().ok_or_else(|| {
                 SvccError::new(
                     "cli",
@@ -524,7 +535,10 @@ fn cmd_roundtrip_check(
     // is proved against the source text.
     if !m_sv.module_names.is_empty() {
         let items = svcc::prove::prove_rtl_file(input_path, &src, &Default::default())?;
-        report_rtl_items(&items)?;
+        match report_rtl_items(&items) {
+            Err(e) if e.stage == NOT_COVERED => println!("         {}", e.message),
+            other => other?,
+        }
     }
 
     Ok(())
@@ -534,31 +548,61 @@ fn cmd_roundtrip_check(
 fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError> {
     use svcc::prove::RtlFileItem;
     use svcc_equiv::pair::PairVerdict as V;
+    let mut not_covered = Vec::new();
     for it in items {
         match it {
             RtlFileItem::Skipped { top, reason } => {
                 println!("[----] rtl   '{top}': not compared: {reason}")
             }
+            RtlFileItem::NotCovered { top, reason } => {
+                println!("[----] rtl   '{top}': NOT COVERED by the proof: {reason}");
+                not_covered.push(top.clone());
+            }
             RtlFileItem::Proved(rep) => {
                 print_pair("lowering     ", &rep.top, &rep.lowering);
-                match (&rep.generated_cpp, &rep.cpp_unchecked) {
-                    (Some(r), _) => print_pair("generated C++", &rep.top, r),
-                    (None, Some(why)) => {
-                        println!("[----] generated C++ '{}': not checked: {why}", rep.top)
-                    }
-                    _ => {}
-                }
                 let bad = matches!(rep.lowering.verdict, V::Mismatch | V::Inconclusive);
-                if bad || !rep.cpp_ok() {
-                    return Err(SvccError::new(
-                        "rtl-prove",
-                        format!("'{}' is not proved equal to its generated SystemC", rep.top),
-                    ));
+                match (&rep.generated_cpp, &rep.cpp_unchecked) {
+                    (Some(r), _) => {
+                        print_pair("generated C++", &rep.top, r);
+                        if bad || !rep.cpp_ok() {
+                            return Err(SvccError::new(
+                                "rtl-prove",
+                                format!(
+                                    "'{}' is not proved equal to its generated SystemC",
+                                    rep.top
+                                ),
+                            ));
+                        }
+                    }
+                    (None, why) => {
+                        println!(
+                            "[----] generated C++ '{}': NOT COVERED by the proof: {}",
+                            rep.top,
+                            why.as_deref().unwrap_or("not read")
+                        );
+                        if bad {
+                            return Err(SvccError::new(
+                                "rtl-prove",
+                                format!("the lowering of '{}' is not proved", rep.top),
+                            ));
+                        }
+                        not_covered.push(rep.top.clone());
+                    }
                 }
             }
         }
     }
-    Ok(())
+    if not_covered.is_empty() {
+        Ok(())
+    } else {
+        Err(SvccError::new(
+            NOT_COVERED,
+            format!(
+                "no proof for {} (simulation is the only evidence for them)",
+                not_covered.join(", ")
+            ),
+        ))
+    }
 }
 
 fn cmd_prove_equiv(

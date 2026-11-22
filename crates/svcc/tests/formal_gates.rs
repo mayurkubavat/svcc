@@ -211,3 +211,37 @@ fn two_different_designs_are_not_equal() {
     let diff = prove_sec("a.sv", a, "b.sv", &b, &SecOptions::default()).expect("sec");
     assert_eq!(diff.verdict, PairVerdict::Mismatch);
 }
+
+#[test]
+fn array_ports_are_proved_element_by_element() {
+    let sv = "module aport(input logic clk, input logic [7:0] d [0:3], input logic [1:0] sel,\n  output logic [7:0] q [0:3], output logic [7:0] y);\n  assign y = d[sel];\n  always_ff @(posedge clk) for (int i = 0; i < 4; i++) q[i] <= d[i] + 8'd1;\nendmodule\n";
+    let r = prove(sv);
+    let cpp = r.generated_cpp.expect("checked");
+    assert_eq!(cpp.verdict, PairVerdict::ProvedInductive);
+    assert_eq!(cpp.outputs_compared, 5);
+    let bad = prove_edited(sv, |c| c.replace("+ 1U", "+ 2U"));
+    assert_eq!(cpp_verdict(&bad), PairVerdict::Mismatch);
+}
+
+/// A form the reader does not model (here the lambda the emitter writes for a long
+/// replication into a wide vector) is reported as not checked, never as proved.
+#[test]
+fn an_unmodelled_form_is_not_covered_rather_than_passed() {
+    let sv = "module repl(input logic [3:0] a, output logic [127:0] y);\n  assign y = {32{a}};\nendmodule\n";
+    let r = prove(sv);
+    assert_eq!(r.lowering.verdict, PairVerdict::ProvedInductive);
+    assert!(r.generated_cpp.is_none());
+    assert!(r.cpp_unchecked.is_some());
+    assert!(!r.cpp_ok());
+}
+
+#[test]
+fn a_design_on_two_clocks_is_outside_the_proof_model() {
+    let sv = "module two(input logic c1, c2, input logic d, output logic q1, q2);\n  always_ff @(posedge c1) q1 <= d;\n  always_ff @(posedge c2) q2 <= d;\nendmodule\n";
+    let items =
+        svcc::prove::prove_rtl_file("two.sv", sv, &RtlProveOptions::default()).expect("run");
+    assert!(matches!(
+        items.as_slice(),
+        [svcc::prove::RtlFileItem::NotCovered { .. }]
+    ));
+}

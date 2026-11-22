@@ -161,9 +161,16 @@ fn parse_module(p: &mut Parser) -> Result<ModSrc, SvccError> {
             "sc_core::sc_vector" => {
                 p.i += 1;
                 p.expect_p("<")?;
-                if !p.eat_id("sc_core::sc_signal") {
-                    return p.fail("sc_vector of sc_signal");
-                }
+                // A vector of signals is an unpacked array; a vector of ports an array port.
+                let vdir = if p.eat_id("sc_core::sc_signal") {
+                    None
+                } else if p.eat_id("sc_core::sc_in") {
+                    Some(Dir::In)
+                } else if p.eat_id("sc_core::sc_out") {
+                    Some(Dir::Out)
+                } else {
+                    return p.fail("sc_vector of sc_signal, sc_in or sc_out");
+                };
                 p.expect_p("<")?;
                 let ty = value_type(p)?;
                 p.expect_gt()?;
@@ -183,7 +190,7 @@ fn parse_module(p: &mut Parser) -> Result<ModSrc, SvccError> {
                     name,
                     ty,
                     dim: Some(n as u32),
-                    dir: None,
+                    dir: vdir,
                     init: None,
                 });
             }
@@ -255,8 +262,9 @@ fn parse_ctor(p: &mut Parser) -> Result<Vec<CtorItem>, SvccError> {
                     p.expect_p("(")?;
                     p.expect_p(")")?;
                     match e.as_str() {
-                        "pos" => terms.push(Sens::Edge(s, true)),
-                        "neg" => terms.push(Sens::Edge(s, false)),
+                        // `posedge_event()` is the same event on a signal that is not a port.
+                        "pos" | "posedge_event" => terms.push(Sens::Edge(s, true)),
+                        "neg" | "negedge_event" => terms.push(Sens::Edge(s, false)),
                         _ => return p.fail("event finder other than pos() or neg()"),
                     }
                 } else {
@@ -509,7 +517,7 @@ fn assign_sig(name: &str, rhs: Expr, nonblocking: bool) -> Stmt {
 }
 
 /// Port names of an already lifted module, by C++ identifier.
-type PortMap = HashMap<String, String>;
+type PortMap = HashMap<String, (String, Option<u32>)>;
 
 fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module, SvccError> {
     let ctx = |e: SvccError| {
@@ -567,6 +575,7 @@ fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module,
                 dir,
                 ty,
                 scalar,
+                dims: s.dim.into_iter().collect(),
             }),
             None => {
                 let init = match &s.init {
@@ -865,13 +874,20 @@ fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module,
             if inst != c {
                 continue;
             }
-            let (Some(pn), Some(si)) = (child.get(port), sigs.get(sig)) else {
+            let (Some((pn, pdim)), Some(si)) = (child.get(port), sigs.get(sig)) else {
                 return Err(ctx(SvccError::new(
                     "",
                     format!("binding {inst}.{port}({sig}) names an unknown port or signal"),
                 )));
             };
-            if !bound.insert(pn.clone()) || elem.is_some() != si.dim.is_some() {
+            // A scalar port takes a scalar signal or one element of a vector; an array port
+            // takes a whole vector of the same size.
+            let shape_ok = match (pdim, elem, si.dim) {
+                (None, None, None) | (None, Some(_), Some(_)) => true,
+                (Some(n), None, Some(m)) => *n == m,
+                _ => false,
+            };
+            if !bound.insert(pn.clone()) || !shape_ok {
                 return Err(ctx(SvccError::new(
                     "",
                     format!("binding {inst}.{port}({sig})"),
@@ -944,6 +960,7 @@ fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module,
         dir: Dir::Out,
         ty: Ty::BIT,
         scalar: true,
+        dims: Vec::new(),
     });
     m.processes.push(Process {
         name: format!("{UB_PORT}_all"),
@@ -1025,7 +1042,7 @@ fn lift(code: &str, only_modules: bool) -> Result<Design, SvccError> {
             src.sigs
                 .iter()
                 .filter(|s| s.dir.is_some())
-                .map(|s| (s.c.clone(), s.name.clone()))
+                .map(|s| (s.c.clone(), (s.name.clone(), s.dim)))
                 .collect(),
         );
         instantiated.extend(src.insts.iter().map(|x| x.0.clone()));
@@ -1133,6 +1150,7 @@ pub fn lift_c2rtl_function(code: &str, out_port: &str) -> Result<Design, SvccErr
             dir: Dir::In,
             ty: cty_ty(*t),
             scalar: *t == CTy::Bool,
+            dims: Vec::new(),
         })
         .collect();
     ports.push(Port {
@@ -1140,12 +1158,14 @@ pub fn lift_c2rtl_function(code: &str, out_port: &str) -> Result<Design, SvccErr
         dir: Dir::Out,
         ty: Ty::unsigned(rw),
         scalar: ret == CTy::Bool,
+        dims: Vec::new(),
     });
     ports.push(Port {
         name: UB_PORT.to_string(),
         dir: Dir::Out,
         ty: Ty::BIT,
         scalar: true,
+        dims: Vec::new(),
     });
     let call = Expr::Call {
         func: name.clone(),

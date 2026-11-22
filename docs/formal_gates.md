@@ -31,7 +31,7 @@ path, and the first two rows are regression tests that must fail the gate
 | SV against SV | `svcc prove-sec <a.sv> <b.sv>` | two SystemVerilog designs, outputs matched by name | induction over paired state, else bounded |
 | Differential simulation | `svcc rtl-cosim <in.sv>` | generated SystemC, compiled against real SystemC, against Verilator | random stimulus. **Not a proof.** |
 
-`scripts/rtl_prove.sh` runs the first gate over `testdata/rtl` (16 designs),
+`scripts/rtl_prove.sh` runs the first gate over `testdata/rtl` (20 designs),
 `benchmarks/scav_compare/probes` (18) and corpus designs 13..20 (8); it is step 7 of
 `scripts/check.sh` and needs only `z3`.
 
@@ -96,7 +96,7 @@ large operands. The golden model now reads `uint32_t(a) * b`.
 | `BoundedNoDifference` | No difference within `K` steps (default 8) from the initial state, where a register without a start value starts at 0. Not a full proof; the output says "(bounded)". |
 | `Mismatch` | A concrete input sequence is printed for which the outputs differ or the undefined-behaviour flag is 1. |
 | `Inconclusive` | The solver gave no answer. Counts as a failure. |
-| "not checked" | The header contains something the C++ reader does not model. Counts as a failure of `rtl-prove`; nothing is guessed. |
+| NOT COVERED | The design, or its generated header, is outside what the proof models: more than one clock or a computed clock the Btor2 model rejects, a multi-dimensional array port, a C++ form the reader does not model. Neither proved nor refuted; `rtl-prove` exits with code 3 (0 proved, 1 failed) and simulation is the only evidence. `scripts/rtl_prove.sh` lists the designs of the repository expected to be in this state and fails if another one joins them. |
 
 ## What the proof assumes
 
@@ -176,14 +176,41 @@ How to read it, and what it does not show:
   assignment between `sc_int` and `sc_uint` that C++ finds ambiguous). A header has to
   compile for a proof about it to mean anything; `rtl-cosim` checks that.
 
+## Coverage after the stress-run changes
+
+The stress run on real designs added emitter forms and four corpus designs. Measured on the
+branch that integrates them (46 designs: 20 in `testdata/rtl`, 18 probes, 8 benchmark
+designs):
+
+| Outcome | Designs |
+| :--- | :--- |
+| Proved by induction, lowering and generated C++ | 43 |
+| NOT COVERED: more than one clock or a computed clock | `array_elems`, `edges_misc` |
+| NOT COVERED: multi-dimensional array port | `array_ports` |
+
+How the reader treats each new form:
+
+| Emitted form | Result |
+| :--- | :--- |
+| `sig.posedge_event()` / `negedge_event()` on an internal signal | read as an edge; proved when the Btor2 model takes the clocking (a gated clock `clk & en` is proved), NOT COVERED when it reports several clocks |
+| `sc_vector<sc_in<T>>` / `sc_vector<sc_out<T>>`, one dimension | proved, one output per element |
+| array ports with two or more dimensions | NOT COVERED |
+| lambda for replication of more than 16 copies into a vector over 64 bits | NOT COVERED (the lowering is still proved) |
+| per-bit loop for a dynamic range write, shift-based out-of-range read | proved |
+| module class name with a trailing `_` | proved |
+
+The designs of the stress corpus itself live outside this repository and were not put to
+the proof; `rtl-prove` takes one source file, not the multi-file arguments of `rtl2sc`.
+
 ## What is still only simulation evidence
 
 - Anything about real compiled SystemC: that the header compiles, that SystemC's kernel
   schedules it as assumed in rule 6, that the data types behave as the reader models them.
   `rtl-cosim` and `scripts/rtl_cosim.sh` (step 8 of `scripts/check.sh`) cover this over
   random stimulus.
+- Every design reported NOT COVERED, including all multi-clock designs.
 - Asynchronous reset timing (rule 3) and X behaviour (rule 1).
-- Designs beyond the 42 listed above: the formal gate has not been run on them.
+- Designs beyond those listed above: the formal gate has not been run on them.
 
 ## What these gates do not cover
 

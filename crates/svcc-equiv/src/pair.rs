@@ -452,7 +452,7 @@ impl Side<'_> {
                             }
                             _ => {
                                 // Declared once per step by the caller.
-                                format!("in{step}_{p}")
+                                format!("|in{step}_{p}|")
                             }
                         }
                     } else {
@@ -642,8 +642,8 @@ fn build_query(
     for step in 0..steps {
         for (p, sort) in &ports {
             if !hold.contains_key(p) {
-                let _ = writeln!(smt, "(declare-const in{step}_{p} {})", sort.smt());
-                watch.push((format!("step {step} {p}"), format!("in{step}_{p}")));
+                let _ = writeln!(smt, "(declare-const |in{step}_{p}| {})", sort.smt());
+                watch.push((format!("step {step} {p}"), format!("|in{step}_{p}|")));
             }
         }
         s.define_step(&mut smt, step, spec0, &hold)?;
