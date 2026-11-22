@@ -115,35 +115,81 @@ dependencies = [
 
 [[package]]
 name = "sv-aiger"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99026be37cb17393ef3bf548b0408613d67f35e9bed8a4b158e90622fdd992d5"
+checksum = "513a6d30bd12dc95b9840a64cf4bc3b8a7d621c4c16ad445c24f0a4496700397"
 dependencies = [
  "sv-btor2",
  "sv-netlist",
 ]
 
 [[package]]
-name = "sv-btor2"
-version = "0.4.0"
+name = "sv-bigint"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09f423c23d5ec7826559bfa755b169314f3f91506d7759ac7b64666d014fae38"
+checksum = "76392c5b1c6e110f46fc1f4a2820d6c5f790ce4b456f1d6021bc4ca6aa1b7200"
+
+[[package]]
+name = "sv-btor2"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e32f75d8082d71520f55018c8bfac93ddd7b680bb24183c7b9abcf047a54263"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
 ]
 
 [[package]]
-name = "sv-lexer"
-version = "0.4.0"
+name = "sv-checks"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30c6fa15a8a85d0a910a397fc659ad7a65cd5041fb3b9e25040dfbff92ba0b2a"
+checksum = "4469c81f7d25859b52ad608a8ddbcb8ab9c0fb702dfc92a0b0e8c7e03a801f28"
+dependencies = [
+ "sv-fxhash",
+ "sv-scopes",
+ "sv-syntax",
+]
+
+[[package]]
+name = "sv-expr"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b388b5e0ba4faf52c4ecbb0fb91a724a53d6af3f5f3127d6191243f08c7bb9e"
+dependencies = [
+ "sv-bigint",
+ "sv-fxhash",
+ "sv-ir",
+ "sv-syntax",
+]
+
+[[package]]
+name = "sv-fxhash"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f399114a306e3ccf487b1184891109cacbc406469b8ccc2d4ac9efb83d161d9"
+
+[[package]]
+name = "sv-ir"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c5ba4bbfad8f85309f10e9f300db46ad0bfc940537c28edfee74f5a4b270be"
+dependencies = [
+ "sv-bigint",
+ "sv-fxhash",
+ "sv-syntax",
+]
+
+[[package]]
+name = "sv-lexer"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02e59ad2cd6dbf53497faafa06de0726c8a6106a019af32bd58991f43e984e5b"
 
 [[package]]
 name = "sv-netlist"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad5be4238a4fbb0fa26632a77cb565be021b980dc92a6a4a59adb44097eac86f"
+checksum = "02ef01894f76c8c5ba8b8b2ada137944376aaefed9882de725c9da61cf809a48"
 dependencies = [
  "sv-semantic",
  "sv-syntax",
@@ -151,34 +197,63 @@ dependencies = [
 
 [[package]]
 name = "sv-preprocessor"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33738be010ec7b1ccbbdbd5f337d9a59b2ea0cf84f3cc5b5ae0502f2bf061449"
+checksum = "a182a5e491034ae73fa8cbd74d2c176e95b18928d36a9b948c601656048af9fc"
 dependencies = [
  "sv-lexer",
 ]
 
 [[package]]
-name = "sv-semantic"
-version = "0.4.0"
+name = "sv-scopes"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80452febc59acffc4d08a5149c26f72b791d243b134b21fff3be54638baa0b64"
+checksum = "47d8cc7dd375bbcf99ea7891a512724507ccebff6c3bd5fd71cf570ad329ad59"
 dependencies = [
+ "sv-fxhash",
+ "sv-syntax",
+]
+
+[[package]]
+name = "sv-semantic"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a30457f1c234d0de45f5004a9a358ee7c51aa830e3d858d6ba797f01a6b7e126"
+dependencies = [
+ "sv-bigint",
+ "sv-checks",
+ "sv-expr",
+ "sv-fxhash",
+ "sv-ir",
+ "sv-scopes",
  "sv-source",
+ "sv-sva",
  "sv-syntax",
 ]
 
 [[package]]
 name = "sv-source"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b875d9291623bbe969f85e8c3031fb457171a419d97b0cc6e9ce9e4d39ed0311"
+checksum = "28cdbaa76c2d2b125a882deef85900727ed81e88f8df840093efc0c046dafbd9"
+
+[[package]]
+name = "sv-sva"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9539c619c4f4b924c89c1a80cd0b6b64bb8c0d9c4935632c171872bce02f476"
+dependencies = [
+ "sv-expr",
+ "sv-fxhash",
+ "sv-ir",
+ "sv-syntax",
+]
 
 [[package]]
 name = "sv-syntax"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f342dbccc5c82731c45dfe90194fcdc2c4d590ff7d6c64d6ebcc67870d4a4c34"
+checksum = "0eb6b60be523f72d862ecc320cab86738a6b00339112357dd9e88b9572411ce0"
 dependencies = [
  "sv-lexer",
  "sv-preprocessor",
@@ -186,9 +261,9 @@ dependencies = [
 
 [[package]]
 name = "sv-yosys"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82deb256b664628cbd45a3406583ee859a00915268f3aba39a3db08516993b8c"
+checksum = "f08eab25e36f84962fc5128b449bb31cb7db2cf2818a6716ee40181d7ff892da"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -275,9 +350,9 @@ dependencies = [
 
 [[package]]
 name = "svlang"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d5a3871892599bbfb5055ce9a73af81e4862550a07bbb8fbbf4d92bdfa2ae16"
+checksum = "4993e222ee989a72456f66f51c0b874d89e2c292babfb70037dca291c8041a49"
 dependencies = [
  "sv-aiger",
  "sv-btor2",
@@ -292,9 +367,9 @@ dependencies = [
 
 [[package]]
 name = "svlang-lint"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99002675711f8bd50ef1cb8cca7badfa5befcdf8f59687a9644c6de7026704e3"
+checksum = "0dd82735960a810ccd19ce7d0f7781d8d143cfc8252a1440fe39452594f26a07"
 dependencies = [
  "regex",
  "svlang",
@@ -303,9 +378,9 @@ dependencies = [
 
 [[package]]
 name = "svlang-model"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6838806de3ccac5ddf21623cef5f4c9c0f186d97070b0783096855a2dbf5779c"
+checksum = "be652135d97bd52defd0c4c05b41104360e0d45906222ca341fe08a15f66bd28"
 dependencies = [
  "svlang",
 ]
