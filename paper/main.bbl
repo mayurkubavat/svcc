@@ -21,6 +21,10 @@
 \providecommand{\BIBdecl}{\relax}
 \BIBdecl
 
+\bibitem{snyder2020verilator}
+W.~Snyder, ``{Verilator: Open Simulation: Growing Up},'' in \emph{DVCon US
+  Proceedings}, 2020, \url{https://www.veripool.org/verilator/}.
+
 \bibitem{ieee1666_2023}
 {IEEE}, ``{IEEE Standard for Standard SystemC Language Reference Manual},''
   IEEE Std 1666-2023, 2023,
@@ -68,10 +72,6 @@ S.~Thakur, B.~Ahmad, H.~Pearce, B.~Tan, B.~Dolan-Gavitt, R.~Karri, and S.~Garg,
 M.~Kubavat, ``{SCBench: Do Verification Tools Help Coding Agents Maintain Open
   SystemC Libraries?}'' Elsevier SSRN Preprint 7715040, 2026,
   \url{https://ssrn.com/abstract=7715040}.
-
-\bibitem{snyder2020verilator}
-W.~Snyder, ``{Verilator: Open Simulation: Growing Up},'' in \emph{DVCon US
-  Proceedings}, 2020, \url{https://www.veripool.org/verilator/}.
 
 \bibitem{wolf2013yosys}
 C.~Wolf, ``{Yosys Open SYnthesis Suite},'' \url{https://yosyshq.net/yosys/},
