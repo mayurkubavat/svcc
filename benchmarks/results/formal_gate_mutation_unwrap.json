@@ -311,7 +311,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": "ers/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/testdata/rtl/misc_expr.sv /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-misc_expr-26160/tb.cpp\n"
+   "cosim_detail": "~/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/testdata/rtl/misc_expr.sv <tmpdir>\n"
   },
   {
    "design": "misc_expr.sv",
@@ -343,7 +343,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": "ers/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/testdata/rtl/misc_expr.sv /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-misc_expr-27140/tb.cpp\n"
+   "cosim_detail": "~/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/testdata/rtl/misc_expr.sv <tmpdir>\n"
   },
   {
    "design": "regfile.sv",
@@ -455,7 +455,7 @@
    "cosim": "no-build",
    "prove": "proved",
    "detail": "",
-   "cosim_detail": "ubavat/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/testdata/rtl/signed_arith.sv /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-signed_arith-37817/tb.cpp\n"
+   "cosim_detail": "ubavat/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/testdata/rtl/signed_arith.sv <tmpdir>\n"
   },
   {
    "design": "signed_arith.sv",
@@ -463,7 +463,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": "ubavat/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/testdata/rtl/signed_arith.sv /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-signed_arith-37978/tb.cpp\n"
+   "cosim_detail": "ubavat/.local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/testdata/rtl/signed_arith.sv <tmpdir>\n"
   },
   {
    "design": "signed_arith.sv",
@@ -775,7 +775,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-p12_ops-49268/tb.cpp\n"
+   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v <tmpdir>\n"
   },
   {
    "design": "p12_ops.v",
@@ -783,7 +783,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-p12_ops-49434/tb.cpp\n"
+   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v <tmpdir>\n"
   },
   {
    "design": "p12_ops.v",
@@ -791,7 +791,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-p12_ops-49667/tb.cpp\n"
+   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v <tmpdir>\n"
   },
   {
    "design": "p12_ops.v",
@@ -799,7 +799,7 @@
    "cosim": "no-build",
    "prove": "rejected",
    "detail": "",
-   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,/Users/mkubavat/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc /Users/mkubavat/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v /private/var/folders/vm/qkr48lrx1r108s41msqf6x780000gn/T/svcc-cosim-p12_ops-49940/tb.cpp\n"
+   "cosim_detail": ".local/opt/accellera-svcc/systemc/lib\\ -Wl\\,-rpath\\,~/.local/opt/accellera-svcc/systemc/lib\\ -lsystemc ~/Silicon/git/active/svcc-formal-gates/benchmarks/scav_compare/probes/p12_ops.v <tmpdir>\n"
   },
   {
    "design": "p13_hier.v",

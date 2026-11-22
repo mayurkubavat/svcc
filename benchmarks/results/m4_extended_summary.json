@@ -528,7 +528,7 @@
         "emitted_cpp_lines": 0,
         "clang_standalone_pass": false,
         "clang_with_pkg_pass": false,
-        "diagnostic_or_note": "error: [svcc-front-sv/parse] /Users/mkubavat/Silicon/git/svlang/references/corpus/common_cells/src/cc_credit_counter.sv:45:3: unknown macro or directive `FFARNC"
+        "diagnostic_or_note": "error: [svcc-front-sv/parse] ~/Silicon/git/svlang/references/corpus/common_cells/src/cc_credit_counter.sv:45:3: unknown macro or directive `FFARNC"
       },
       {
         "suite": "PULP common_cells",
@@ -558,7 +558,7 @@
         "emitted_cpp_lines": 0,
         "clang_standalone_pass": false,
         "clang_with_pkg_pass": false,
-        "diagnostic_or_note": "error: [svcc-front-sv/parse] /Users/mkubavat/Silicon/git/svlang/references/corpus/core-v-verif/lib/uvm_agents/uvma_obi_memory/src/uvma_obi_memory_1p2_assert.sv:217:3: expected an e"
+        "diagnostic_or_note": "error: [svcc-front-sv/parse] ~/Silicon/git/svlang/references/corpus/core-v-verif/lib/uvm_agents/uvma_obi_memory/src/uvma_obi_memory_1p2_assert.sv:217:3: expected an e"
       },
       {
         "suite": "lowRISC ibex",
@@ -608,7 +608,7 @@
         "emitted_cpp_lines": 0,
         "clang_standalone_pass": false,
         "clang_with_pkg_pass": false,
-        "diagnostic_or_note": "error: [svcc-front-sv/parse] /Users/mkubavat/Silicon/git/dv-patterns/examples/fnd-constraint-policy/after.sv:65:3: expected a statement"
+        "diagnostic_or_note": "error: [svcc-front-sv/parse] ~/Silicon/git/dv-patterns/examples/fnd-constraint-policy/after.sv:65:3: expected a statement"
       }
     ]
   }
