@@ -8,7 +8,7 @@
 ## Hard Invariants (Mandatory)
 1. **No GitHub Actions**: NEVER create, enable, or trigger `.github/workflows/` in this repository or in `svlang-uvir`. All verification is executed locally via `./scripts/check.sh`.
 2. **Pinned `svlang` + Separate Worktree**:
-   - Keep `[workspace.dependencies]` in `Cargo.toml` pinned to an explicit commit SHA of `https://github.com/mayurkubavat/svlang.git`.
+   - Keep `[workspace.dependencies]` in `Cargo.toml` on a published crates.io version of `svlang`, `svlang-model` and `svlang-lint` (crates.io rejects git dependencies, and svcc is published there). Use a git revision only on a local branch, never in a release.
    - When adding upstream front-end hooks to `svlang`, NEVER modify `/Users/mkubavat/Silicon/git/svlang` directly. Work exclusively inside the isolated worktree `/Users/mkubavat/Silicon/git/svlang-uvir` (`feature/uvir-hooks`), test locally via `.cargo/config.toml` (`[patch]`), push/merge when verified, and bump the pinned `rev` in `Cargo.toml`.
 3. **Mandatory Experiment & Result Logging**:
    - Every milestone, pass optimization, solver equivalence test, or benchmark run MUST be recorded in `results/experiment_log.jsonl` and summarized in `results/journal.md` (via `python3 scripts/record_result.py ...`).
