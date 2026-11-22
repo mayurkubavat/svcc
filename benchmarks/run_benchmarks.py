@@ -165,7 +165,7 @@ def eval_rq2_mutations() -> dict:
             assert old_s in txt, f"pattern {old_s} missing in {r_fname}"
             mut_sv.write_text(txt.replace(old_s, new_s, 1))
             res = run_cmd([str(SVCC), "prove-sec", str(gold_p), str(mut_sv), "--latency", str(lat)])
-            detected = res.returncode != 0 and "CounterexampleSat" in res.stdout
+            detected = res.returncode != 0 and '"verdict": "Mismatch"' in res.stdout
             if detected:
                 caught += 1
             details.append({"id": mid, "kind": "RTL_BTOR2_SEC", "caught_defect": detected})
@@ -180,7 +180,11 @@ def eval_rq2_mutations() -> dict:
                 res = run_cmd([str(SVCC), "prove-equiv", str(orig_sv), str(rw_sv)])
             else:
                 res = run_cmd([str(SVCC), "prove-sec", str(CORPUS / g_fname), str(rw_sv), "--latency", str(lat)])
-            ok_unsat = res.returncode == 0 and "EquivalentUnsat" in res.stdout
+            # CRV: Z3 unsat. SEC: proved for every run, or no difference within the bound.
+            ok_unsat = res.returncode == 0 and any(
+                v in res.stdout
+                for v in ("EquivalentUnsat", '"ProvedInductive"', '"BoundedNoDifference"')
+            )
             if ok_unsat:
                 equiv_passed += 1
             equiv_details.append({"id": eid, "mode": mode, "proved_equivalent": ok_unsat})
@@ -396,7 +400,10 @@ def main() -> None:
         "rq1_corpus_count": len(rq1),
         "rq1_roundtrip_pass": sum(1 for r in rq1 if r["z3_roundtrip_verdict"] == "EquivalentUnsat"),
         "rq1_c2rtl_count": sum(1 for r in rq1 if r["c2rtl_verdict"] is not None),
-        "rq1_c2rtl_pass": sum(1 for r in rq1 if r["c2rtl_verdict"] == "EquivalentUnsat"),
+        "rq1_c2rtl_pass": sum(
+            1 for r in rq1 if r["c2rtl_verdict"] in ("ProvedInductive", "BoundedNoDifference")
+        ),
+        "rq1_c2rtl_unbounded": sum(1 for r in rq1 if r["c2rtl_verdict"] == "ProvedInductive"),
         "rq1_median_sv2sc_us": sorted(r["avg_sv2sc_us"] for r in rq1)[len(rq1) // 2],
         "rq1_median_sc2sv_us": sorted(r["avg_sc2sv_us"] for r in rq1)[len(rq1) // 2],
         "rq1_rows": rq1,

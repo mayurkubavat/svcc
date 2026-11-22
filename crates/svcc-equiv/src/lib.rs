@@ -12,10 +12,8 @@
 //! 3. **UCIS 1.0 Coverage Space Isomorphism**:
 //!    Verifies bijective match of covergroups, coverpoints, bin intervals/values, and crosses.
 
+pub mod pair;
 pub mod sec;
-pub use sec::{build_combined_sec_miter_sv, build_sv_sec_miter, RtlSecReport};
-#[cfg(feature = "btor2-sec")]
-pub use sec::{build_sec_btor2, prove_rtl_sec_equivalence};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

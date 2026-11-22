@@ -9,12 +9,11 @@ pub use svcc_ir as ir;
 pub use svcc_passes as passes;
 
 pub mod cosim;
+pub mod prove;
 
 use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;
-use svcc_equiv::{
-    prove_class_equivalence_with_enums, prove_rtl_sec_equivalence, EquivalenceReport, RtlSecReport,
-};
+use svcc_equiv::{prove_class_equivalence_with_enums, EquivalenceReport};
 use svcc_front_sc::ScFrontend;
 use svcc_front_sv::SvFrontend;
 use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, SvccError, TargetCapabilities};
@@ -37,20 +36,20 @@ pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, SvccError> {
     emit_sc_with_typed_rtl(filename, sv_source, module, &emitter)
 }
 
-/// Emits C++ for a lowered SystemVerilog file, converting its RTL modules through the typed,
-/// elaborated `hdl` path ([`sv_rtl_to_sc`]).
+/// Emits C++ for a lowered SystemVerilog file, converting its design modules through the
+/// typed, elaborated `hdl` path ([`sv_rtl_to_sc`]).
 ///
-/// A file that holds only RTL becomes a header that needs nothing but `<systemc>`. A file that
-/// mixes RTL with classes, covergroups or assertions keeps the UVM prelude and gets the typed
-/// modules appended; if such a file does not elaborate as a design, its modules fall back to
-/// the text-based legacy path and a note is printed.
+/// A file that holds only modules becomes a header that needs nothing but `<systemc>`. A file
+/// that mixes modules with classes, covergroups or assertions keeps the UVM prelude and gets
+/// the typed modules appended. A module the typed path cannot convert is an error: there is
+/// no other RTL path.
 pub fn emit_sc_with_typed_rtl(
     filename: &str,
     sv_source: &str,
-    mut module: svcc_ir::IrModule,
+    module: svcc_ir::IrModule,
     emitter: &ScEmitter,
 ) -> Result<String, SvccError> {
-    if module.rtl_modules.is_empty() {
+    if module.module_names.is_empty() {
         return emitter.emit(&module);
     }
     let pure_rtl = module.classes.is_empty()
@@ -60,18 +59,10 @@ pub fn emit_sc_with_typed_rtl(
     if pure_rtl {
         return sv_rtl_to_sc(filename, sv_source, &[]).map(|(code, _)| code);
     }
-    match svcc_front_sv::hdl_lower::lower_hdl_design(filename, sv_source, &[]) {
-        Ok(design) => {
-            module.rtl_modules.clear();
-            let mut out = emitter.emit(&module)?;
-            svcc_emit_sc::hdl_emit::emit_hdl_modules(&mut out, &design)?;
-            Ok(out)
-        }
-        Err(e) => {
-            eprintln!("note: RTL modules use the legacy text-based path: {e}");
-            emitter.emit(&module)
-        }
-    }
+    let design = svcc_front_sv::hdl_lower::lower_hdl_design(filename, sv_source, &[])?;
+    let mut out = emitter.emit(&module)?;
+    svcc_emit_sc::hdl_emit::emit_hdl_modules(&mut out, &design)?;
+    Ok(out)
 }
 
 /// Converts synthesizable SystemVerilog RTL into SystemC through the typed, elaborated
@@ -88,12 +79,26 @@ pub fn sv_rtl_to_sc(
     Ok((code, design))
 }
 
-/// Compiles C++17 SystemC (`SC_MODULE`, `// svcc:c2rtl` functions, or UVM/CRAVE/FC4SC classes)
-/// into `svlang`-verified IEEE 1800-2023 SystemVerilog.
+/// Compiles C++17 SystemC UVM/CRAVE/FC4SC classes into `svlang`-verified IEEE 1800-2023
+/// SystemVerilog.
+///
+/// `SC_MODULE`s and a `// svcc:c2rtl` function in the source are appended as explicit-width
+/// SystemVerilog read back with C++ evaluation rules ([`svcc_front_sc::hdl_lift`]). That text
+/// is the form the formal gates compare; each module carries the `svcc__ub` output that is 1
+/// when the C++ executes undefined behaviour.
 pub fn sc_to_sv(filename: &str, cpp_source: &str) -> Result<String, SvccError> {
     let (mut module, _) = ScFrontend::new().lower_str(filename, cpp_source)?;
     PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023()).run_all(&mut module)?;
-    SvEmitter::new().emit_and_verify(&module)
+    let mut out = SvEmitter::new().emit_and_verify(&module)?;
+    if cpp_source.contains("SC_MODULE(") {
+        let design = svcc_front_sc::hdl_lift::lift_hdl_modules(cpp_source)?;
+        out.push_str(&svcc_emit_sv::hdl_emit::emit_hdl_design_sv(&design, "")?);
+    }
+    if cpp_source.contains("// svcc:c2rtl") {
+        let design = svcc_front_sc::hdl_lift::lift_c2rtl_function(cpp_source, "result")?;
+        out.push_str(&svcc_emit_sv::hdl_emit::emit_hdl_design_sv(&design, "")?);
+    }
+    Ok(out)
 }
 
 /// Proves Z3 `QF_BV` CRV/Enum/`dist` and UCIS 1.0 coverage equivalence between two files.
@@ -142,59 +147,6 @@ pub fn prove_sources_equivalent(
         )?);
     }
     Ok(reports)
-}
-
-/// Proves word-level Sequential Equivalence (`Btor2` + Z3 `QF_BV`) between a `spec` source
-/// (SV RTL, SystemC `SC_MODULE`, or untimed `// svcc:c2rtl` C++17 golden model) and an `imp`
-/// source across pipeline skew `latency`.
-pub fn prove_rtl_or_c2rtl_sec(
-    spec_filename: &str,
-    spec_source: &str,
-    imp_filename: &str,
-    imp_source: &str,
-    latency: u32,
-) -> Result<RtlSecReport, SvccError> {
-    let sv_em = SvEmitter::new();
-    let (spec_mod, spec_sv) = if spec_filename.ends_with(".sv") || spec_filename.ends_with(".svh") {
-        let (m, _) = SvFrontend::new().lower_str(spec_filename, spec_source)?;
-        let rmod = m
-            .rtl_modules
-            .first()
-            .cloned()
-            .ok_or_else(|| SvccError::new("svcc/sec", "no RTL module found in spec SV"))?;
-        (rmod, spec_source.to_string())
-    } else {
-        let (m, _) = ScFrontend::new().lower_str(spec_filename, spec_source)?;
-        let rmod = m.rtl_modules.first().cloned().ok_or_else(|| {
-            SvccError::new(
-                "svcc/sec",
-                "no SC_MODULE or // svcc:c2rtl found in spec C++",
-            )
-        })?;
-        let emitted = sv_em.emit_and_verify(&m)?;
-        (rmod, emitted)
-    };
-
-    let (imp_mod, imp_sv) = if imp_filename.ends_with(".sv") || imp_filename.ends_with(".svh") {
-        let (m, _) = SvFrontend::new().lower_str(imp_filename, imp_source)?;
-        let rmod = m
-            .rtl_modules
-            .first()
-            .cloned()
-            .ok_or_else(|| SvccError::new("svcc/sec", "no RTL module found in imp SV"))?;
-        (rmod, imp_source.to_string())
-    } else {
-        let (m, _) = ScFrontend::new().lower_str(imp_filename, imp_source)?;
-        let rmod = m
-            .rtl_modules
-            .first()
-            .cloned()
-            .ok_or_else(|| SvccError::new("svcc/sec", "no SC_MODULE found in imp C++"))?;
-        let emitted = sv_em.emit_and_verify(&m)?;
-        (rmod, emitted)
-    };
-
-    prove_rtl_sec_equivalence(&spec_mod, &spec_sv, &imp_mod, &imp_sv, latency, 4)
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@
 //! - [`syntax`]: the parse/semantic types the SV front end walks directly (re-exported).
 //! - `model` (feature `model`): the UVM/RAL design model the SV front end lifts (re-exported).
 //! - `verify_emitted_sv` (feature `lint`): parse + semantic + `svlang-lint` gate for emitted SV.
-//! - [`lower_sv_to_btor2`]: elaborate SV RTL into a word-level Btor2 transition system.
+//! - [`lower_sv_to_btor2_design`]: elaborate SV RTL into a word-level Btor2 transition system.
 
 pub mod syntax {
     //! Parse, semantic and elaboration types used by `svcc-front-sv`.
@@ -139,7 +139,7 @@ pub fn verify_emitted_sv(
     Ok(())
 }
 
-/// Why [`lower_sv_to_btor2`] failed.
+/// Why [`lower_sv_to_btor2_design`] failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Btor2Error {
     /// Netlist lowering was unsupported or failed; one rendered diagnostic per entry.
@@ -148,10 +148,26 @@ pub enum Btor2Error {
     Write(String),
 }
 
+/// A design as a Btor2 transition system, with where to find its output ports in it.
+#[derive(Clone, Debug)]
+pub struct Btor2Design {
+    pub btor2: String,
+    /// `(port name, Btor2 symbol)` for every top-level output. The symbol names an `output`
+    /// line, or the `state` or `input` line the port is a plain copy of.
+    pub outputs: Vec<(String, String)>,
+    /// Model steps per clock cycle (2 when the design uses both edges of its clock).
+    pub steps_per_cycle: u32,
+}
+
 /// Parses `sv_source`, lowers module `top` to an `svlang` netlist with default settings,
-/// compiles its properties, and writes it as a word-level Btor2 transition system.
-pub fn lower_sv_to_btor2(sv_source: &str, filename: &str, top: &str) -> Result<String, Btor2Error> {
-    use svlang::netlist::{lower_trees, LowerConfig, LowerOutcome};
+/// compiles its properties, and writes it as a word-level Btor2 transition system. A design
+/// on both edges of its one clock is accepted (two model steps per clock cycle).
+pub fn lower_sv_to_btor2_design(
+    sv_source: &str,
+    filename: &str,
+    top: &str,
+) -> Result<Btor2Design, Btor2Error> {
+    use svlang::netlist::{lower_trees, LowerConfig, LowerOutcome, TraceSignal, ValueKind};
 
     let tree = svlang::syntax::parse_source(sv_source, filename, Default::default());
     let mut netlist = match lower_trees(&[tree], &[top.to_string()], &[], &LowerConfig::default()) {
@@ -163,7 +179,47 @@ pub fn lower_sv_to_btor2(sv_source: &str, filename: &str, top: &str) -> Result<S
         }
     };
     let _ = netlist.compile_properties(&svlang::netlist::PropertyOptions::default());
-    let btor_model = svlang::btor2::write(&netlist, &svlang::btor2::Options::default())
-        .map_err(|e| Btor2Error::Write(format!("{e:?}")))?;
-    Ok(btor_model.btor2)
+    let mut outputs = Vec::new();
+    let mut extra = Vec::new();
+    for o in &netlist.outputs {
+        let full = format!("{top}.{}", o.name);
+        let symbol = match &netlist.value(o.value).kind {
+            ValueKind::Input(i) => format!("{top}.{}", netlist.inputs[*i].name),
+            ValueKind::StateOut(s) if netlist.states[s.0 as usize].latch_enable.is_none() => {
+                netlist.states[s.0 as usize].name.clone()
+            }
+            _ => {
+                if !netlist
+                    .traces
+                    .iter()
+                    .any(|t| t.name == full && t.value == o.value)
+                {
+                    extra.push(TraceSignal {
+                        name: full.clone(),
+                        width: o.width,
+                        signed: o.signed,
+                        four_state: o.four_state,
+                        value: o.value,
+                        loc: o.loc,
+                    });
+                }
+                full
+            }
+        };
+        outputs.push((o.name.clone(), symbol));
+    }
+    netlist
+        .traces
+        .retain(|t| !extra.iter().any(|e| e.name == t.name));
+    netlist.traces.extend(extra);
+    let mut opts = svlang::btor2::Options::default();
+    opts.both_edges = true;
+    opts.trace_outputs = true;
+    let model =
+        svlang::btor2::write(&netlist, &opts).map_err(|e| Btor2Error::Write(format!("{e:?}")))?;
+    Ok(Btor2Design {
+        btor2: model.btor2,
+        outputs,
+        steps_per_cycle: model.steps_per_cycle,
+    })
 }

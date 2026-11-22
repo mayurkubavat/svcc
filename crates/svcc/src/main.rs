@@ -6,11 +6,10 @@ use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
-use svcc::prove_rtl_or_c2rtl_sec;
 use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;
 use svcc_equiv::{
-    prove_class_equivalence_with_enums, prove_rtl_sec_equivalence, prove_sva_bmc_equivalence,
+    prove_class_equivalence_with_enums, prove_sva_bmc_equivalence,
     prove_sva_cover_multiplicity_bmc, prove_sva_pair_equivalence, SmtVerdict,
 };
 use svcc_front_sv::SvFrontend;
@@ -95,7 +94,7 @@ fn run_cli() -> Result<(), SvccError> {
             let input = pos.first().ok_or_else(|| {
                 SvccError::new(
                     "cli",
-                    "usage: svcc rtl-cosim <in.sv> [--top <module>] [--steps N] [--seed S] [--keep <dir>]",
+                    "usage: svcc rtl-cosim <in.sv> [--top <module>] [--steps N] [--seed S] [--keep <dir>] [--header <generated.hpp>]",
                 )
             })?;
             let opts = svcc::cosim::CosimOptions {
@@ -107,6 +106,13 @@ fn run_cli() -> Result<(), SvccError> {
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0x5eed_1234_abcd),
                 work_dir: parse_opt_flag(&args[1..], "--keep").map(Into::into),
+                header: match parse_opt_flag(&args[1..], "--header") {
+                    Some(h) => Some(
+                        fs::read_to_string(&h)
+                            .map_err(|e| SvccError::new("io", format!("cannot read {h}: {e}")))?,
+                    ),
+                    None => None,
+                },
             };
             let rep = svcc::cosim::run_cosim(input, &opts)?;
             println!(
@@ -153,13 +159,80 @@ fn run_cli() -> Result<(), SvccError> {
             if pos.len() < 2 {
                 return Err(SvccError::new(
                     "cli",
-                    "usage: svcc prove-sec <spec.{sv,hpp}> <imp.{sv,hpp}> [--latency L]",
+                    "usage: svcc prove-sec <spec.{sv,hpp}> <imp.sv> [--latency L] [--top <module>] [--hold name=value] [--bound K]",
                 ));
             }
-            let latency = parse_opt_flag(&args[1..], "--latency")
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or(0);
-            cmd_prove_sec(&pos[0], &pos[1], latency)
+            let mut opts = svcc::prove::SecOptions {
+                top: parse_opt_flag(&args[1..], "--top"),
+                latency: parse_opt_flag(&args[1..], "--latency")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0),
+                bound: parse_opt_flag(&args[1..], "--bound").and_then(|s| s.parse().ok()),
+                ..Default::default()
+            };
+            let mut it = args[1..].iter();
+            while let Some(a) = it.next() {
+                if a == "--hold" {
+                    let kv = it
+                        .next()
+                        .and_then(|kv| kv.split_once('='))
+                        .and_then(|(k, v)| v.parse::<u64>().ok().map(|v| (k.to_string(), v)));
+                    match kv {
+                        Some(kv) => opts.hold.push(kv),
+                        None => return Err(SvccError::new("cli", "--hold takes name=value")),
+                    }
+                }
+            }
+            cmd_prove_sec(&pos[0], &pos[1], &opts)
+        }
+        "rtl-prove" => {
+            let pos = positional_args(&args[1..]);
+            let input = pos.first().ok_or_else(|| {
+                SvccError::new(
+                    "cli",
+                    "usage: svcc rtl-prove <in.sv> [--top <module>] [--header <generated.hpp>] [--bound K] [--json]",
+                )
+            })?;
+            let src = fs::read_to_string(input)
+                .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+            let mut opts = svcc::prove::RtlProveOptions {
+                top: parse_opt_flag(&args[1..], "--top"),
+                ..Default::default()
+            };
+            if let Some(h) = parse_opt_flag(&args[1..], "--header") {
+                opts.header = Some(
+                    fs::read_to_string(&h)
+                        .map_err(|e| SvccError::new("io", format!("cannot read {h}: {e}")))?,
+                );
+            }
+            if let Some(b) = parse_opt_flag(&args[1..], "--bound").and_then(|s| s.parse().ok()) {
+                opts.bound = b;
+            }
+            if opts.top.is_none() && opts.header.is_none() {
+                // Every top module of the file.
+                let items = svcc::prove::prove_rtl_file(input, &src, &opts)?;
+                if args[1..].iter().any(|a| a == "--json") {
+                    println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                }
+                return report_rtl_items(&items);
+            }
+            let rep = svcc::prove::prove_rtl(input, &src, &opts)?;
+            if args[1..].iter().any(|a| a == "--json") {
+                println!("{}", serde_json::to_string_pretty(&rep).unwrap());
+            }
+            report_rtl_items(&[svcc::prove::RtlFileItem::Proved(Box::new(rep))])
+        }
+        "sv2btor2" => {
+            let pos = positional_args(&args[1..]);
+            let input = pos.first().ok_or_else(|| {
+                SvccError::new("cli", "usage: svcc sv2btor2 <in.sv> --top <module>")
+            })?;
+            let top = parse_opt_flag(&args[1..], "--top")
+                .ok_or_else(|| SvccError::new("cli", "sv2btor2 needs --top <module>"))?;
+            let src = fs::read_to_string(input)
+                .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+            print!("{}", svcc_equiv::sec::sv_to_btor2(&src, input, &top)?.btor2);
+            Ok(())
         }
         "bench" => {
             let input = args
@@ -174,6 +247,32 @@ fn run_cli() -> Result<(), SvccError> {
             "cli",
             format!("unknown subcommand '{other}' (run `svcc --help`)"),
         )),
+    }
+}
+
+fn print_pair(stage: &str, top: &str, r: &svcc_equiv::pair::PairReport) {
+    use svcc_equiv::pair::PairVerdict as V;
+    let (tag, what) = match r.verdict {
+        V::ProvedInductive => (
+            "PASS",
+            "proved for all runs from equal start states".to_string(),
+        ),
+        V::BoundedNoDifference => (
+            "PASS",
+            format!(
+                "no difference in {} steps from reset state (bounded)",
+                r.bound_steps
+            ),
+        ),
+        V::Mismatch => ("FAIL", "DIFFERENCE FOUND".to_string()),
+        V::Inconclusive => ("FAIL", "solver gave no answer".to_string()),
+    };
+    println!(
+        "[{tag}] {stage} '{top}': {what} ({} outputs, {} paired states, z3 {} us)",
+        r.outputs_compared, r.states_paired, r.solver_time_us
+    );
+    for n in &r.notes {
+        println!("         {n}");
     }
 }
 
@@ -293,8 +392,14 @@ fn cmd_transpile(
     let (mut module, _) = fe.lower_str(input_path, &src)?;
     PassPipeline::for_target(be.capabilities()).run_all(&mut module)?;
 
-    let emitted = if to == "sv-uvm" {
+    let emitted = if to == "sv-uvm" && from == "sc-uvm" {
+        // Classes through the UVM path; SC_MODULEs and a golden function through the
+        // C++ reader of the typed path.
+        svcc::sc_to_sv(input_path, &src)?
+    } else if to == "sv-uvm" {
         SvEmitter::new().emit_and_verify(&module)?
+    } else if from == "sv-uvm" {
+        svcc::emit_sc_with_typed_rtl(input_path, &src, module, &ScEmitter::new())?
     } else {
         be.emit(&module)?
     };
@@ -383,25 +488,44 @@ fn cmd_roundtrip_check(
         }
     }
 
-    for (orig_rtl, rt_rtl) in m_sv.rtl_modules.iter().zip(m_sv2.rtl_modules.iter()) {
-        let sec = prove_rtl_sec_equivalence(orig_rtl, &src, rt_rtl, &sv_roundtrip, 0, 4)?;
-        println!(
-            "[PASS] rtl   '{}': SEC(lat={}, {} steps, {} btor2 lines)={:?} (z3 {} us)",
-            sec.spec_module,
-            sec.latency_cycles,
-            sec.bmc_bound_cycles,
-            sec.btor2_lines,
-            sec.verdict,
-            sec.solver_time_us
-        );
-        if sec.verdict == SmtVerdict::CounterexampleSat {
-            return Err(SvccError::new(
-                "roundtrip/rtl",
-                format!("RTL SEC mismatch in '{}'", orig_rtl.name),
-            ));
-        }
+    // Design modules: the SystemC generated for them, read back with C++ evaluation rules,
+    // is proved against the source text.
+    if !m_sv.module_names.is_empty() {
+        let items = svcc::prove::prove_rtl_file(input_path, &src, &Default::default())?;
+        report_rtl_items(&items)?;
     }
 
+    Ok(())
+}
+
+/// Prints the result of the typed RTL gate for each top module; an unproved one is an error.
+fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError> {
+    use svcc::prove::RtlFileItem;
+    use svcc_equiv::pair::PairVerdict as V;
+    for it in items {
+        match it {
+            RtlFileItem::Skipped { top, reason } => {
+                println!("[----] rtl   '{top}': not compared: {reason}")
+            }
+            RtlFileItem::Proved(rep) => {
+                print_pair("lowering     ", &rep.top, &rep.lowering);
+                match (&rep.generated_cpp, &rep.cpp_unchecked) {
+                    (Some(r), _) => print_pair("generated C++", &rep.top, r),
+                    (None, Some(why)) => {
+                        println!("[----] generated C++ '{}': not checked: {why}", rep.top)
+                    }
+                    _ => {}
+                }
+                let bad = matches!(rep.lowering.verdict, V::Mismatch | V::Inconclusive);
+                if bad || !rep.cpp_ok() {
+                    return Err(SvccError::new(
+                        "rtl-prove",
+                        format!("'{}' is not proved equal to its generated SystemC", rep.top),
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -466,24 +590,30 @@ fn cmd_prove_equiv(
     Ok(())
 }
 
-fn cmd_prove_sec(spec_path: &str, imp_path: &str, latency: u32) -> Result<(), SvccError> {
+fn cmd_prove_sec(
+    spec_path: &str,
+    imp_path: &str,
+    opts: &svcc::prove::SecOptions,
+) -> Result<(), SvccError> {
     let spec_src = fs::read_to_string(spec_path)
         .map_err(|e| SvccError::new("io", format!("cannot read {spec_path}: {e}")))?;
     let imp_src = fs::read_to_string(imp_path)
         .map_err(|e| SvccError::new("io", format!("cannot read {imp_path}: {e}")))?;
 
-    let rep = prove_rtl_or_c2rtl_sec(spec_path, &spec_src, imp_path, &imp_src, latency)?;
+    let rep = svcc::prove::prove_sec(spec_path, &spec_src, imp_path, &imp_src, opts)?;
     println!("{}", serde_json::to_string_pretty(&rep).unwrap());
-    if rep.verdict == SmtVerdict::CounterexampleSat {
-        return Err(SvccError::new(
+    use svcc_equiv::pair::PairVerdict as V;
+    match rep.verdict {
+        V::ProvedInductive | V::BoundedNoDifference => Ok(()),
+        V::Mismatch => Err(SvccError::new(
             "sec",
             format!(
-                "sequential equivalence check FAILED (SAT counterexample) between '{}' and '{}'",
-                rep.spec_module, rep.imp_module
+                "sequential equivalence check FAILED between '{}' and '{}'",
+                rep.spec_top, rep.imp_top
             ),
-        ));
+        )),
+        V::Inconclusive => Err(SvccError::new("sec", "the solver gave no answer")),
     }
-    Ok(())
 }
 
 #[derive(Serialize)]
@@ -503,6 +633,8 @@ struct BenchReport {
     z3_crv_verdict: SmtVerdict,
     z3_sva_bmc_verdict: SmtVerdict,
     z3_rtl_sec_verdict: SmtVerdict,
+    /// How the RTL verdict was reached: "induction" (unbounded), "bounded", or "none".
+    rtl_sec_method: &'static str,
     z3_total_solver_us: u64,
     coverage_isomorphic: bool,
 }
@@ -571,12 +703,34 @@ fn cmd_bench(reg: &LanguageRegistry, input_path: &str, iters: usize) -> Result<(
         }
     }
 
+    // Design modules: generated SystemC against the source, on the typed path.
     let mut rtl_verdict = SmtVerdict::EquivalentUnsat;
-    for (orig_rtl, rt_rtl) in m_sv.rtl_modules.iter().zip(m_sc.rtl_modules.iter()) {
-        let sec = prove_rtl_sec_equivalence(orig_rtl, &src, rt_rtl, &sv_code, 0, 4)?;
-        z3_total_us += sec.solver_time_us;
-        if sec.verdict != SmtVerdict::EquivalentUnsat {
-            rtl_verdict = sec.verdict;
+    let mut rtl_method = "none";
+    if !m_sv.module_names.is_empty() {
+        use svcc::prove::RtlFileItem;
+        use svcc_equiv::pair::PairVerdict as V;
+        for it in svcc::prove::prove_rtl_file(input_path, &src, &Default::default())? {
+            let RtlFileItem::Proved(rep) = it else {
+                continue;
+            };
+            z3_total_us += rep.lowering.solver_time_us;
+            let v = match &rep.generated_cpp {
+                Some(r) => {
+                    z3_total_us += r.solver_time_us;
+                    r.verdict
+                }
+                None => V::Inconclusive,
+            };
+            match v {
+                V::ProvedInductive => {
+                    if rtl_method == "none" {
+                        rtl_method = "induction";
+                    }
+                }
+                V::BoundedNoDifference => rtl_method = "bounded",
+                V::Mismatch => rtl_verdict = SmtVerdict::CounterexampleSat,
+                V::Inconclusive => rtl_verdict = SmtVerdict::SolverUnavailable,
+            }
         }
     }
 
@@ -588,7 +742,8 @@ fn cmd_bench(reg: &LanguageRegistry, input_path: &str, iters: usize) -> Result<(
         emitted_sc_bytes: sc_code.len(),
         emitted_sv_bytes: sv_code.len(),
         classes: m_sv.classes.len(),
-        rtl_modules: m_sv.rtl_modules.len(),
+        rtl_modules: m_sv.module_names.len(),
+        rtl_sec_method: rtl_method,
         enums: m_sv.enums.len(),
         clockings: m_sv.clockings.len(),
         sva_properties: m_sv.properties.len(),

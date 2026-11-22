@@ -26,6 +26,9 @@ pub struct CosimOptions {
     pub seed: u64,
     /// Directory to build in; kept afterwards. A temporary directory is used when `None`.
     pub work_dir: Option<PathBuf>,
+    /// Simulate this header instead of the one generated now (a hand-edited or mutated
+    /// copy, to see what the simulation says about it).
+    pub header: Option<String>,
 }
 
 pub struct CosimReport {
@@ -369,6 +372,7 @@ pub fn run_cosim(sv_path: &str, opts: &CosimOptions) -> Result<CosimReport, Svcc
         .map_err(|e| SvccError::new("io", format!("cannot read {sv_path}: {e}")))?;
     let tops: Vec<String> = opts.top.iter().cloned().collect();
     let (code, design) = crate::sv_rtl_to_sc(sv_path, &src, &tops)?;
+    let code = opts.header.clone().unwrap_or(code);
     let top_name = match &opts.top {
         Some(t) => design
             .modules

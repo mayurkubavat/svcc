@@ -5,7 +5,6 @@
 //! type, or unused-parameter warnings.
 
 pub mod hdl_emit;
-pub mod rtl_emit;
 
 use std::fmt::Write as FmtWrite;
 use std::io::Write as IoWrite;
@@ -167,9 +166,6 @@ impl BackendEmitter for ScEmitter {
         }
         for prop in &module.properties {
             emit_sc_sva_observer(&mut out, prop, self.force_bitmask_sva);
-        }
-        for rtl_m in &module.rtl_modules {
-            rtl_emit::emit_sc_rtl_module(&mut out, rtl_m);
         }
 
         Ok(out)

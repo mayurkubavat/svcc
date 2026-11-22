@@ -4,7 +4,9 @@
 //! `svcc_sva_*` bitmask pipeline observers, `crave::dist` weighted distributions, `uvm_reg_block`
 //! maps, component/TLM topologies, and `sc_spawn` cancel-token concurrency back into [`IrModule`].
 
-pub mod rtl_lift;
+mod cxx;
+mod cxx_sem;
+pub mod hdl_lift;
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -77,7 +79,6 @@ impl Frontend for ScFrontend {
             constraints_lowered,
             covergroups_lowered,
             properties_lowered: module.properties.len(),
-            rtl_modules_lowered: module.rtl_modules.len(),
         };
         Ok((module, metrics))
     }
@@ -93,10 +94,6 @@ impl CppAstExtractor for StructuralCppExtractor {
         module.enums = extract_cpp_enums(source);
         module.clockings = extract_cpp_clockings(source);
         module.properties = extract_cpp_sva_observers(source);
-        module.rtl_modules = rtl_lift::extract_sc_rtl_modules(filename, source)?;
-        module
-            .rtl_modules
-            .extend(rtl_lift::extract_c2rtl_functions(filename, source)?);
 
         let enum_widths: HashMap<String, u32> = module
             .enums

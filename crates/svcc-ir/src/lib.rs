@@ -615,78 +615,10 @@ pub struct IrModule {
     pub classes: Vec<ClassDecl>,
     pub standalone_covergroups: Vec<CovergroupDecl>,
     pub properties: Vec<SvaPropertyDecl>,
-    pub rtl_modules: Vec<RtlModule>,
+    /// Names of the design modules declared in the source. The modules themselves are not
+    /// part of this IR: synthesizable design code goes through the typed [`hdl`] IR.
+    pub module_names: Vec<String>,
     pub extensions: BTreeMap<String, serde_json::Value>,
-}
-
-// ============================================================================
-// 7. `rtl` Dialect (Synthesizable IEEE 1800 <-> IEEE 1666.1 RTL & C2RTL SSA)
-// ============================================================================
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RtlPortDir {
-    Input,
-    Output,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RtlPort {
-    pub name: String,
-    pub dir: RtlPortDir,
-    pub width: u32,
-    pub signed: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RtlSignal {
-    pub name: String,
-    pub width: u32,
-    pub signed: bool,
-    pub is_reg: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RtlStmt {
-    Assign {
-        lhs: String,
-        rhs: String,
-        nonblocking: bool,
-    },
-    IfElse {
-        cond: String,
-        then_body: Vec<RtlStmt>,
-        else_body: Vec<RtlStmt>,
-    },
-}
-
-/// Combinational process (`always_comb` / `assign` <-> `SC_METHOD` with complete `sensitive << ...`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RtlCombBlock {
-    pub name: String,
-    pub sensitivity: Vec<String>,
-    pub stmts: Vec<RtlStmt>,
-}
-
-/// Synchronous single-clock process (`always_ff @(posedge clk [or negedge rst_n])` <-> `SC_CTHREAD` / clocked `SC_METHOD`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RtlSyncBlock {
-    pub name: String,
-    pub clock: String,
-    pub reset: Option<String>,
-    pub reset_active_low: bool,
-    pub reset_stmts: Vec<RtlStmt>,
-    pub body_stmts: Vec<RtlStmt>,
-}
-
-/// Synthesizable RTL module or SSA-lowered untimed C++17 golden model (`C2RTL`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RtlModule {
-    pub name: String,
-    pub ports: Vec<RtlPort>,
-    pub signals: Vec<RtlSignal>,
-    pub comb_blocks: Vec<RtlCombBlock>,
-    pub sync_blocks: Vec<RtlSyncBlock>,
-    pub provenance: Provenance,
 }
 
 impl IrModule {
@@ -703,10 +635,6 @@ impl IrModule {
 
     pub fn find_enum(&self, name: &str) -> Option<&EnumDecl> {
         self.enums.iter().find(|e| e.name == name)
-    }
-
-    pub fn find_rtl_module(&self, name: &str) -> Option<&RtlModule> {
-        self.rtl_modules.iter().find(|m| m.name == name)
     }
 }
 
@@ -742,7 +670,6 @@ pub struct FrontendMetrics {
     pub constraints_lowered: usize,
     pub covergroups_lowered: usize,
     pub properties_lowered: usize,
-    pub rtl_modules_lowered: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

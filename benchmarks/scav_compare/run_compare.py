@@ -73,8 +73,9 @@ def run_svcc(src, out, dv_inc):
     r = {"sv2sc_exit": sh([SVCC, "sv2sc", src, "-o", hpp])[0]}
     rc, o, e = sh([SVCC, "roundtrip-check", src, "--shims", "testdata/cpp_shims"], cwd=ROOT)
     r["roundtrip"] = "pass" if rc == 0 else "fail"
-    m = re.search(r"SEC\([^)]*\)=(\w+)", o + e)
-    r["sec_verdict"] = m.group(1) if m else None
+    # Formal verdict for the generated C++ against the source (typed gate).
+    m = re.search(r"\[(PASS|FAIL|----)\] generated C\+\+ '[^']*': ([^(\n]*)", o + e)
+    r["sec_verdict"] = m.group(2).strip() if m else None
     if rc != 0:
         r["roundtrip_error"] = next((line for line in (o + e).split("\n") if "error" in line), "")[:160]
     cc = os.path.join(out, name + ".cc")

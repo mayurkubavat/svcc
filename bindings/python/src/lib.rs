@@ -34,14 +34,12 @@ fn prove_sec_json(
     imp_source: &str,
     latency: u32,
 ) -> PyResult<String> {
-    let rep = ::svcc::prove_rtl_or_c2rtl_sec(
-        spec_filename,
-        spec_source,
-        imp_filename,
-        imp_source,
+    let opts = ::svcc::prove::SecOptions {
         latency,
-    )
-    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        ..Default::default()
+    };
+    let rep = ::svcc::prove::prove_sec(spec_filename, spec_source, imp_filename, imp_source, &opts)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     serde_json::to_string(&rep).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 

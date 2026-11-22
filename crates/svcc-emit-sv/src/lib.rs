@@ -1,6 +1,6 @@
 //! IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM backend emitter for `svcc-ir`.
 
-pub mod rtl_emit;
+pub mod hdl_emit;
 
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -106,9 +106,6 @@ impl BackendEmitter for SvEmitter {
         }
         if !module.properties.is_empty() {
             emit_sv_sva_wrapper(&mut out, &module.properties);
-        }
-        for rtl_m in &module.rtl_modules {
-            rtl_emit::emit_sv_rtl_module(&mut out, rtl_m);
         }
         Ok(out)
     }

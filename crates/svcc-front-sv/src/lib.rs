@@ -11,7 +11,6 @@
 
 pub mod crv_parser;
 pub mod hdl_lower;
-pub mod rtl_lower;
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -120,7 +119,6 @@ impl Frontend for SvFrontend {
         let mut named_sva_props: HashMap<String, String> = HashMap::new();
         for tree in trees {
             collect_top_cst_items(
-                filename,
                 tree,
                 tree.root,
                 &mut cst_classes,
@@ -128,7 +126,7 @@ impl Frontend for SvFrontend {
                 &mut module.clockings,
                 &mut named_sva_props,
                 &mut module.properties,
-                &mut module.rtl_modules,
+                &mut module.module_names,
                 &mut module.standalone_covergroups,
                 &mut total_covergroups,
             );
@@ -156,9 +154,6 @@ impl Frontend for SvFrontend {
             collect_oracle_param_consts(&oracle, tree_idx, tree, tree.root, &mut enum_consts);
         }
 
-        // Enrich parameterized RTL port/signal bit-widths (`[DW-1:0]`, `typedef`s) via `comp.elaborate()`
-        let elab = comp.elaborate();
-        enrich_rtl_modules_from_elaboration(&elab, &mut module.rtl_modules);
         let clocking_names: HashSet<String> =
             module.clockings.iter().map(|c| c.name.clone()).collect();
 
@@ -360,7 +355,6 @@ impl Frontend for SvFrontend {
             constraints_lowered: total_constraints,
             covergroups_lowered: total_covergroups,
             properties_lowered: module.properties.len(),
-            rtl_modules_lowered: module.rtl_modules.len(),
         };
         Ok((module, metrics))
     }
@@ -395,43 +389,8 @@ fn collect_oracle_param_consts(
     }
 }
 
-fn enrich_rtl_modules_from_elaboration(
-    elab: &svcc_svlang::syntax::Elaborated,
-    rtl_modules: &mut [svcc_ir::RtlModule],
-) {
-    for rtl_m in rtl_modules {
-        let Some(inst) = elab
-            .design
-            .instances
-            .iter()
-            .find(|i| i.definition == rtl_m.name)
-        else {
-            continue;
-        };
-        for &sid in &inst.ports {
-            let sym = elab.design.symbol(sid);
-            if let Some(bw) = sym.ty.bit_width() {
-                if let Some(p) = rtl_m.ports.iter_mut().find(|p| p.name == sym.name) {
-                    p.width = bw.max(1);
-                    p.signed = sym.ty.is_signed();
-                }
-            }
-        }
-        for &sid in &inst.symbols {
-            let sym = elab.design.symbol(sid);
-            if let Some(bw) = sym.ty.bit_width() {
-                if let Some(sig) = rtl_m.signals.iter_mut().find(|s| s.name == sym.name) {
-                    sig.width = bw.max(1);
-                    sig.signed = sym.ty.is_signed();
-                }
-            }
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn collect_top_cst_items<'a>(
-    filename: &str,
     tree: &'a Tree,
     node: NodeId,
     cst_classes: &mut HashMap<String, (&'a Tree, NodeId)>,
@@ -439,18 +398,20 @@ fn collect_top_cst_items<'a>(
     clockings: &mut Vec<ClockingDecl>,
     named_props: &mut HashMap<String, String>,
     sva_props: &mut Vec<SvaPropertyDecl>,
-    rtl_modules: &mut Vec<svcc_ir::RtlModule>,
+    module_names: &mut Vec<String>,
     standalone_cgs: &mut Vec<CovergroupDecl>,
     total_cgs: &mut usize,
 ) {
     match tree.kind(node) {
         SyntaxKind::ModuleDecl => {
-            if let Some(rtl_m) = rtl_lower::try_lower_sv_module(filename, tree, node) {
-                rtl_modules.push(rtl_m);
+            if let Some(nm) = tree.child(node, SyntaxKind::Name) {
+                let name = tree.bare_text(nm).trim().to_string();
+                if name != "svcc_sva_assertions" {
+                    module_names.push(name);
+                }
             }
             for ch in tree.children(node) {
                 collect_top_cst_items(
-                    filename,
                     tree,
                     ch,
                     cst_classes,
@@ -458,7 +419,7 @@ fn collect_top_cst_items<'a>(
                     clockings,
                     named_props,
                     sva_props,
-                    rtl_modules,
+                    module_names,
                     standalone_cgs,
                     total_cgs,
                 );
@@ -498,7 +459,6 @@ fn collect_top_cst_items<'a>(
         _ => {
             for ch in tree.children(node) {
                 collect_top_cst_items(
-                    filename,
                     tree,
                     ch,
                     cst_classes,
@@ -506,7 +466,7 @@ fn collect_top_cst_items<'a>(
                     clockings,
                     named_props,
                     sva_props,
-                    rtl_modules,
+                    module_names,
                     standalone_cgs,
                     total_cgs,
                 );
