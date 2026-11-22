@@ -28,6 +28,29 @@ pub mod syntax {
     pub use svlang::{NodeId, SyntaxKind, Tree};
 }
 
+pub mod elab {
+    //! Elaborated design and bound-expression types used by the typed RTL (`hdl`) lowering in
+    //! `svcc-front-sv`.
+    //!
+    //! Re-exported rather than wrapped: the lowering walks per-instance symbols and items and
+    //! matches on every bound expression kind, so a wrapper would mirror the whole model.
+
+    /// Subroutine formal extraction from a `FunctionDecl` CST node.
+    pub use svlang::semantic::expr::extract_subroutine_formals;
+    /// CST child (token or node), for statements whose shape depends on punctuation.
+    pub use svlang::syntax::Child;
+    /// IEEE 1800-2023 11.6 / 11.8 expression binder and its typed expression arena.
+    pub use svlang::{
+        BinaryOp, CVal, ExprArena, ExprBinder, ExprId, ExprKind, InsideItem, Loc, LocalBinding,
+        LocalId, SysFunc, UnaryOp,
+    };
+    /// Elaborated instances, symbols and items.
+    pub use svlang::{
+        ElabItem, ElabItemKind, ElaboratedDesign, InstanceId, PortDir, RtlType, SymbolId,
+        SymbolKind,
+    };
+}
+
 #[cfg(feature = "model")]
 pub mod model {
     //! UVM/RAL design model used by `svcc-front-sv`.

@@ -8,6 +8,8 @@ pub use svcc_front_sv as front_sv;
 pub use svcc_ir as ir;
 pub use svcc_passes as passes;
 
+pub mod cosim;
+
 use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;
 use svcc_equiv::{
@@ -32,7 +34,58 @@ pub fn sv_to_sc(filename: &str, sv_source: &str) -> Result<String, SvccError> {
     let (mut module, _) = SvFrontend::new().lower_str(filename, sv_source)?;
     let emitter = ScEmitter::new();
     PassPipeline::for_target(emitter.capabilities()).run_all(&mut module)?;
-    emitter.emit(&module)
+    emit_sc_with_typed_rtl(filename, sv_source, module, &emitter)
+}
+
+/// Emits C++ for a lowered SystemVerilog file, converting its RTL modules through the typed,
+/// elaborated `hdl` path ([`sv_rtl_to_sc`]).
+///
+/// A file that holds only RTL becomes a header that needs nothing but `<systemc>`. A file that
+/// mixes RTL with classes, covergroups or assertions keeps the UVM prelude and gets the typed
+/// modules appended; if such a file does not elaborate as a design, its modules fall back to
+/// the text-based legacy path and a note is printed.
+pub fn emit_sc_with_typed_rtl(
+    filename: &str,
+    sv_source: &str,
+    mut module: svcc_ir::IrModule,
+    emitter: &ScEmitter,
+) -> Result<String, SvccError> {
+    if module.rtl_modules.is_empty() {
+        return emitter.emit(&module);
+    }
+    let pure_rtl = module.classes.is_empty()
+        && module.standalone_covergroups.is_empty()
+        && module.properties.is_empty()
+        && module.clockings.is_empty();
+    if pure_rtl {
+        return sv_rtl_to_sc(filename, sv_source, &[]).map(|(code, _)| code);
+    }
+    match svcc_front_sv::hdl_lower::lower_hdl_design(filename, sv_source, &[]) {
+        Ok(design) => {
+            module.rtl_modules.clear();
+            let mut out = emitter.emit(&module)?;
+            svcc_emit_sc::hdl_emit::emit_hdl_modules(&mut out, &design)?;
+            Ok(out)
+        }
+        Err(e) => {
+            eprintln!("note: RTL modules use the legacy text-based path: {e}");
+            emitter.emit(&module)
+        }
+    }
+}
+
+/// Converts synthesizable SystemVerilog RTL into SystemC through the typed, elaborated
+/// `hdl` design IR. Returns the generated header and the design it was emitted from.
+///
+/// `tops` names the top modules; when empty every uninstantiated module is a top.
+pub fn sv_rtl_to_sc(
+    filename: &str,
+    sv_source: &str,
+    tops: &[String],
+) -> Result<(String, svcc_ir::hdl::Design), SvccError> {
+    let design = svcc_front_sv::hdl_lower::lower_hdl_design(filename, sv_source, tops)?;
+    let code = svcc_emit_sc::hdl_emit::emit_hdl_design(&design)?;
+    Ok((code, design))
 }
 
 /// Compiles C++17 SystemC (`SC_MODULE`, `// svcc:c2rtl` functions, or UVM/CRAVE/FC4SC classes)

@@ -10,6 +10,7 @@
 //!    `disable fork`, `wait fork`, `@(cb)`, `#delay`, sequence item dispatch).
 
 pub mod crv_parser;
+pub mod hdl_lower;
 pub mod rtl_lower;
 
 use std::collections::{HashMap, HashSet};

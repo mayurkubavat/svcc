@@ -4,6 +4,7 @@
 //! `clang++ -x c++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only` to guarantee zero syntax,
 //! type, or unused-parameter warnings.
 
+pub mod hdl_emit;
 pub mod rtl_emit;
 
 use std::fmt::Write as FmtWrite;

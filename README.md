@@ -21,6 +21,14 @@
 cargo run --release -p svcc -- roundtrip-check testdata/sv/axi4_burst_env.sv --shims testdata/cpp_shims
 cargo run --release -p svcc -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims testdata/cpp_shims
 
+# Convert synthesizable SV RTL to SystemC (typed, elaborated path; see docs/rtl_subset.md)
+cargo run --release -p svcc -- rtl2sc testdata/rtl/fsm_enum.sv --top fsm_enum -o fsm_enum.hpp
+
+# Simulate the generated SystemC against Verilator on the same random stimulus
+# (needs verilator on PATH and SYSTEMC_HOME)
+cargo run --release -p svcc -- rtl-cosim testdata/rtl/fsm_enum.sv --top fsm_enum
+./scripts/rtl_cosim.sh
+
 # Reproduce benchmark suite and live Accellera CRAVE / external corpus measurements
 python3 benchmarks/run_benchmarks.py
 python3 benchmarks/run_m4_extended.py

@@ -68,6 +68,53 @@ fn run_cli() -> Result<(), SvccError> {
                 force_bitmask,
             )
         }
+        "rtl2sc" => {
+            let pos = positional_args(&args[1..]);
+            let input = pos.first().ok_or_else(|| {
+                SvccError::new(
+                    "cli",
+                    "usage: svcc rtl2sc <in.sv> [--top <module>] [-o <out.hpp>]",
+                )
+            })?;
+            let tops: Vec<String> = parse_opt_flag(&args[1..], "--top").into_iter().collect();
+            let src = fs::read_to_string(input)
+                .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+            let (code, design) = svcc::sv_rtl_to_sc(input, &src, &tops)?;
+            for n in &design.notes {
+                eprintln!("note: {n}");
+            }
+            match parse_opt_flag(&args[1..], "-o") {
+                Some(p) => fs::write(&p, code)
+                    .map_err(|e| SvccError::new("io", format!("cannot write {p}: {e}")))?,
+                None => print!("{code}"),
+            }
+            Ok(())
+        }
+        "rtl-cosim" => {
+            let pos = positional_args(&args[1..]);
+            let input = pos.first().ok_or_else(|| {
+                SvccError::new(
+                    "cli",
+                    "usage: svcc rtl-cosim <in.sv> [--top <module>] [--steps N] [--seed S] [--keep <dir>]",
+                )
+            })?;
+            let opts = svcc::cosim::CosimOptions {
+                top: parse_opt_flag(&args[1..], "--top"),
+                steps: parse_opt_flag(&args[1..], "--steps")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(20000),
+                seed: parse_opt_flag(&args[1..], "--seed")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0x5eed_1234_abcd),
+                work_dir: parse_opt_flag(&args[1..], "--keep").map(Into::into),
+            };
+            let rep = svcc::cosim::run_cosim(input, &opts)?;
+            println!(
+                "[PASS] cosim '{}': SystemC == Verilator on {} outputs, {} steps, {} comparisons",
+                rep.top, rep.outputs, rep.steps, rep.comparisons
+            );
+            Ok(())
+        }
         "sc2sv" | "c2rtl" => {
             let input = args.get(1).ok_or_else(|| {
                 SvccError::new("cli", "usage: svcc sc2sv|c2rtl <in.hpp> [-o <out.sv>]")
@@ -137,6 +184,8 @@ fn print_usage() {
          USAGE:\n\
          \x20 svcc targets                                          List SV/C++ capability profiles\n\
          \x20 svcc sv2sc <in.sv> [-o <out.hpp>]                     Transpile SV (RTL/UVM) -> C++17 SystemC\n\
+         \x20 svcc rtl2sc <in.sv> [--top M] [-o <out.hpp>]            Convert synthesizable SV RTL -> SystemC (typed, elaborated)\n\
+         \x20 svcc rtl-cosim <in.sv> [--top M] [--steps N]            Simulate generated SystemC against Verilator\n\
          \x20 svcc sc2sv <in.hpp> [-o <out.sv>]                     Transpile C++17 SystemC -> IEEE 1800-2023 SV\n\
          \x20 svcc c2rtl <golden.hpp> [-o <spec.sv>]                Compile untimed C++17 golden model -> SSA SV RTL\n\
          \x20 svcc roundtrip-check <in.sv> [--shims <dir>]          SV -> C++17 (clang++) -> SV (svlang) + Z3 CRV/SVA/SEC\n\
@@ -214,7 +263,7 @@ fn cmd_sv2sc_ext(
 
     let (mut module, _) = fe.lower_str(input_path, &src)?;
     PassPipeline::for_target(caps).run_all(&mut module)?;
-    let emitted = emitter.emit(&module)?;
+    let emitted = svcc::emit_sc_with_typed_rtl(input_path, &src, module, &emitter)?;
 
     if let Some(p) = out_path {
         fs::write(p, &emitted)

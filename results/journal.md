@@ -134,4 +134,18 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `scav_own_examples_compile`: `3/9`
   - `scav_own_examples_cosim_match`: `2/9`
 - **Notes**: Cloud Linux container, g++ + libsystemc-dev 2.3.4, Icarus Verilog. svcc roundtrip-check reports EquivalentUnsat on p16_width and p17_wrap while the emitted SystemC mismatches RTL in simulation (SV context-determined width not modelled in C++). svcc RTL output needed stand-in uvm/crave2/fc4sc headers to compile against stock SystemC.
+## [2026-11-22T19:08:38+00:00] `M5-typed-rtl-hdl` — Typed, elaborated SV RTL -> SystemC path with Verilator differential simulation
+- **Commit**: `8da6eaf` (`Linux-x86_64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13)`)
+- **Command**: `SYSTEMC_HOME=$HOME/.local/opt/accellera-svcc/systemc ./scripts/check.sh`
+- **Measured Metrics**:
+  - `baseline_legacy_corpus_compiles`: `3/16`
+  - `benchmark_rtl_13_20_cosim_pass`: `8/8`
+  - `corpus_cosim_pass`: `16/16`
+  - `corpus_cosim_steps_each`: `20000`
+  - `corpus_output_comparisons`: `3830212`
+  - `host`: `Linux x86_64`
+  - `scav_probes_cosim_pass`: `18/18`
+  - `systemc`: `mayurkubavat/systemc development 9767bff (3.0.x, C++17)`
+  - `verilator`: `5.052`
+- **Notes**: New rtl2sc and rtl-cosim commands; sv2sc routes RTL modules through the typed path. Legacy text-based RTL path kept only for roundtrip-check and C2RTL SEC. Evidence is random-stimulus simulation, not proof. SCAV probes and benchmark designs were run once by hand and are not part of check.sh.
 

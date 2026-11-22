@@ -18,6 +18,8 @@
 //! 6. **`sva`**: Clocked temporal properties (`|-> ##[m:n]`, `disable iff`, `assert`/`cover`)
 //!    with cycle-accurate C++17 bitmask pipeline observer lowering.
 
+pub mod hdl;
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
