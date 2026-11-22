@@ -167,3 +167,32 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `verilator`: `5.052`
 - **Notes**: rtl-cosim only looked for libsystemc.so/.a, so all 16 designs failed on macOS before any model was built; it now also accepts libsystemc.dylib. Per-design comparison counts match a Linux rerun exactly (sum 3893207); the 3830212 total in the M5-typed-rtl-hdl entry is stale. SCAV probes and designs 13..20 were run by hand with svcc rtl-cosim --steps 20000 against Verilator, not through run_compare.py (Icarus), and are not part of check.sh. Evidence is random-stimulus simulation, not proof.
 
+## [2026-11-22T20:19:29+00:00] `M6-typed-formal-gates` — Formal gates moved to the typed RTL path; text-based RTL path removed
+- **Commit**: `3c486e4` (`Darwin-arm64`, `rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)`)
+- **Command**: `SYSTEMC_HOME=$HOME/.local/opt/accellera-svcc/systemc ./scripts/check.sh; scripts/rtl_prove.sh; python3 benchmarks/formal_gate/mutate.py --per-design 5 --steps 5000 --ops unwrap <42 designs>; python3 benchmarks/formal_gate/mutate.py --per-design 6 --steps 5000 --ops widen,resign,uncast <42 designs>; svcc rtl-cosim --steps 20000 on 18 probes and designs 13..20`
+- **Measured Metrics**:
+  - `c2rtl_prove_sec`: `8/8 ProvedInductive (from an arbitrary state, resets held inactive)`
+  - `cargo_tests_failed`: `0`
+  - `cargo_tests_passed`: `26`
+  - `check_sh`: `ALL CHECKS PASSED (exit 0), 8 steps`
+  - `cosim_corpus`: `16/16`
+  - `cosim_probes_and_13_20`: `26/26 at 20000 steps`
+  - `golden_model_defect_found`: `14_mac16_pipe2_golden: uint16_t*uint16_t overflows int (undefined behaviour); fixed to uint32_t(a)*b`
+  - `historical_width_bugs_caught`: `2/2 with counterexample (p16: a=b=0xff SV 0x7f C++ 0xff)`
+  - `host`: `macOS arm64`
+  - `lowering_stage`: `42/42 by induction`
+  - `mutants_compiled`: `281`
+  - `mutants_differ_and_proof_accepts`: `0`
+  - `mutants_differ_and_proof_finds_difference`: `14`
+  - `mutants_differ_and_reader_rejects`: `3`
+  - `mutants_differ_in_cosim`: `17`
+  - `mutants_not_compiling_dropped`: `70`
+  - `mutants_same_in_cosim_proof_accepts`: `255`
+  - `mutants_same_in_cosim_reader_rejects`: `9`
+  - `negative_tests`: `6 defects must fail the gate, all fail`
+  - `rtl_prove_designs`: `42/42 (16 corpus, 18 probes, 8 designs 13..20)`
+  - `rtl_prove_method`: `42 by induction over paired state, 0 bounded only`
+  - `systemc`: `development 9767bff (3.0.3) in ~/.local/opt/accellera-svcc`
+  - `verilator`: `5.052`
+- **Notes**: What a pass means and what it assumes is in docs/formal_gates.md: two-state reference (X reads 0, division by zero yields 0), svlang netlist as the meaning of SV on both sides, one clock with a synchronous view of asynchronous reset, svcc's own model of C++ and SystemC integer semantics (checked against SystemC 3.0.3 with a probe and by the mutation check, not a compiler front end). Only 17 of 281 mutants change behaviour, so the mutation check is a small sample. The UVM-side gates were not re-examined. Paper text and benchmarks/results/m3_benchmark_summary.json still describe the removed gate and were not regenerated. The earlier roundtrip-check verdicts for RTL in this log (EquivalentUnsat from the textual miter) did not examine the generated C++ and should not be cited as proofs of it.
+

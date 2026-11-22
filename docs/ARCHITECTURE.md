@@ -43,3 +43,22 @@
    - Lowered to an $O(1)$-per-cycle, zero-allocation 64-bit shift-window observer (`uint64_t pending_window_` inside `uvir_sva_<name>`), formally proven cycle-accurate against IEEE 1800 SVA via `prove_sva_bmc_equivalence` in Z3.
 6. **UVM RAL (`uvm_reg` + `uvm_reg_block`) & Component/TLM Topologies**:
    - `svlang_model::ral` extracts register widths, field bit-slices/access policies, and `create_map`/`add_reg` offsets, emitting `uvm::uvm_randomized_reg` (`bind_field`) + `uvm::uvm_reg_block` in C++17 and round-tripping back to SV RAL.
+
+## 3. Synthesizable Design Code (the typed `hdl` path)
+
+Design modules do not go through the dialects above. They have their own typed IR
+(`svcc_ir::hdl`: every expression carries its width and signedness, every conversion is an
+explicit node) and their own pipeline:
+
+```text
+  source.sv ──► svcc-front-sv/hdl_lower ──► hdl::Design ──► svcc-emit-sc/hdl_emit ──► generated.hpp
+  (svlang elaboration + bound expressions)                    (SC_MODULE, sc_uint/sc_biguint)
+
+  proof:   source.sv ───────────────────────────────► svlang netlist ─► Btor2 ─┐
+           generated.hpp ─► svcc-front-sc/hdl_lift ─► hdl::Design              ├─► svcc-equiv/pair ─► Z3
+           (C++ evaluation rules, cxx_sem)             └► svcc-emit-sv/hdl_emit ─► svlang ─► Btor2 ─┘
+```
+
+`docs/rtl_subset.md` states the supported subset, `docs/formal_gates.md` what the proof
+shows and what it assumes. There is no second RTL path: a module the typed path cannot
+convert is an error.

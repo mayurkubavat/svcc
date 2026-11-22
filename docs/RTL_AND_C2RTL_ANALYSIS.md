@@ -1,5 +1,11 @@
 # RTL Conversion & `InFormal` C2RTL / SLEC Integration Analysis
 
+> Design analysis from before the RTL path was built. What exists now differs in places:
+> the `rtl` dialect described here was replaced by the typed `hdl` IR, and the C2RTL
+> front end applies C++ integer promotion and conversion rules itself
+> (`svcc-front-sc/src/cxx_sem.rs`) rather than through `libclang`. For what the current
+> gates prove, read `docs/formal_gates.md`.
+
 Saved design analysis covering:
 1. Extending the compiler beyond UVM/DV (`types`, `uvm`, `crv`, `cov`, `sched`, `sva`) to **bidirectional RTL (`SV RTL <-> SystemC/C++17 RTL & Golden Models`)**.
 2. Exact technical limitations and fail-closed boundaries in both directions.

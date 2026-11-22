@@ -99,6 +99,14 @@ edge against a simultaneous data change. Both models run two-state
 `scripts/rtl_cosim.sh` runs this over `testdata/rtl` (one design per construct group) and is
 step 7 of `scripts/check.sh`. It needs `verilator` on `PATH` and `SYSTEMC_HOME`.
 
-This is simulation evidence over random stimulus, not a proof. The older `roundtrip-check`
-for RTL does not exercise the generated C++ (it re-reads the source expression from comments)
-and still uses the legacy text-based path.
+This is simulation evidence over random stimulus, not a proof.
+
+## Formal check
+
+`svcc rtl-prove <file.sv>` reads the generated header back with C++ evaluation rules and
+proves it equal to the source text; `scripts/rtl_prove.sh` runs it over `testdata/rtl`, the
+probes of `benchmarks/scav_compare` and corpus designs 13..20, and is step 7 of
+`scripts/check.sh`. `roundtrip-check` runs the same proof for the design modules of a file.
+`docs/formal_gates.md` says what a pass proves, what it assumes (the two-state rules above,
+one clock, a synchronous view of asynchronous reset) and what remains simulation evidence.
+The text-based RTL path that these checks used before has been removed.
