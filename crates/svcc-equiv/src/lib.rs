@@ -712,6 +712,138 @@ pub fn prove_sva_pair_equivalence(
     })
 }
 
+/// Prediction `P3`: Proves via `K`-step Z3 `QF_BV` Bounded Model Checking whether a `cover property`
+/// observer (`use_per_age = true` for `pending_age_` array vs. `false` for `pending_window_` bitmask)
+/// produces the exact IEEE 1800-2023 §16.14.3 non-vacuous satisfied-attempt count on all traces.
+pub fn prove_sva_cover_multiplicity_bmc(
+    prop: &SvaPropertyDecl,
+    extra_cycles: u32,
+    use_per_age: bool,
+) -> Result<SvaBmcReport, UvirError> {
+    let min_d = prop.min_delay;
+    let max_d = prop.max_delay.max(min_d);
+    let k = max_d + extra_cycles.max(4);
+
+    let mut smt = String::new();
+    smt.push_str("(set-logic QF_BV)\n");
+    for t in 0..k {
+        smt.push_str(&format!("(declare-const dis_{t} Bool)\n"));
+        smt.push_str(&format!("(declare-const ant_{t} Bool)\n"));
+        smt.push_str(&format!("(declare-const con_{t} Bool)\n"));
+        if prop.disable_iff.is_none() {
+            smt.push_str(&format!("(assert (not dis_{t}))\n"));
+        }
+    }
+
+    // Cycle-exact per-tick cover increment miter (`spec_inc_t != impl_inc_t`):
+    // Avoids cross-cycle multi-operand adder chains while proving stronger cycle-by-cycle
+    // multiplicity agreement across all `0..k` clock edges.
+    let cw = (32 - (max_d + 1).leading_zeros()).clamp(4, 16);
+    let bv0 = format!("(_ bv0 {cw})");
+    let bv1 = format!("(_ bv1 {cw})");
+    let mut cycle_mismatches = Vec::new();
+
+    for t in 0..k {
+        // 1. Declarative IEEE 1800 attempts newly satisfied at cycle `t`
+        let mut newly_sat_taus = Vec::new();
+        if t >= min_d {
+            let lo_tau = t.saturating_sub(max_d);
+            let hi_tau = t - min_d;
+            for tau in lo_tau..=hi_tau {
+                let no_dis: Vec<String> = (tau..=t).map(|u| format!("(not dis_{u})")).collect();
+                let no_prior_con: Vec<String> = ((tau + min_d)..t)
+                    .map(|u| format!("(not con_{u})"))
+                    .collect();
+                newly_sat_taus.push(format!(
+                    "(ite (and con_{t} ant_{tau} {} {}) {bv1} {bv0})",
+                    no_dis.join(" "),
+                    no_prior_con.join(" ")
+                ));
+            }
+        }
+        let spec_inc_t = if newly_sat_taus.is_empty() {
+            bv0.clone()
+        } else if newly_sat_taus.len() == 1 {
+            newly_sat_taus.remove(0)
+        } else {
+            newly_sat_taus
+                .into_iter()
+                .reduce(|a, b| format!("(bvadd {a} {b})"))
+                .unwrap()
+        };
+
+        // 2. Lowered C++17 observer increment at cycle `t`
+        let mut window_sat_ages = Vec::new();
+        let mut window_sat_bools = Vec::new();
+        for age in 0..=max_d {
+            let shifted_in = if age == 0 {
+                format!("ant_{t}")
+            } else if t == 0 {
+                "false".to_string()
+            } else {
+                format!("age_{}_{}", t - 1, age - 1)
+            };
+            smt.push_str(&format!(
+                "(declare-const pre_{t}_{age} Bool)\n(assert (= pre_{t}_{age} (and (not dis_{t}) {shifted_in})))\n"
+            ));
+            if age >= min_d {
+                window_sat_ages.push(format!("(ite pre_{t}_{age} {bv1} {bv0})"));
+                window_sat_bools.push(format!("pre_{t}_{age}"));
+            }
+            let cleared = if age >= min_d {
+                format!("(and (not con_{t}) pre_{t}_{age})")
+            } else {
+                format!("pre_{t}_{age}")
+            };
+            smt.push_str(&format!(
+                "(declare-const age_{t}_{age} Bool)\n(assert (= age_{t}_{age} {cleared}))\n"
+            ));
+        }
+        let impl_inc_t = if use_per_age {
+            let sum_in_win = if window_sat_ages.len() == 1 {
+                window_sat_ages.remove(0)
+            } else {
+                window_sat_ages
+                    .into_iter()
+                    .reduce(|a, b| format!("(bvadd {a} {b})"))
+                    .unwrap()
+            };
+            format!("(ite con_{t} {sum_in_win} {bv0})")
+        } else {
+            let any_in_win = if window_sat_bools.len() == 1 {
+                window_sat_bools.remove(0)
+            } else {
+                format!("(or {})", window_sat_bools.join(" "))
+            };
+            format!("(ite (and con_{t} {any_in_win}) {bv1} {bv0})")
+        };
+
+        smt.push_str(&format!(
+            "(define-fun spec_inc_{t} () (_ BitVec {cw}) {spec_inc_t})\n"
+        ));
+        smt.push_str(&format!(
+            "(define-fun impl_inc_{t} () (_ BitVec {cw}) {impl_inc_t})\n"
+        ));
+        cycle_mismatches.push(format!("(not (= spec_inc_{t} impl_inc_{t}))"));
+    }
+
+    smt.push_str(&format!("(assert (or {}))\n", cycle_mismatches.join(" ")));
+    smt.push_str("(check-sat)\n");
+
+    let smt_bytes = smt.len();
+    let t0 = Instant::now();
+    let (verdict, _) = run_z3_stdin(&smt);
+    let solver_time_us = t0.elapsed().as_micros() as u64;
+
+    Ok(SvaBmcReport {
+        property_name: prop.name.clone(),
+        bound_cycles: k,
+        verdict,
+        smtlib2_bytes: smt_bytes,
+        solver_time_us,
+    })
+}
+
 pub(crate) fn run_z3_stdin(smt: &str) -> (SmtVerdict, String) {
     let Ok(mut child) = Command::new("z3")
         .arg("-in")

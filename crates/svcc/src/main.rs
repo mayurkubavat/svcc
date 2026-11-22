@@ -11,7 +11,7 @@ use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;
 use svcc_equiv::{
     prove_class_equivalence_with_enums, prove_rtl_sec_equivalence, prove_sva_bmc_equivalence,
-    prove_sva_pair_equivalence, SmtVerdict,
+    prove_sva_cover_multiplicity_bmc, prove_sva_pair_equivalence, SmtVerdict,
 };
 use svcc_front_sv::SvFrontend;
 use svcc_ir::{BackendEmitter, Frontend, LanguageRegistry, TargetCapabilities, UvirError};
@@ -52,12 +52,21 @@ fn run_cli() -> Result<(), UvirError> {
         "sv2sc" => {
             let input = args
                 .get(1)
-                .ok_or_else(|| UvirError::new("cli", "usage: svcc sv2sc <in.sv> [-o <out.hpp>] [--partition-clauses B] [--no-cst-fallback]"))?;
+                .ok_or_else(|| UvirError::new("cli", "usage: svcc sv2sc <in.sv> [-o <out.hpp>] [--partition-clauses B] [--no-cst-fallback] [--no-dist-lcm] [--force-bitmask-sva]"))?;
             let out_path = parse_opt_flag(&args[2..], "-o");
             let partition = parse_opt_flag(&args[2..], "--partition-clauses")
                 .and_then(|s| s.parse::<usize>().ok());
             let no_cst = args[2..].iter().any(|a| a == "--no-cst-fallback");
-            cmd_sv2sc_ext(input, out_path.as_deref(), partition, no_cst)
+            let no_dist_lcm = args[2..].iter().any(|a| a == "--no-dist-lcm");
+            let force_bitmask = args[2..].iter().any(|a| a == "--force-bitmask-sva");
+            cmd_sv2sc_ext(
+                input,
+                out_path.as_deref(),
+                partition,
+                no_cst,
+                no_dist_lcm,
+                force_bitmask,
+            )
         }
         "sc2sv" | "c2rtl" => {
             let input = args.get(1).ok_or_else(|| {
@@ -184,6 +193,8 @@ fn cmd_sv2sc_ext(
     out_path: Option<&str>,
     partition_clauses: Option<usize>,
     no_cst_fallback: bool,
+    no_dist_lcm: bool,
+    force_bitmask_sva: bool,
 ) -> Result<(), UvirError> {
     let src = fs::read_to_string(input_path)
         .map_err(|e| UvirError::new("io", format!("cannot read {input_path}: {e}")))?;
@@ -194,9 +205,15 @@ fn cmd_sv2sc_ext(
     };
     let mut emitter = ScEmitter::new();
     emitter.max_clauses_per_constraint = partition_clauses;
+    emitter.force_bitmask_sva = force_bitmask_sva;
+
+    let mut caps = emitter.capabilities();
+    if no_dist_lcm {
+        caps.exact_dist_split_weights = true;
+    }
 
     let (mut module, _) = fe.lower_str(input_path, &src)?;
-    PassPipeline::for_target(emitter.capabilities()).run_all(&mut module)?;
+    PassPipeline::for_target(caps).run_all(&mut module)?;
     let emitted = emitter.emit(&module)?;
 
     if let Some(p) = out_path {
@@ -300,7 +317,11 @@ fn cmd_roundtrip_check(
     }
 
     for prop in &m_sv.properties {
-        let bmc = prove_sva_bmc_equivalence(prop, 6)?;
+        let bmc = if prop.is_cover {
+            prove_sva_cover_multiplicity_bmc(prop, 6, true)?
+        } else {
+            prove_sva_bmc_equivalence(prop, 6)?
+        };
         println!(
             "[PASS] sva   '{}': BMC({} cycles)={:?} (z3 {} us, {} B)",
             bmc.property_name, bmc.bound_cycles, bmc.verdict, bmc.solver_time_us, bmc.smtlib2_bytes

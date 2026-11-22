@@ -94,9 +94,30 @@ fn emit_sc_rtl_stmts(
     for st in stmts {
         match st {
             RtlStmt::Assign { lhs, rhs, .. } => {
-                let _ = writeln!(out, "{indent}// svcc:rtl_assign {lhs} = {rhs}");
-                let cpp_rhs = rewrite_reads_for_sc(rhs, sig_names);
-                let _ = writeln!(out, "{indent}{lhs}.write({cpp_rhs});");
+                let clean_lhs = lhs
+                    .lines()
+                    .map(|l| l.split("//").next().unwrap_or("").trim())
+                    .filter(|l| !l.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let clean_rhs = rhs
+                    .lines()
+                    .map(|l| l.split("//").next().unwrap_or("").trim())
+                    .filter(|l| !l.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let _ = writeln!(out, "{indent}// svcc:rtl_assign {clean_lhs} = {clean_rhs}");
+                let cpp_rhs = rewrite_reads_for_sc(&clean_rhs, sig_names);
+                if let (Some(lb), Some(rb)) = (clean_lhs.find('['), clean_lhs.rfind(']')) {
+                    let base = clean_lhs[..lb].trim();
+                    let idx = &clean_lhs[lb + 1..rb];
+                    let _ = writeln!(
+                        out,
+                        "{indent}{{ auto _svcc_tmp = {base}.read(); _svcc_tmp[{idx}] = static_cast<bool>({cpp_rhs}); {base}.write(_svcc_tmp); }}"
+                    );
+                } else {
+                    let _ = writeln!(out, "{indent}{clean_lhs}.write({cpp_rhs});");
+                }
             }
             RtlStmt::IfElse {
                 cond,
@@ -121,10 +142,34 @@ fn emit_sc_rtl_stmts(
 
 /// Replaces bare port/signal reads `sig` with `sig.read()` inside SystemC RTL expressions.
 fn rewrite_reads_for_sc(expr: &str, sig_names: &BTreeSet<&str>) -> String {
+    let mut pre = expr.replace("(|", "(0U != ");
+    if let Some(rest) = pre.trim().strip_prefix('^') {
+        pre = format!(
+            "(__builtin_parityll(static_cast<uint64_t>({})) != 0)",
+            rest.trim()
+        );
+    } else if let Some(rest) = pre.trim().strip_prefix('|') {
+        pre = format!("(({}) != 0U)", rest.trim());
+    }
+    let expr = pre.as_str();
     let mut out = String::with_capacity(expr.len() + 16);
     let bytes = expr.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
+        if bytes[i] == b'~'
+            && i + 1 < bytes.len()
+            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
+        {
+            let mut j = i + 1;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'[' {
+                out.push('!');
+                i += 1;
+                continue;
+            }
+        }
         if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
             let start = i;
             while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {

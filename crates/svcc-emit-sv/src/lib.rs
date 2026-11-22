@@ -2,6 +2,7 @@
 
 pub mod rtl_emit;
 
+use std::collections::BTreeSet;
 use std::fmt::Write;
 use svcc_ir::{
     BackendEmitter, BinKind, ClassDecl, ClockingDecl, CovergroupDecl, CrvArena, CrvBinaryOp,
@@ -52,6 +53,7 @@ impl SvEmitter {
         #[cfg(feature = "verify-svlang")]
         {
             let comp = Compilation::from_source("emitted_uvir.sv", &sv_text);
+            let has_uvm_classes = !module.classes.is_empty();
             let errs: Vec<_> = comp
                 .diagnostics()
                 .into_iter()
@@ -64,6 +66,7 @@ impl SvEmitter {
                         DiagnosticStage::Preprocessor => {
                             !d.message.contains("unknown macro or directive `uvm_")
                         }
+                        DiagnosticStage::Semantic => !has_uvm_classes,
                         _ => false,
                     }
                 })
@@ -72,10 +75,32 @@ impl SvEmitter {
                 return Err(UvirError::new(
                     "svcc-emit-sv/verify",
                     format!(
-                        "emitted SV failed svlang syntax verification at line {}: {}",
+                        "emitted SV failed svlang verification at line {}: {}",
                         errs[0].line, errs[0].message
                     ),
                 ));
+            }
+
+            // Stage 3: In-memory `svlang-lint` semantic & formal-ready quality gate
+            let design = svlang_model::Design::from_sv(comp.design());
+            let session = svlang_lint::Session::new();
+            if let Ok(keep) = svlang_lint::rule_selection(Some("formal-ready"), false) {
+                let (files, findings) = session.lint_all(&design, comp.trees(), |id| {
+                    keep(id) && !(has_uvm_classes && id == "SV-CMP-001")
+                });
+                if let Some(err_f) = findings
+                    .iter()
+                    .find(|f| f.severity == svlang_lint::Severity::Error)
+                {
+                    let (_, ln, _) = err_f.position_in(&files);
+                    return Err(UvirError::new(
+                        "svcc-emit-sv/svlang-lint",
+                        format!(
+                            "emitted SV failed svlang-lint [{}] at line {}: {}",
+                            err_f.rule, ln, err_f.message
+                        ),
+                    ));
+                }
             }
         }
         Ok(sv_text)
@@ -158,8 +183,53 @@ fn emit_sv_clocking_interface(out: &mut String, cb: &ClockingDecl) {
     out.push_str("  endclocking\nendinterface\n\n");
 }
 
+fn collect_sv_ident_tokens(expr: &str, out: &mut BTreeSet<String>) {
+    let mut cur = String::new();
+    for ch in expr.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '$' {
+            cur.push(ch);
+        } else {
+            if !cur.is_empty() {
+                if !cur.starts_with('$')
+                    && !cur.chars().next().unwrap().is_ascii_digit()
+                    && !matches!(
+                        cur.as_str(),
+                        "posedge" | "negedge" | "and" | "or" | "not" | "iff" | "true" | "false"
+                    )
+                {
+                    out.insert(cur.clone());
+                }
+                cur.clear();
+            }
+        }
+    }
+    if !cur.is_empty()
+        && !cur.starts_with('$')
+        && !cur.chars().next().unwrap().is_ascii_digit()
+        && !matches!(
+            cur.as_str(),
+            "posedge" | "negedge" | "and" | "or" | "not" | "iff" | "true" | "false"
+        )
+    {
+        out.insert(cur);
+    }
+}
+
 fn emit_sv_sva_wrapper(out: &mut String, props: &[SvaPropertyDecl]) {
-    out.push_str("module uvir_sva_assertions(input logic clk, input logic rst_n);\n");
+    let mut sigs = BTreeSet::new();
+    for p in props {
+        collect_sv_ident_tokens(&p.clock_signal, &mut sigs);
+        if let Some(d) = &p.disable_iff {
+            collect_sv_ident_tokens(d, &mut sigs);
+        }
+        collect_sv_ident_tokens(&p.antecedent, &mut sigs);
+        collect_sv_ident_tokens(&p.consequent, &mut sigs);
+    }
+    if sigs.is_empty() {
+        sigs.insert("clk".to_string());
+    }
+    let port_list: Vec<String> = sigs.iter().map(|s| format!("input logic {s}")).collect();
+    let _ = writeln!(out, "module uvir_sva_assertions({});", port_list.join(", "));
     for p in props {
         let kw = if p.is_cover { "cover" } else { "assert" };
         let dis = p

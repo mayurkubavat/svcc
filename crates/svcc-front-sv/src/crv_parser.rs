@@ -55,6 +55,7 @@ enum Tok {
     Percent,
     Bang,
     Tilde,
+    Question,
 }
 
 fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
@@ -71,6 +72,14 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
+            continue;
+        }
+        if src[i..].starts_with("/*") {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
             continue;
         }
         if src[i..].starts_with("<->") {
@@ -219,6 +228,10 @@ fn tokenize_sv_expr(src: &str) -> Result<Vec<Tok>, UvirError> {
             }
             b'~' => {
                 out.push(Tok::Tilde);
+                i += 1;
+            }
+            b'?' => {
+                out.push(Tok::Question);
                 i += 1;
             }
             b'\'' | b'0'..=b'9' => {
@@ -604,9 +617,32 @@ impl<'a> Parser<'a> {
                     } else {
                         DistWeightKind::PerValue
                     };
-                    let weight = match self.bump() {
-                        Some(Tok::Lit { value, .. }) => *value as u32,
-                        _ => 1,
+                    let weight = match self.peek().cloned() {
+                        Some(Tok::Lit { value, .. }) => {
+                            self.bump();
+                            value as u32
+                        }
+                        Some(Tok::LParen) => {
+                            self.bump();
+                            let mut depth = 1usize;
+                            let mut max_w = 1u32;
+                            while depth > 0 {
+                                match self.bump() {
+                                    Some(Tok::LParen) => depth += 1,
+                                    Some(Tok::RParen) => depth -= 1,
+                                    Some(Tok::Lit { value, .. }) if *value > 0 => {
+                                        max_w = max_w.max(*value as u32);
+                                    }
+                                    None => break,
+                                    _ => {}
+                                }
+                            }
+                            max_w
+                        }
+                        _ => {
+                            self.bump();
+                            1
+                        }
                     };
                     items.push(DistItem { elem, kind, weight });
                     let _ = self.eat(&Tok::Comma);

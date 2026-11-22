@@ -304,3 +304,75 @@ public:
     .unwrap();
     assert_eq!(rep.hard_crv_verdict, SmtVerdict::CounterexampleSat);
 }
+
+#[test]
+fn p2_dist_lcm_p3_cover_multiplicity_p5_feistel_and_oracle_params() {
+    let sv_src = r#"
+class param_dist_item extends uvm_sequence_item;
+  localparam int MAX_BUCKET = 3;
+  randc bit [3:0] tag;
+  rand  bit [3:0] bucket;
+
+  `uvm_object_utils(param_dist_item)
+
+  constraint c_dist_param {
+    bucket <= MAX_BUCKET;
+    bucket dist { [4'd0 : 4'd2] :/ 10, 4'd3 := 2 };
+  }
+endclass
+
+module burst_sva_mon(input logic clk, input logic rst_n, input logic req, input logic ack);
+  cp_burst: cover property (@(posedge clk) disable iff (!rst_n) req |-> ##[1:3] ack);
+endmodule
+"#;
+    let (mut m_sv, _) = SvFrontend::new().lower_str("p235.sv", sv_src).unwrap();
+    PassPipeline::for_target(TargetCapabilities::sc_uvm_crave_fc4sc())
+        .run_all(&mut m_sv)
+        .unwrap();
+
+    let shim_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/cpp_shims");
+    let sc_code = ScEmitter::new()
+        .emit_and_verify_clang(&m_sv, &shim_dir)
+        .expect("clang++ clean on P2/P3/P5");
+
+    // P2: [0:2] :/ 10, 3 := 2 -> L=3 -> (30, 6) -> admissible GCD(10,6)=2 -> (15, 3), 15 % 3 == 0
+    assert!(sc_code.contains(".add_weighted_range(0U, 2U, 15U)"));
+    assert!(sc_code.contains(".add(3U, 3U)"));
+    // P3: cover property uses per-age multiplicity array
+    assert!(sc_code.contains("std::array<uint32_t, 4U> pending_age_{};"));
+    // P5: randc uses O(1) cycle-walking Feistel helper
+    assert!(sc_code.contains("struct svcc_randc_feistel"));
+    assert!(sc_code.contains("svcc_randc_feistel<4U> tag_randc_gen_{};"));
+
+    // P3 Z3 BMC: per-age matches IEEE 1800 multiplicity (Unsat), bitmask under-counts (Sat)!
+    let prop = &m_sv.properties[0];
+    let bmc_age = svcc_equiv::prove_sva_cover_multiplicity_bmc(prop, 4, true).unwrap();
+    assert_eq!(bmc_age.verdict, SmtVerdict::EquivalentUnsat);
+    let bmc_mask = svcc_equiv::prove_sva_cover_multiplicity_bmc(prop, 4, false).unwrap();
+    assert_eq!(bmc_mask.verdict, SmtVerdict::CounterexampleSat);
+
+    // Round-trip back through svcc-front-sc + svcc-emit-sv (with svlang-lint gate!) + Z3 CRV miter
+    let (mut m_sc, _) = ScFrontend::new().lower_str("p235.hpp", &sc_code).unwrap();
+    PassPipeline::for_target(TargetCapabilities::sv_uvm_1800_2023())
+        .run_all(&mut m_sc)
+        .unwrap();
+    let sv_rt = SvEmitter::new()
+        .emit_and_verify(&m_sc)
+        .expect("svlang + svlang-lint clean");
+    let (mut m_sv2, _) = SvFrontend::new().lower_str("p235_rt.sv", &sv_rt).unwrap();
+    PassPipeline::for_target(TargetCapabilities::sc_uvm_crave_fc4sc())
+        .run_all(&mut m_sv2)
+        .unwrap();
+
+    let eq = prove_class_equivalence_with_enums(
+        &m_sv.classes[0],
+        &m_sv.crv_arena,
+        &m_sv.enums,
+        &m_sv2.classes[0],
+        &m_sv2.crv_arena,
+        &m_sv2.enums,
+    )
+    .unwrap();
+    assert_eq!(eq.hard_crv_verdict, SmtVerdict::EquivalentUnsat);
+}

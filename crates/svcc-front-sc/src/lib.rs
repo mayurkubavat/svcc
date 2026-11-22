@@ -109,7 +109,10 @@ impl CppAstExtractor for StructuralCppExtractor {
 
         for (line_no, cls_hdr, body) in scan_cpp_classes(source) {
             let (name, base) = parse_class_header(&cls_hdr);
-            if name.starts_with("uvir_clocking_") || name.starts_with("uvir_sva_") {
+            if name.starts_with("uvir_clocking_")
+                || name.starts_with("uvir_sva_")
+                || name.starts_with("svcc_randc_")
+            {
                 continue;
             }
             if base.contains("covergroup") {
@@ -850,7 +853,11 @@ fn parse_plain_cpp_member(line: &str, enum_widths: &HashMap<String, u32>) -> Opt
     if line.contains('(') && !line.contains('=') {
         return None;
     }
-    if line.contains("_randc_ring_") || line.contains("pending_window_") || line.contains("_count_")
+    if line.contains("_randc_ring_")
+        || line.contains("_randc_gen_")
+        || line.contains("pending_window_")
+        || line.contains("pending_age_")
+        || line.contains("_count_")
     {
         return None;
     }

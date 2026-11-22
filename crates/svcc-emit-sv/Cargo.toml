@@ -8,8 +8,10 @@ description = "IEEE 1800-2023 SystemVerilog & IEEE 1800.2-2020 UVM backend emitt
 
 [features]
 default = ["verify-svlang"]
-verify-svlang = ["dep:svlang"]
+verify-svlang = ["dep:svlang", "dep:svlang-model", "dep:svlang-lint"]
 
 [dependencies]
 svlang = { workspace = true, optional = true }
+svlang-model = { workspace = true, optional = true }
+svlang-lint = { workspace = true, optional = true }
 svcc-ir.workspace = true

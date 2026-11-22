@@ -95,9 +95,20 @@ namespace sc_dt {
 template <int W>
 struct sc_uint {
   uint64_t v_ = 0;
+  struct bit_ref {
+    uint64_t* p;
+    unsigned idx;
+    bit_ref& operator=(bool b) {
+      if (b) *p |= (1ULL << idx); else *p &= ~(1ULL << idx);
+      return *this;
+    }
+    operator bool() const { return ((*p >> idx) & 1ULL) != 0ULL; }
+  };
   constexpr sc_uint() = default;
   constexpr sc_uint(uint64_t v) : v_(v) {}
   constexpr operator uint64_t() const { return v_; }
+  bit_ref operator[](unsigned idx) { return bit_ref{&v_, idx}; }
+  bool operator[](unsigned idx) const { return ((v_ >> idx) & 1ULL) != 0ULL; }
 };
 
 template <int W>

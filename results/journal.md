@@ -86,3 +86,21 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `semantic_mutations_caught`: `20/20`
 - **Notes**: Confirmed Predictions P1 (5.95x clang++ -O2 speedup at K=120 via --partition-clauses 8) and P6 (12/12 vs 0/12 standalone VIP recovery); compiled paper/main.pdf (7 pages, 27 cited references, 0 warnings, 0 overfull/badness-10000 boxes, 0 shared prose 7-grams).
 
+## [2026-11-22T00:20:17+00:00] `M4-svlang-lint-live-crave-and-external-corpus` — 5-crate svlang+svlang-lint integration, P2/P3/P5 live CRAVE+Z3 passes, 12-file external audit, and camera-ready 8-page paper
+- **Commit**: `ff0a4e2` (`Darwin-arm64`, `rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)`)
+- **Command**: `./scripts/check.sh && python3 benchmarks/run_m4_extended.py && make -C paper clean check arxiv-tar`
+- **Measured Metrics**:
+  - `arxiv_abstract_bytes`: `1898`
+  - `live_uvm_fc4sc_cov_pct`: `100.0`
+  - `p2_lcm_tvd`: `0.0043`
+  - `p2_sliced_clamp_tvd`: `0.0978`
+  - `p3_cover_z3_ms`: `32.0`
+  - `p3_per_age_ns_per_cyc`: `3.88`
+  - `p5_feistel_pure_ns`: `4.7`
+  - `p5_w10_speedup_x`: `263.1`
+  - `paper_pages`: `8`
+  - `rq5_external_lowered`: `9/12`
+  - `rq5_opentitan_clang_pass`: `2/2`
+  - `workspace_rust_loc`: `12305`
+- **Notes**: Verified against mayurkubavat development forks of SystemC 3.0.3, UVM-SystemC, CRAVE, and FC4SC; ORCID vector badge + realigned TikZ Fig. 1 + balanced two-column refs.
+

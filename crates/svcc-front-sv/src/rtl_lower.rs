@@ -38,7 +38,7 @@ pub fn try_lower_sv_module(filename: &str, tree: &Tree, mod_node: NodeId) -> Opt
     for ch in tree.children(mod_node) {
         match tree.kind(ch) {
             SyntaxKind::DataDecl => {
-                parse_internal_signals(&tree.text(ch), &ports, &mut signals);
+                parse_internal_signals(&tree.text(ch), &ports, &mut signals, &mut comb_blocks);
             }
             SyntaxKind::ContinuousAssign => {
                 let raw = tree.text(ch);
@@ -143,8 +143,39 @@ fn parse_ansi_port(raw: &str, cur_dir: &mut RtlPortDir) -> Option<RtlPort> {
     })
 }
 
-fn parse_internal_signals(raw: &str, ports: &[RtlPort], out: &mut Vec<RtlSignal>) {
-    let s = raw.trim().trim_end_matches(';');
+fn strip_rtl_comments(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if raw[i..].starts_with("//") {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+        } else if raw[i..].starts_with("/*") {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+            out.push(' ');
+        } else {
+            let ch = raw[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
+fn parse_internal_signals(
+    raw: &str,
+    ports: &[RtlPort],
+    out: &mut Vec<RtlSignal>,
+    comb_blocks: &mut Vec<RtlCombBlock>,
+) {
+    let cleaned = strip_rtl_comments(raw);
+    let s = cleaned.trim().trim_end_matches(';');
     if !(s.starts_with("logic")
         || s.starts_with("reg")
         || s.starts_with("wire")
@@ -152,15 +183,18 @@ fn parse_internal_signals(raw: &str, ports: &[RtlPort], out: &mut Vec<RtlSignal>
     {
         return;
     }
-    let signed = s.split_whitespace().any(|w| w == "signed");
-    let width = parse_packed_width(s);
-    let after_ty: String = if let Some((_, rhs)) = s.rsplit_once(']') {
-        rhs.to_string()
+    let before_eq = s.split('=').next().unwrap_or(s);
+    let signed = before_eq.split_whitespace().any(|w| w == "signed");
+    let width = parse_packed_width(before_eq);
+    let after_ty: String = if let Some(rb_pos) = before_eq.rfind(']') {
+        s[rb_pos + 1..].to_string()
     } else {
         s.split_whitespace().skip(1).collect::<Vec<_>>().join(" ")
     };
     for decl in after_ty.split(',') {
-        let nm = decl.split('=').next().unwrap_or("").trim();
+        let mut parts = decl.splitn(2, '=');
+        let nm = parts.next().unwrap_or("").trim();
+        let init_rhs = parts.next().map(str::trim);
         if !nm.is_empty() && !ports.iter().any(|p| p.name == nm) {
             out.push(RtlSignal {
                 name: nm.to_string(),
@@ -168,6 +202,19 @@ fn parse_internal_signals(raw: &str, ports: &[RtlPort], out: &mut Vec<RtlSignal>
                 signed,
                 is_reg: false,
             });
+            if let Some(rhs) = init_rhs.filter(|r| !r.is_empty()) {
+                let stmts = vec![RtlStmt::Assign {
+                    lhs: nm.to_string(),
+                    rhs: normalize_sv_rtl_expr(rhs),
+                    nonblocking: false,
+                }];
+                let sens = infer_comb_sensitivity(&stmts, ports, out);
+                comb_blocks.push(RtlCombBlock {
+                    name: format!("comb_wire_init_{}", comb_blocks.len()),
+                    sensitivity: sens,
+                    stmts,
+                });
+            }
         }
     }
 }

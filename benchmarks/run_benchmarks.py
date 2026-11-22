@@ -255,6 +255,7 @@ PROTO_CRAVE_HEADER = """\
 #include <tuple>
 
 namespace crave {
+inline void set_sv_signedness(bool) {}
 struct VarTerm { uint32_t id; };
 
 template <typename Op, typename L, typename R>

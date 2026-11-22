@@ -1,0 +1,582 @@
+{
+  "live_accellera_crave_p2_p5": {
+    "live_uvm_fc4sc_smoke": {
+      "randomize_draws": 200,
+      "soft_constraint_override_ok": true,
+      "fc4sc_inst_coverage_pct": 100.0
+    },
+    "P2_dist_100k": {
+      "draws_per_experiment": 100000,
+      "case1_0_2_split10_3_per2": {
+        "ieee_target_probs": [
+          0.277778,
+          0.277778,
+          0.277778,
+          0.166667
+        ],
+        "unscaled_weighted_range": {
+          "counts": [
+            28230,
+            27873,
+            27405,
+            16492
+          ],
+          "tvd_vs_ieee": 0.005474,
+          "jsd_bits_vs_ieee": 2.6e-05,
+          "chi2_vs_ieee": 14.521784,
+          "elapsed_ms": 4170.05025
+        },
+        "lcm_scaled_weighted_range": {
+          "counts": [
+            27796,
+            27964,
+            27678,
+            16562
+          ],
+          "tvd_vs_ieee": 0.002044,
+          "jsd_bits_vs_ieee": 4e-06,
+          "chi2_vs_ieee": 2.276096,
+          "elapsed_ms": 8466.520125
+        },
+        "tvd_unscaled_vs_lcm": 0.00434,
+        "naive_int_floor_per_elem": {
+          "counts": [
+            27697,
+            27371,
+            26986,
+            17946
+          ],
+          "tvd_vs_ieee": 0.012793,
+          "jsd_bits_vs_ieee": 0.000223,
+          "chi2_vs_ieee": 126.962216
+        },
+        "constrained_x_ge_1_unscaled": {
+          "counts": [
+            0,
+            48239,
+            35043,
+            16718
+          ],
+          "tvd_vs_ieee": 0.097775,
+          "chi2_vs_ieee": 4541.636593
+        },
+        "constrained_x_ge_1_lcm": {
+          "counts": [
+            0,
+            48553,
+            34867,
+            16580
+          ],
+          "tvd_vs_ieee": 0.100915,
+          "chi2_vs_ieee": 4812.816281
+        }
+      },
+      "case2_0_15_split5_16_per5": {
+        "unscaled_weighted_range": {
+          "counts": [
+            3050,
+            3152,
+            3147,
+            3238,
+            3123,
+            3154,
+            3135,
+            3010,
+            3158,
+            3173,
+            3171,
+            3144,
+            3077,
+            3103,
+            3068,
+            3014,
+            50083
+          ],
+          "tvd_vs_ieee": 0.0043,
+          "jsd_bits_vs_ieee": 3.4e-05,
+          "chi2_vs_ieee": 18.69938,
+          "elapsed_ms": 5345.850125
+        },
+        "lcm_scaled_weighted_range": {
+          "counts": [
+            3052,
+            3287,
+            3115,
+            3127,
+            3122,
+            3113,
+            3137,
+            3110,
+            3185,
+            3119,
+            3161,
+            3080,
+            3089,
+            3090,
+            3035,
+            3018,
+            50160
+          ],
+          "tvd_vs_ieee": 0.00432,
+          "jsd_bits_vs_ieee": 3.6e-05,
+          "chi2_vs_ieee": 20.10432,
+          "elapsed_ms": 5364.564375
+        },
+        "tvd_unscaled_vs_lcm": 0.00359,
+        "naive_int_floor_per_elem": {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            100000
+          ],
+          "tvd_vs_ieee": 0.5,
+          "jsd_bits_vs_ieee": 0.311278,
+          "chi2_vs_ieee": 100000.0
+        },
+        "constrained_x_ge_8_unscaled": {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4178,
+            3173,
+            3171,
+            3144,
+            3077,
+            3103,
+            3068,
+            3014,
+            74072
+          ],
+          "tvd_vs_ieee": 0.074167,
+          "chi2_vs_ieee": 2713.58528
+        },
+        "constrained_x_ge_8_lcm": {
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4110,
+            3119,
+            3161,
+            3080,
+            3089,
+            3090,
+            3035,
+            3018,
+            74298
+          ],
+          "tvd_vs_ieee": 0.076313,
+          "chi2_vs_ieee": 2844.84854
+        }
+      }
+    },
+    "P5_randc_scaling": {
+      "crave_native_randc_gt16_throws": true,
+      "crave_native_randc_gt16_error": "A randc variable must not have more than 16 bits.",
+      "crave_history_exclusion": [
+        {
+          "W": 4,
+          "domain_size": 16,
+          "unique_values": 16,
+          "total_ms": 26.0872,
+          "mean_us_per_call": 1630.4479,
+          "p50_us_per_call": 1605.751,
+          "p99_us_per_call": 2358.999,
+          "last_step_us": 1663.708
+        },
+        {
+          "W": 6,
+          "domain_size": 64,
+          "unique_values": 64,
+          "total_ms": 176.2725,
+          "mean_us_per_call": 2754.2572,
+          "p50_us_per_call": 2760.958,
+          "p99_us_per_call": 4682.875,
+          "last_step_us": 3917.5
+        },
+        {
+          "W": 8,
+          "domain_size": 256,
+          "unique_values": 256,
+          "total_ms": 1842.1357,
+          "mean_us_per_call": 7195.8424,
+          "p50_us_per_call": 7357.125,
+          "p99_us_per_call": 12958.916,
+          "last_step_us": 12858.458
+        },
+        {
+          "W": 10,
+          "domain_size": 1024,
+          "unique_values": 1024,
+          "total_ms": 28630.1388,
+          "mean_us_per_call": 27959.12,
+          "p50_us_per_call": 25225.749,
+          "p99_us_per_call": 68025.875,
+          "last_step_us": 41382.375
+        }
+      ],
+      "crave_native_randc": [
+        {
+          "W": 4,
+          "domain_size": 16,
+          "unique_values": 16,
+          "total_ms": 0.8996,
+          "mean_us_per_call": 56.2266,
+          "p50_us_per_call": 14.25,
+          "p99_us_per_call": 682.625,
+          "last_step_us": 13.375
+        },
+        {
+          "W": 8,
+          "domain_size": 256,
+          "unique_values": 256,
+          "total_ms": 4.3607,
+          "mean_us_per_call": 17.034,
+          "p50_us_per_call": 14.666,
+          "p99_us_per_call": 43.125,
+          "last_step_us": 15.708
+        },
+        {
+          "W": 10,
+          "domain_size": 1024,
+          "unique_values": 1024,
+          "total_ms": 17.1358,
+          "mean_us_per_call": 16.7342,
+          "p50_us_per_call": 15.375,
+          "p99_us_per_call": 34.292,
+          "last_step_us": 15.375
+        },
+        {
+          "W": 12,
+          "domain_size": 4096,
+          "unique_values": 4096,
+          "total_ms": 72.4658,
+          "mean_us_per_call": 17.6918,
+          "p50_us_per_call": 16.458,
+          "p99_us_per_call": 32.25,
+          "last_step_us": 16.5
+        },
+        {
+          "W": 16,
+          "domain_size": 65536,
+          "unique_values": 65536,
+          "total_ms": 1863.399,
+          "mean_us_per_call": 28.4332,
+          "p50_us_per_call": 27.208,
+          "p99_us_per_call": 72.333,
+          "last_step_us": 24.5
+        }
+      ],
+      "svcc_randc_feistel_pure": [
+        {
+          "W": 4,
+          "domain_size": 16,
+          "unique_values": 16,
+          "total_ms": 0.0001,
+          "mean_us_per_call": 0.0046,
+          "p50_us_per_call": 0.0046,
+          "p99_us_per_call": 0.0046,
+          "last_step_us": 0.0046
+        },
+        {
+          "W": 8,
+          "domain_size": 256,
+          "unique_values": 256,
+          "total_ms": 0.0011,
+          "mean_us_per_call": 0.0042,
+          "p50_us_per_call": 0.0042,
+          "p99_us_per_call": 0.0042,
+          "last_step_us": 0.0042
+        },
+        {
+          "W": 10,
+          "domain_size": 1024,
+          "unique_values": 1024,
+          "total_ms": 0.0037,
+          "mean_us_per_call": 0.0037,
+          "p50_us_per_call": 0.0037,
+          "p99_us_per_call": 0.0037,
+          "last_step_us": 0.0037
+        },
+        {
+          "W": 12,
+          "domain_size": 4096,
+          "unique_values": 4096,
+          "total_ms": 0.0175,
+          "mean_us_per_call": 0.0043,
+          "p50_us_per_call": 0.0043,
+          "p99_us_per_call": 0.0043,
+          "last_step_us": 0.0043
+        },
+        {
+          "W": 16,
+          "domain_size": 65536,
+          "unique_values": 65536,
+          "total_ms": 0.3107,
+          "mean_us_per_call": 0.0047,
+          "p50_us_per_call": 0.0047,
+          "p99_us_per_call": 0.0047,
+          "last_step_us": 0.0047
+        }
+      ],
+      "svcc_randc_feistel_in_crave_item": [
+        {
+          "W": 4,
+          "domain_size": 16,
+          "unique_values": 16,
+          "total_ms": 3.1361,
+          "mean_us_per_call": 196.0078,
+          "p50_us_per_call": 121.625,
+          "p99_us_per_call": 1382.917,
+          "last_step_us": 121.292
+        },
+        {
+          "W": 8,
+          "domain_size": 256,
+          "unique_values": 256,
+          "total_ms": 28.591,
+          "mean_us_per_call": 111.6836,
+          "p50_us_per_call": 117.708,
+          "p99_us_per_call": 208.042,
+          "last_step_us": 88.208
+        },
+        {
+          "W": 10,
+          "domain_size": 1024,
+          "unique_values": 1024,
+          "total_ms": 108.8105,
+          "mean_us_per_call": 106.2603,
+          "p50_us_per_call": 100.834,
+          "p99_us_per_call": 183.708,
+          "last_step_us": 131.125
+        },
+        {
+          "W": 12,
+          "domain_size": 4096,
+          "unique_values": 4096,
+          "total_ms": 389.1603,
+          "mean_us_per_call": 95.0098,
+          "p50_us_per_call": 95.458,
+          "p99_us_per_call": 150.084,
+          "last_step_us": 100.708
+        },
+        {
+          "W": 16,
+          "domain_size": 65536,
+          "unique_values": 65536,
+          "total_ms": 5027.1308,
+          "mean_us_per_call": 76.7079,
+          "p50_us_per_call": 80.125,
+          "p99_us_per_call": 135.0,
+          "last_step_us": 83.709
+        }
+      ]
+    }
+  },
+  "p3_cover_multiplicity": {
+    "windows": [
+      {
+        "window": "##[1:3]",
+        "span": 3,
+        "burst_ieee_expected": 3,
+        "burst_bitmask_got": 1,
+        "burst_per_age_got": 3,
+        "rand10m_bitmask_hits": 1186071,
+        "rand10m_per_age_hits": 2472713,
+        "bitmask_ns_per_cycle": 0.95,
+        "per_age_ns_per_cycle": 1.42,
+        "undercount_ratio_rand10m": 2.08
+      },
+      {
+        "window": "##[1:8]",
+        "span": 8,
+        "burst_ieee_expected": 8,
+        "burst_bitmask_got": 1,
+        "burst_per_age_got": 8,
+        "rand10m_bitmask_hits": 1198516,
+        "rand10m_per_age_hits": 4919037,
+        "bitmask_ns_per_cycle": 0.96,
+        "per_age_ns_per_cycle": 2.18,
+        "undercount_ratio_rand10m": 4.1
+      },
+      {
+        "window": "##[2:16]",
+        "span": 15,
+        "burst_ieee_expected": 14,
+        "burst_bitmask_got": 1,
+        "burst_per_age_got": 14,
+        "rand10m_bitmask_hits": 1198826,
+        "rand10m_per_age_hits": 6486209,
+        "bitmask_ns_per_cycle": 1.01,
+        "per_age_ns_per_cycle": 2.36,
+        "undercount_ratio_rand10m": 5.41
+      },
+      {
+        "window": "##[4:32]",
+        "span": 29,
+        "burst_ieee_expected": 26,
+        "burst_bitmask_got": 1,
+        "burst_per_age_got": 26,
+        "rand10m_bitmask_hits": 1198658,
+        "rand10m_per_age_hits": 7343656,
+        "bitmask_ns_per_cycle": 1.02,
+        "per_age_ns_per_cycle": 3.88,
+        "undercount_ratio_rand10m": 6.13
+      }
+    ]
+  },
+  "rq5_external_audit": {
+    "total_files": 12,
+    "total_sv_loc": 1515,
+    "svcc_lowered_ok": 9,
+    "clang_standalone_pass": 2,
+    "clang_with_pkg_typedefs_pass": 2,
+    "files": [
+      {
+        "suite": "OpenTitan",
+        "file": "prim_secded_inv_39_32_dec.sv",
+        "sv_loc": 62,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 124,
+        "clang_standalone_pass": true,
+        "clang_with_pkg_pass": true,
+        "diagnostic_or_note": ""
+      },
+      {
+        "suite": "OpenTitan",
+        "file": "prim_fifo_sync.sv",
+        "sv_loc": 242,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 45,
+        "clang_standalone_pass": true,
+        "clang_with_pkg_pass": true,
+        "diagnostic_or_note": ""
+      },
+      {
+        "suite": "OpenTitan",
+        "file": "prim_arbiter_ppc.sv",
+        "sv_loc": 210,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 51,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:32:25: error: use of undeclared identifier 'N'"
+      },
+      {
+        "suite": "PULP common_cells",
+        "file": "cc_credit_counter.sv",
+        "sv_loc": 57,
+        "svcc_lowered": false,
+        "emitted_cpp_lines": 0,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "error: [svcc-front-sv/parse] /Users/mkubavat/Silicon/git/svlang/references/corpus/common_cells/src/cc_credit_counter.sv:45:3: unknown macro or directive `FFARNC"
+      },
+      {
+        "suite": "PULP common_cells",
+        "file": "cc_ecc_decode.sv",
+        "sv_loc": 129,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 73,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:39:31: error: use of undeclared identifier 'syndrome'"
+      },
+      {
+        "suite": "OpenHW core-v-verif",
+        "file": "uvma_obi_memory_mstr_seq_item.sv",
+        "sv_loc": 101,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 94,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:30:23: error: use of undeclared identifier 'uvma_obi_memory_addr_b_t'"
+      },
+      {
+        "suite": "OpenHW core-v-verif",
+        "file": "uvma_obi_memory_1p2_assert.sv",
+        "sv_loc": 283,
+        "svcc_lowered": false,
+        "emitted_cpp_lines": 0,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "error: [svcc-front-sv/parse] /Users/mkubavat/Silicon/git/svlang/references/corpus/core-v-verif/lib/uvm_agents/uvma_obi_memory/src/uvma_obi_memory_1p2_assert.sv:217:3: expected an e"
+      },
+      {
+        "suite": "lowRISC ibex",
+        "file": "ibex_icache_core_req_item.sv",
+        "sv_loc": 75,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 94,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:30:23: error: use of undeclared identifier 'ibex_icache_core_trans_type_e'"
+      },
+      {
+        "suite": "lowRISC ibex",
+        "file": "ibex_icache_core_agent_cov.sv",
+        "sv_loc": 70,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 77,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:66:56: error: use of undeclared identifier 'err'"
+      },
+      {
+        "suite": "InFormal FPV",
+        "file": "fifo.sv",
+        "sv_loc": 61,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 154,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:85:33: error: use of undeclared identifier 'DEPTH'"
+      },
+      {
+        "suite": "systemc-examples",
+        "file": "apb_timer.sv",
+        "sv_loc": 159,
+        "svcc_lowered": true,
+        "emitted_cpp_lines": 213,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "<stdin>:77:39: error: expected ']'"
+      },
+      {
+        "suite": "dv-patterns",
+        "file": "after.sv",
+        "sv_loc": 66,
+        "svcc_lowered": false,
+        "emitted_cpp_lines": 0,
+        "clang_standalone_pass": false,
+        "clang_with_pkg_pass": false,
+        "diagnostic_or_note": "error: [svcc-front-sv/parse] /Users/mkubavat/Silicon/git/dv-patterns/examples/fnd-constraint-policy/after.sv:65:3: expected a statement"
+      }
+    ]
+  }
+}

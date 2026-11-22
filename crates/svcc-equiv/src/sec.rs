@@ -79,7 +79,7 @@ pub fn build_sec_btor2(
     let combined_sv =
         build_combined_sec_miter_sv(spec_mod, spec_sv_src, imp_mod, imp_sv_src, latency)?;
     let tree = svlang::syntax::parse_source(&combined_sv, "svcc_sec_miter.sv", Default::default());
-    let netlist = match lower_trees(
+    let mut netlist = match lower_trees(
         &[tree],
         &["svcc_sec_miter".to_string()],
         &[],
@@ -97,6 +97,7 @@ pub fn build_sec_btor2(
             ));
         }
     };
+    let _ = netlist.compile_properties(&svlang::netlist::PropertyOptions::default());
     let btor_model = svlang::btor2::write(&netlist, &svlang::btor2::Options::default())
         .map_err(|e| UvirError::new("svcc-equiv/btor2", format!("btor2 write failed: {e:?}")))?;
     Ok(btor_model.btor2)

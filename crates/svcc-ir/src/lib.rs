@@ -824,6 +824,7 @@ pub struct TargetCapabilities {
     pub native_randc: bool,
     pub native_covergroups: bool,
     pub ieee_1800_context_widths: bool,
+    pub exact_dist_split_weights: bool,
 }
 
 impl TargetCapabilities {
@@ -840,6 +841,7 @@ impl TargetCapabilities {
             native_randc: true,
             native_covergroups: true,
             ieee_1800_context_widths: true,
+            exact_dist_split_weights: true,
         }
     }
 
@@ -856,6 +858,7 @@ impl TargetCapabilities {
             native_randc: false,
             native_covergroups: true,
             ieee_1800_context_widths: false,
+            exact_dist_split_weights: false,
         }
     }
 }

@@ -4,6 +4,7 @@
 #include <string>
 
 namespace crave {
+inline void set_sv_signedness(bool) {}
 struct expr {
   constexpr expr() = default;
   template <typename T>

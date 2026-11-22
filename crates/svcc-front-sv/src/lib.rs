@@ -79,6 +79,8 @@ impl Frontend for SvFrontend {
                         svlang::DiagnosticStage::Parser => true,
                         svlang::DiagnosticStage::Preprocessor => {
                             !d.message.contains("unknown macro or directive `uvm_")
+                                && !(self.cst_fallback
+                                    && d.message.contains("cannot find include file"))
                         }
                         _ => false,
                     }
@@ -136,7 +138,7 @@ impl Frontend for SvFrontend {
             .iter()
             .map(|e| (e.name.clone(), e.width))
             .collect();
-        let enum_consts: Vec<(String, u64, u32)> = module
+        let mut enum_consts: Vec<(String, u64, u32)> = module
             .enums
             .iter()
             .flat_map(|e| {
@@ -145,6 +147,17 @@ impl Frontend for SvFrontend {
                     .map(move |(vn, vv)| (vn.clone(), *vv, e.width))
             })
             .collect();
+
+        // Resolve `parameter` and `localparam` symbolic constants across packages, classes, and modules
+        // via `svlang::semantic::oracle::TypeOracle::eval`!
+        let oracle = comp.type_oracle();
+        for (tree_idx, tree) in trees.iter().enumerate() {
+            collect_oracle_param_consts(&oracle, tree_idx, tree, tree.root, &mut enum_consts);
+        }
+
+        // Enrich parameterized RTL port/signal bit-widths (`[DW-1:0]`, `typedef`s) via `comp.elaborate()`
+        let elab = comp.elaborate();
+        enrich_rtl_modules_from_elaboration(&elab, &mut module.rtl_modules);
         let clocking_names: HashSet<String> =
             module.clockings.iter().map(|c| c.name.clone()).collect();
 
@@ -349,6 +362,69 @@ impl Frontend for SvFrontend {
             rtl_modules_lowered: module.rtl_modules.len(),
         };
         Ok((module, metrics))
+    }
+}
+
+fn collect_oracle_param_consts(
+    oracle: &svlang::semantic::oracle::TypeOracle,
+    tree_idx: usize,
+    tree: &Tree,
+    node: NodeId,
+    out: &mut Vec<(String, u64, u32)>,
+) {
+    if tree.kind(node) == SyntaxKind::ParamDecl {
+        for ch in tree.children(node) {
+            if tree.kind(ch) == SyntaxKind::Declarator {
+                let pname = tree
+                    .child(ch, SyntaxKind::Name)
+                    .map(|n| tree.bare_text(n).trim().to_string());
+                let val_node = tree
+                    .children(ch)
+                    .find(|&c| !matches!(tree.kind(c), SyntaxKind::Name | SyntaxKind::Dim));
+                if let (Some(name), Some(vn)) = (pname, val_node) {
+                    if let Some((ival, w, _signed)) = oracle.eval(tree_idx, vn) {
+                        out.push((name, ival as u64, w.max(1)));
+                    }
+                }
+            }
+        }
+    }
+    for ch in tree.children(node) {
+        collect_oracle_param_consts(oracle, tree_idx, tree, ch, out);
+    }
+}
+
+fn enrich_rtl_modules_from_elaboration(
+    elab: &svlang::Elaborated,
+    rtl_modules: &mut [svcc_ir::RtlModule],
+) {
+    for rtl_m in rtl_modules {
+        let Some(inst) = elab
+            .design
+            .instances
+            .iter()
+            .find(|i| i.definition == rtl_m.name)
+        else {
+            continue;
+        };
+        for &sid in &inst.ports {
+            let sym = elab.design.symbol(sid);
+            if let Some(bw) = sym.ty.bit_width() {
+                if let Some(p) = rtl_m.ports.iter_mut().find(|p| p.name == sym.name) {
+                    p.width = bw.max(1);
+                    p.signed = sym.ty.is_signed();
+                }
+            }
+        }
+        for &sid in &inst.symbols {
+            let sym = elab.design.symbol(sid);
+            if let Some(bw) = sym.ty.bit_width() {
+                if let Some(sig) = rtl_m.signals.iter_mut().find(|s| s.name == sym.name) {
+                    sig.width = bw.max(1);
+                    sig.signed = sym.ty.is_signed();
+                }
+            }
+        }
     }
 }
 
@@ -1241,6 +1317,13 @@ fn collect_constraint_clauses(
             }
         }
         let raw = tree.text(item);
+        let stripped_item = strip_sv_comments(&raw);
+        let st_trim = stripped_item.trim();
+        // IEEE 1800-2023 §18.5.10 `solve ... before ...` is a distribution hint that never changes
+        // the satisfiable solution set; skip non-value ordering hints cleanly.
+        if st_trim.starts_with("solve ") {
+            continue;
+        }
         if let Some(clause) = crv_parser::lower_sv_constraint_item(&raw, arena, enum_consts)? {
             out.push(clause);
         }
@@ -1380,15 +1463,46 @@ fn parse_bin_stmt(stmt: &str) -> Option<CovBin> {
     Some(CovBin { name: bname, kind })
 }
 
+fn strip_sv_comments(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if raw[i..].starts_with("//") {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+        } else if raw[i..].starts_with("/*") {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+            out.push(' ');
+        } else {
+            let ch = raw[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
 fn parse_cross_text(raw: &str, idx: usize) -> Option<CrossDecl> {
-    let head = raw
+    let cleaned = strip_sv_comments(raw);
+    let head = cleaned
         .split('{')
         .next()
-        .unwrap_or(raw)
+        .unwrap_or(&cleaned)
         .trim()
         .trim_end_matches(';');
     let (lhs, rhs) = head.split_once("cross")?;
-    let lbl = lhs.trim().trim_end_matches(':').trim();
+    let lbl = lhs
+        .trim()
+        .trim_end_matches(':')
+        .split_whitespace()
+        .last()
+        .unwrap_or("");
     let name = if lbl.is_empty() {
         format!("cross_{idx}")
     } else {
