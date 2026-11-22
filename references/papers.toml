@@ -1,0 +1,1989 @@
+# Related-work library for svcc. Single source of truth: edit this file, then run
+#   python3 scripts/refs.py all      (validate, regenerate INDEX.md and survey.bib)
+#   python3 scripts/refs.py fetch    (download open-access PDFs into references/pdfs/, gitignored)
+#
+# Fields: key (BibTeX key), section, priority (core | related | background), title, authors,
+# year, venue, type (BibTeX entry type), url (landing page), note (relevance to svcc).
+# Optional: doi, arxiv, pages, publisher, pdf_url (direct legal open-access PDF; fetched),
+# oa_page (open copy that is not a direct PDF link), in_paper (key already in paper/refs.bib).
+
+[[section]]
+id = "synth"
+title = "Synthesizable subsets and SystemC-to-RTL translation"
+blurb = "The top priority for svcc: what the synthesizable subsets of SystemC (IEEE 1666.1) and SystemVerilog actually are, and the tools that translate cycle-accurate SystemC into RTL. These define the constructs a design-model conversion must accept, reject, or lower."
+
+[[section]]
+id = "sem"
+title = "Formal and simulation semantics of Verilog and SystemC"
+blurb = "Accurate conversion needs a precise account of both sides' scheduling semantics: blocking versus nonblocking assignment, delta cycles, four-state values, and where simulation and synthesis disagree."
+
+[[section]]
+id = "sv2c"
+title = "HDL-to-SystemC and HDL-to-C++ translation"
+blurb = "Prior tools that go in svcc's SV-to-SystemC direction: RTL-to-SystemC converters, RTL-to-TLM abstraction, and RTL-to-C/C++ compilers used for simulation or verification."
+
+[[section]]
+id = "ec"
+title = "C/SystemC-to-RTL equivalence checking and SystemC formal verification"
+blurb = "Sequential equivalence checking between system-level models and RTL (the C2RTL / SLEC line that svcc's Btor2 SEC follows), the solvers and model checkers behind it, and formal analysis of SystemC itself."
+
+[[section]]
+id = "tv"
+title = "Translation validation and compiler correctness"
+blurb = "Per-run validation of a compiler's output versus verified compilers, applied to software compilers and to HLS. This is the methodological basis for svcc's checked translation."
+
+[[section]]
+id = "hls"
+title = "High-level synthesis"
+blurb = "Surveys and representative HLS tools. Useful for the C++ coding restrictions HLS imposes and for where untimed synthesis differs from the cycle-accurate subset svcc targets first."
+
+[[section]]
+id = "ir"
+title = "Hardware IRs and compiler infrastructure"
+blurb = "Multi-level and multi-dialect IRs for hardware, the design space svcc-ir sits in."
+
+[[section]]
+id = "dv"
+title = "UVM-SystemC, constrained random and coverage"
+blurb = "The DV-modeling side: UVM in SystemC, CRAVE, FC4SC, and mixed SV/SystemC verification flows."
+
+[[section]]
+id = "llm"
+title = "LLM-based RTL generation and translation"
+blurb = "Learned approaches to the same translation problems. Relevant as baselines and as the consumers of a checked translator."
+
+[[section]]
+id = "std"
+title = "Standards, books and the author's own tools"
+blurb = "Normative references and background cited by the paper."
+
+# ============================================================================
+# Synthesizable subsets and SystemC-to-RTL translation
+# ============================================================================
+
+[[paper]]
+key = "zheng2026bidir"
+section = "synth"
+priority = "core"
+title = "High-Efficiency Bidirectional Translator between SystemC and Verilog"
+authors = ["Xin Zheng", "Yongfeng Zhong", "Chenyu Huang", "Shaofen Zeng", "Huaien Gao", "Shuting Cai", "Xiaoming Xiong"]
+year = 2026
+venue = "ACM JETC 22(2), 2026"
+type = "article"
+pages = "1-19"
+doi = "10.1145/3798042"
+url = "https://doi.org/10.1145/3798042"
+note = "A bidirectional SystemC/Verilog translator published in 2026: the nearest competing claim to svcc's. Paywalled and not yet read; it must be read and positioned against before submission."
+
+[[paper]]
+key = "wu2023sccl"
+section = "synth"
+priority = "core"
+title = "SCCL: An open-source SystemC to RTL translator"
+authors = ["Zhuanhao Wu", "Maya Gokhale", "Scott Lloyd", "Hiren Patel"]
+year = 2023
+venue = "FCCM 2023"
+type = "inproceedings"
+pages = "23-33"
+doi = "10.1109/fccm57271.2023.00012"
+url = "https://doi.org/10.1109/fccm57271.2023.00012"
+pdf_url = "https://www.osti.gov/servlets/purl/1974669"
+note = "Open-source SystemC-to-RTL translator built on systemc-clang with its own intermediate form (HCode). Direct comparison point for SC_MODULE lifting and for which constructs a Clang-based front end can recover."
+
+[[paper]]
+key = "moiseev2019icsc"
+section = "synth"
+priority = "core"
+title = "SystemC-to-Verilog Compiler: A Productivity-Focused Tool for Hardware Design in Cycle-Accurate SystemC"
+authors = ["Mikhail Moiseev", "Roman Popov", "Ilya Klotchkov"]
+year = 2019
+venue = "DVCon Europe (slides; the archive lists both 2018 and 2019)"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/systemc-to-verilog-compiler-a-productivity-focused-tool-for-hardware-design-in-cycle-accurate-systemc/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/SystemC-to-Verilog-Compiler-a-productivity-focused-tool-for-hardware-design-in-cycle-accurate-SystemC.pdf"
+note = "Intel Compiler for SystemC: translates cycle-accurate SystemC (SC_METHOD, SC_CTHREAD, modular interfaces) to readable SystemVerilog. The closest open tool to svcc's SystemC-to-SV direction and a natural differential-testing partner. Confirm the year before citing."
+
+[[paper]]
+key = "accellera2016synth"
+section = "synth"
+priority = "core"
+title = "SystemC Synthesizable Subset, Version 1.4.7"
+authors = ["{Accellera Systems Initiative}"]
+year = 2016
+venue = "Accellera standard, version 1.4.7"
+type = "misc"
+url = "https://www.accellera.org/downloads/standards/systemc"
+oa_page = "https://www.accellera.org/downloads/standards/systemc"
+note = "The Accellera text that became IEEE 1666.1; freely downloadable and easier to quote. Lists supported and unsupported types, process kinds, reset and clocking forms."
+
+[[paper]]
+key = "ieee1666_1_2016"
+section = "synth"
+priority = "core"
+title = "IEEE Standard for Standard SystemC Language Reference Manual: Synthesizable Subset"
+authors = ["{IEEE}"]
+year = 2016
+venue = "IEEE Std 1666.1-2016"
+type = "misc"
+doi = "10.1109/IEEESTD.2016.7438896"
+url = "https://doi.org/10.1109/IEEESTD.2016.7438896"
+in_paper = true
+note = "The normative SystemC synthesizable subset. svcc's fail-closed C2RTL and SC_MODULE lifting rules should be traceable to its clauses; free through the IEEE GET program."
+
+[[paper]]
+key = "sutherland2014synth"
+section = "synth"
+priority = "core"
+title = "Can My Synthesis Compiler Do That? What ASIC and FPGA Synthesis Compilers Support in the SystemVerilog-2012 Standard"
+authors = ["Stuart Sutherland", "Don Mills"]
+year = 2014
+venue = "DVCon US 2014"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/can-my-synthesis-compiler-do-that/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/can-my-synthesis-compiler-do-that.pdf"
+note = "Construct-by-construct table of what ASIC and FPGA synthesis tools accept from SystemVerilog-2012. The practical definition of the synthesizable SV subset; use it as the checklist for svcc's SV front-end coverage."
+
+[[paper]]
+key = "edwards2006challenges"
+section = "synth"
+priority = "core"
+title = "The Challenges of Synthesizing Hardware from C-Like Languages"
+authors = ["Stephen A. Edwards"]
+year = 2006
+venue = "IEEE Design & Test 23(5), 2006"
+type = "article"
+pages = "375-386"
+doi = "10.1109/mdt.2006.134"
+arxiv = "0710.4683"
+url = "https://doi.org/10.1109/mdt.2006.134"
+pdf_url = "https://arxiv.org/pdf/0710.4683"
+note = "Why C-like languages are a poor fit for hardware: concurrency, timing, types, and communication. The argument behind restricting to a cycle-accurate subset. The DATE 2005 short version is on arXiv."
+
+[[paper]]
+key = "ieee1364_1_2002"
+section = "synth"
+priority = "core"
+title = "IEEE Standard for Verilog Register Transfer Level Synthesis"
+authors = ["{IEEE}"]
+year = 2002
+venue = "IEEE Std 1364.1-2002 (withdrawn)"
+type = "misc"
+doi = "10.1109/IEEESTD.2002.94220"
+url = "https://doi.org/10.1109/IEEESTD.2002.94220"
+note = "The only IEEE definition of a synthesizable Verilog subset. There is no SystemVerilog successor, so it plus vendor practice (see sutherland2014synth) is the reference for what svcc should treat as synthesizable SV."
+
+[[paper]]
+key = "khailany2018modular"
+section = "synth"
+priority = "related"
+title = "A modular digital VLSI flow for high-productivity SoC design"
+authors = ["Brucek Khailany", "Evgeni Khmer", "Rangharajan Venkatesan", "Jason Clemons", "Joel S. Emer", "Matthew Fojtik", "Alicia Klinefelter", "Michael Pellauer", "Nathaniel Pinckney", "Yakun Sophia Shao", "Shreesha Srinath", "Christopher Torng", "Sam (Likun) Xi", "Yanqing Zhang", "Brian Zimmer"]
+year = 2018
+venue = "DAC 2018"
+type = "inproceedings"
+pages = "1-6"
+doi = "10.1145/3195970.3199846"
+url = "https://doi.org/10.1145/3195970.3199846"
+note = "NVIDIA's SystemC/HLS flow with MatchLib and latency-insensitive channels. Industrial evidence of which synthesizable SystemC styles are used at scale."
+
+[[paper]]
+key = "marquet2010pinavm"
+section = "synth"
+priority = "related"
+title = "PinaVM: A SystemC Front-End Based on an Executable Intermediate Representation"
+authors = ["Kevin Marquet", "Matthieu Moy"]
+year = 2010
+venue = "EMSOFT 2010"
+type = "inproceedings"
+pages = "79-88"
+doi = "10.1145/1879021.1879032"
+url = "https://doi.org/10.1145/1879021.1879032"
+oa_page = "https://hal.science/hal-00495874"
+note = "SystemC front end that executes elaboration and then analyzes LLVM IR. Shows why SystemC needs elaboration-aware front ends, which applies to svcc-front-sc."
+
+[[paper]]
+key = "bollaert2008catapult"
+section = "synth"
+priority = "related"
+title = "Catapult Synthesis: A Practical Introduction to Interactive C Synthesis"
+authors = ["Thomas Bollaert"]
+year = 2008
+venue = "High-Level Synthesis: From Algorithm to Digital Circuit (Springer), 2008"
+type = "incollection"
+pages = "29-52"
+doi = "10.1007/978-1-4020-8588-8_3"
+url = "https://doi.org/10.1007/978-1-4020-8588-8_3"
+note = "Catapult's untimed C++ synthesis model: the other industrial style a C2RTL front end meets."
+
+[[paper]]
+key = "meredith2008cynthesizer"
+section = "synth"
+priority = "related"
+title = "High-Level SystemC Synthesis with Forte's Cynthesizer"
+authors = ["Michael Meredith"]
+year = 2008
+venue = "High-Level Synthesis: From Algorithm to Digital Circuit (Springer), 2008"
+type = "incollection"
+pages = "75-97"
+doi = "10.1007/978-1-4020-8588-8_5"
+url = "https://doi.org/10.1007/978-1-4020-8588-8_5"
+note = "Describes the SystemC subset and coding style Forte Cynthesizer (now Stratus) synthesizes, including multi-wait SC_CTHREAD protocols that svcc currently refuses."
+
+[[paper]]
+key = "grimpe2003oosynth"
+section = "synth"
+priority = "background"
+title = "Object Oriented Hardware Design and Synthesis Based on SystemC 2.0"
+authors = ["Eike Grimpe", "Wolfgang Nebel", "Frank Oppenheimer", "Thorsten Schubert"]
+year = 2003
+venue = "SystemC: Methodologies and Applications (Kluwer), 2003"
+type = "incollection"
+pages = "217-246"
+doi = "10.1007/0-306-48735-7_8"
+url = "https://doi.org/10.1007/0-306-48735-7_8"
+note = "Early treatment of synthesizing object-oriented SystemC (classes, polymorphism) to RTL."
+
+[[paper]]
+key = "panda2001systemc"
+section = "synth"
+priority = "background"
+title = "SystemC: A Modeling Platform Supporting Multiple Design Abstractions"
+authors = ["Preeti Ranjan Panda"]
+year = 2001
+venue = "ISSS 2001"
+type = "inproceedings"
+pages = "75-80"
+doi = "10.1145/500001.500018"
+url = "https://doi.org/10.1145/500001.500018"
+note = "Early overview of SystemC's abstraction levels from RTL to system level."
+
+# ============================================================================
+# Formal and simulation semantics of Verilog and SystemC
+# ============================================================================
+
+[[paper]]
+key = "loow2025simsem"
+section = "sem"
+priority = "core"
+title = "The Simulation Semantics of Synthesisable Verilog"
+authors = ["Andreas Lööw"]
+year = 2025
+venue = "PACMPL 9 (OOPSLA1), 2025"
+type = "article"
+pages = "1295-1320"
+doi = "10.1145/3720484"
+arxiv = "2502.19348"
+url = "https://doi.org/10.1145/3720484"
+pdf_url = "https://arxiv.org/pdf/2502.19348"
+note = "Formal simulation semantics for exactly the synthesizable Verilog fragment, with attention to blocking/nonblocking scheduling. The best available specification for what svcc must preserve on the SV side."
+
+[[paper]]
+key = "chen2023essence"
+section = "sem"
+priority = "core"
+title = "The Essence of Verilog: A Tractable and Tested Operational Semantics for Verilog"
+authors = ["Qinlin Chen", "Nairen Zhang", "Jinpeng Wang", "Tian Tan", "Chang Xu", "Xiaoxing Ma", "Yue Li"]
+year = 2023
+venue = "PACMPL 7 (OOPSLA2), 2023"
+type = "article"
+pages = "234-263"
+doi = "10.1145/3622805"
+url = "https://doi.org/10.1145/3622805"
+pdf_url = "https://dl.acm.org/doi/pdf/10.1145/3622805"
+note = "Tractable, tested operational semantics for Verilog's event scheduling, validated against simulators. A reference for the SV scheduling regions svcc maps onto SystemC delta cycles."
+
+[[paper]]
+key = "mueller2001simsem"
+section = "sem"
+priority = "core"
+title = "The simulation semantics of SystemC"
+authors = ["Wolfgang Mueller", "Jürgen Ruf", "Dirk Hoffmann", "Joachim Gerlach", "Thomas Kropf", "Wolfgang Rosenstiel"]
+year = 2001
+venue = "DATE 2001"
+type = "inproceedings"
+pages = "64-70"
+doi = "10.1109/date.2001.915002"
+url = "https://doi.org/10.1109/date.2001.915002"
+note = "Abstract-state-machine definition of the SystemC scheduler (evaluate, update, delta notification). The SystemC counterpart to the Verilog semantics papers."
+
+[[paper]]
+key = "cummings2000nba"
+section = "sem"
+priority = "core"
+title = "Nonblocking Assignments in Verilog Synthesis, Coding Styles That Kill!"
+authors = ["Clifford E. Cummings"]
+year = 2000
+venue = "SNUG San Jose 2000"
+type = "inproceedings"
+url = "http://www.sunburst-design.com/papers/CummingsSNUG2000SJ_NBA.pdf"
+oa_page = "http://www.sunburst-design.com/papers/CummingsSNUG2000SJ_NBA.pdf"
+note = "The standard practitioner account of blocking versus nonblocking assignment and the race conditions each coding style causes. These are the cases an SV-to-SystemC mapping (sc_signal write versus variable assignment) must get right."
+
+[[paper]]
+key = "mills1999mismatch"
+section = "sem"
+priority = "core"
+title = "RTL Coding Styles That Yield Simulation and Synthesis Mismatches"
+authors = ["Don Mills", "Clifford E. Cummings"]
+year = 1999
+venue = "SNUG San Jose 1999"
+type = "inproceedings"
+url = "http://www.sunburst-design.com/papers/CummingsSNUG1999SJ_SynthMismatch.pdf"
+oa_page = "http://www.sunburst-design.com/papers/CummingsSNUG1999SJ_SynthMismatch.pdf"
+note = "Catalog of RTL styles where simulation and synthesis disagree (incomplete sensitivity lists, full_case/parallel_case, X handling). Each is a potential silent mistranslation and makes a good negative test."
+
+[[paper]]
+key = "zhao2026kcirct"
+section = "sem"
+priority = "related"
+title = "K-CIRCT: A Layered, Composable, and Executable Formal Semantics for CIRCT Dialects"
+authors = ["Jianhong Zhao", "Jinhui Kang", "Yiming Chen", "Yongwang Zhao"]
+year = 2026
+venue = "Formal Aspects of Computing, 2026"
+type = "article"
+doi = "10.1145/3849806"
+arxiv = "2404.18756"
+url = "https://doi.org/10.1145/3849806"
+pdf_url = "https://arxiv.org/pdf/2404.18756"
+note = "Executable K semantics for CIRCT dialects. A model for giving svcc-ir dialects a checked semantics."
+
+[[paper]]
+key = "loow2021lutsig"
+section = "sem"
+priority = "related"
+title = "Lutsig: a verified Verilog compiler for verified circuit development"
+authors = ["Andreas Lööw"]
+year = 2021
+venue = "CPP 2021"
+type = "inproceedings"
+pages = "46-60"
+doi = "10.1145/3437992.3439916"
+url = "https://doi.org/10.1145/3437992.3439916"
+note = "Verified compiler from a synthesizable Verilog subset to netlists. Shows how small the subset must be for an end-to-end proof."
+
+[[paper]]
+key = "loow2019proof"
+section = "sem"
+priority = "related"
+title = "A Proof-Producing Translator for Verilog Development in HOL"
+authors = ["Andreas Lööw", "Magnus O. Myreen"]
+year = 2019
+venue = "FormaliSE 2019"
+type = "inproceedings"
+pages = "99-108"
+doi = "10.1109/formalise.2019.00020"
+url = "https://doi.org/10.1109/formalise.2019.00020"
+note = "Proof-producing translation from HOL circuits to Verilog: validation of each run rather than of the translator."
+
+[[paper]]
+key = "meredith2010kverilog"
+section = "sem"
+priority = "related"
+title = "A formal executable semantics of Verilog"
+authors = ["Patrick Meredith", "Michael Katelman", "Jose Meseguer", "Grigore Rosu"]
+year = 2010
+venue = "MEMOCODE 2010"
+type = "inproceedings"
+pages = "179-188"
+doi = "10.1109/memcod.2010.5558634"
+url = "https://doi.org/10.1109/memcod.2010.5558634"
+pdf_url = "https://www.ideals.illinois.edu/items/17155/bitstreams/61930/data.pdf"
+note = "Executable semantics of Verilog in the K framework; exposed ambiguities in the standard and simulator disagreements."
+
+[[paper]]
+key = "flake2020verilog"
+section = "sem"
+priority = "background"
+title = "Verilog HDL and its ancestors and descendants"
+authors = ["Peter Flake", "Phil Moorby", "Steve Golson", "Arturo Salz", "Simon Davidmann"]
+year = 2020
+venue = "PACMPL 4 (HOPL), 2020"
+type = "article"
+pages = "1-90"
+doi = "10.1145/3386337"
+url = "https://doi.org/10.1145/3386337"
+pdf_url = "https://dl.acm.org/doi/pdf/10.1145/3386337"
+note = "History of Verilog and SystemVerilog by its designers; explains the origin of the scheduling and four-state rules."
+
+[[paper]]
+key = "gordon1995semantic"
+section = "sem"
+priority = "background"
+title = "The semantic challenge of Verilog HDL"
+authors = ["Mike Gordon"]
+year = 1995
+venue = "LICS 1995"
+type = "inproceedings"
+pages = "136-145"
+doi = "10.1109/lics.1995.523251"
+url = "https://doi.org/10.1109/lics.1995.523251"
+note = "Classic statement of why Verilog's simulation semantics is hard to formalize."
+
+# ============================================================================
+# HDL-to-SystemC and HDL-to-C++ translation
+# ============================================================================
+
+[[paper]]
+key = "snyder2020verilator"
+section = "sv2c"
+priority = "core"
+title = "Verilator: Open Simulation: Growing Up"
+authors = ["Wilson Snyder"]
+year = 2020
+venue = "DVCon US 2020"
+type = "inproceedings"
+url = "https://www.veripool.org/verilator/"
+in_paper = true
+note = "Verilator compiles synthesizable SV to C++ or SystemC cycle models. The dominant SV-to-SystemC path today; svcc differs by emitting readable source and checking equivalence."
+
+[[paper]]
+key = "mukherjee2016v2c"
+section = "sv2c"
+priority = "core"
+title = "v2c – A Verilog to C Translator"
+authors = ["Rajdeep Mukherjee", "Michael Tautschnig", "Daniel Kroening"]
+year = 2016
+venue = "TACAS 2016 (LNCS 9636)"
+type = "inproceedings"
+pages = "580-586"
+doi = "10.1007/978-3-662-49674-9_38"
+url = "https://doi.org/10.1007/978-3-662-49674-9_38"
+oa_page = "https://ora.ox.ac.uk/objects/uuid:69904a82-7de8-47f7-8208-899789a28d9d"
+note = "Translates synthesizable Verilog to a cycle-accurate C program so software verifiers can check RTL. Documents the bit-precise details (widths, signedness, nonblocking updates) that an SV-to-C++ emitter must reproduce."
+
+[[paper]]
+key = "bombieri2013abstract"
+section = "sv2c"
+priority = "core"
+title = "A method to abstract RTL IP blocks into C++ code and enable high-level synthesis"
+authors = ["Nicola Bombieri", "Hung-Yi Liu", "Franco Fummi", "Luca Carloni"]
+year = 2013
+venue = "DAC 2013"
+type = "inproceedings"
+pages = "1-9"
+doi = "10.1145/2463209.2488927"
+url = "https://doi.org/10.1145/2463209.2488927"
+oa_page = "https://www.sld.cs.columbia.edu/pubs/bombieri_dac13.pdf"
+note = "Abstracts RTL blocks into C++ that HLS can re-synthesize: a full RTL-to-C++-to-RTL round trip, the same loop svcc validates."
+
+[[paper]]
+key = "bombieri2011rtl2tlm"
+section = "sv2c"
+priority = "core"
+title = "Automatic Abstraction of RTL IPs into Equivalent TLM Descriptions"
+authors = ["Nicola Bombieri", "Franco Fummi", "Graziano Pravadelli"]
+year = 2011
+venue = "IEEE Transactions on Computers 60(12), 2011"
+type = "article"
+pages = "1730-1743"
+doi = "10.1109/tc.2010.187"
+url = "https://doi.org/10.1109/tc.2010.187"
+note = "Automatic abstraction of RTL IP into equivalent SystemC TLM, with a correctness argument. Relevant to the design-model use case: RTL in, faster C++ model out."
+
+[[paper]]
+key = "bombieri2010hifsuite"
+section = "sv2c"
+priority = "core"
+title = "HIFSuite: Tools for HDL Code Conversion and Manipulation"
+authors = ["Nicola Bombieri", "Giuseppe Di Guglielmo", "Michele Ferrari", "Franco Fummi", "Graziano Pravadelli", "Francesco Stefanni", "Alessandro Venturelli"]
+year = 2010
+venue = "EURASIP Journal on Embedded Systems, 2010"
+type = "article"
+doi = "10.1155/2010/436328"
+url = "https://doi.org/10.1155/2010/436328"
+oa_page = "https://doi.org/10.1155/2010/436328"
+note = "HIFSuite converts VHDL and Verilog to SystemC and back through a common intermediate format (HIF). The most direct architectural predecessor of svcc's IR-mediated, bidirectional design."
+
+[[paper]]
+key = "beamer2020essent"
+section = "sv2c"
+priority = "related"
+title = "Efficiently Exploiting Low Activity Factors to Accelerate RTL Simulation"
+authors = ["Scott Beamer", "David Donofrio"]
+year = 2020
+venue = "DAC 2020"
+type = "inproceedings"
+pages = "1-6"
+doi = "10.1109/dac18072.2020.9218632"
+url = "https://doi.org/10.1109/dac18072.2020.9218632"
+oa_page = "https://escholarship.org/uc/item/64x147r1"
+note = "ESSENT compiles FIRRTL to fast C++ simulators. Shows what the generated C++ looks like when speed, not readability, is the goal."
+
+[[paper]]
+key = "russinoff2020rac"
+section = "sv2c"
+priority = "related"
+title = "Formal Verification of Arithmetic RTL: Translating Verilog to C++ to ACL2"
+authors = ["David M. Russinoff"]
+year = 2020
+venue = "ACL2 Workshop 2020 (EPTCS 327)"
+type = "article"
+pages = "1-15"
+doi = "10.4204/eptcs.327.1"
+arxiv = "2009.13761"
+url = "https://doi.org/10.4204/eptcs.327.1"
+pdf_url = "https://arxiv.org/pdf/2009.13761"
+note = "Arm's flow: hand-translate Verilog arithmetic RTL to a restricted C++ subset, prove the C++ in ACL2, and check C++ against RTL with SLEC. An industrial use of exactly the SV/C++ equivalence svcc automates."
+
+[[paper]]
+key = "mukherjee2015hwsw"
+section = "sv2c"
+priority = "related"
+title = "Hardware Verification Using Software Analyzers"
+authors = ["Rajdeep Mukherjee", "Daniel Kroening", "Tom Melham"]
+year = 2015
+venue = "ISVLSI 2015"
+type = "inproceedings"
+pages = "7-12"
+doi = "10.1109/isvlsi.2015.107"
+url = "https://doi.org/10.1109/isvlsi.2015.107"
+oa_page = "https://ora.ox.ac.uk/objects/uuid:ed5a9eb2-3e5a-4280-b310-5707b3cca07f"
+note = "Uses v2c output with software analyzers to verify hardware; evidence that the translated C model is faithful enough for proofs."
+
+[[paper]]
+key = "oleary2014acl2"
+section = "sv2c"
+priority = "related"
+title = "Modeling Algorithms in SystemC and ACL2"
+authors = ["John W. O'Leary", "David M. Russinoff"]
+year = 2014
+venue = "ACL2 Workshop 2014 (EPTCS 152)"
+type = "article"
+pages = "145-162"
+doi = "10.4204/eptcs.152.12"
+arxiv = "1406.1565"
+url = "https://doi.org/10.4204/eptcs.152.12"
+pdf_url = "https://arxiv.org/pdf/1406.1565"
+note = "Defines a restricted, synthesizable-style SystemC subset with a formal reading in ACL2. A worked example of a small subset with unambiguous semantics."
+
+[[paper]]
+key = "syed2013vhdl2sc"
+section = "sv2c"
+priority = "related"
+title = "Extensible open-source framework for translating RTL VHDL IP cores to SystemC"
+authors = ["S. A. Syed", "Maksim Jenihhin", "Jaan Raik"]
+year = 2013
+venue = "DDECS 2013"
+type = "inproceedings"
+pages = "112-115"
+doi = "10.1109/ddecs.2013.6549799"
+url = "https://doi.org/10.1109/ddecs.2013.6549799"
+note = "Open framework translating RTL VHDL to SystemC; discusses process, signal and delta-cycle mapping, which carries over to SV."
+
+[[paper]]
+key = "takamaeda2015pyverilog"
+section = "sv2c"
+priority = "background"
+title = "Pyverilog: A Python-Based Hardware Design Processing Toolkit for Verilog HDL"
+authors = ["Shinya Takamaeda-Yamazaki"]
+year = 2015
+venue = "ARC 2015 (LNCS 9040)"
+type = "inproceedings"
+pages = "451-460"
+doi = "10.1007/978-3-319-16214-0_42"
+url = "https://doi.org/10.1007/978-3-319-16214-0_42"
+note = "Verilog parsing, dataflow analysis and code generation toolkit often used for source-to-source RTL transforms."
+
+# ============================================================================
+# C/SystemC-to-RTL equivalence checking and SystemC formal verification
+# ============================================================================
+
+[[paper]]
+key = "zhu2026equivfusion"
+section = "ec"
+priority = "core"
+title = "EquivFusion: Unifying Hardware Equivalence Checking from Algorithms to Netlists via MLIR"
+authors = ["Jiaying Zhu", "Baoqi Zhang", "Mengxia Tao", "Kezhi Li", "Hao Yan", "Qiang Xu", "Min Li"]
+year = 2026
+venue = "FSE 2026 (tool demonstration)"
+type = "inproceedings"
+pages = "102-106"
+doi = "10.1145/3803437.3806400"
+arxiv = "2604.16571"
+url = "https://doi.org/10.1145/3803437.3806400"
+pdf_url = "https://arxiv.org/pdf/2604.16571"
+note = "MLIR-based equivalence checking across abstraction levels from algorithm to netlist. Very recent, and close to svcc's IR-plus-solver architecture."
+
+[[paper]]
+key = "koelbl2009c2rtl"
+section = "ec"
+priority = "core"
+title = "Solver Technology for System-Level to RTL Equivalence Checking"
+authors = ["Alfred Koelbl", "Reily Jacoby", "Himanshu Jain", "Carl Pixley"]
+year = 2009
+venue = "DATE 2009"
+type = "inproceedings"
+pages = "196-201"
+doi = "10.1109/date.2009.5090657"
+url = "https://doi.org/10.1109/date.2009.5090657"
+in_paper = true
+note = "Word-level solver techniques for sequential equivalence between C/C++ models and RTL (Synopsys Hector). Already the paper's anchor for C2RTL."
+
+[[paper]]
+key = "mathur2009functional"
+section = "ec"
+priority = "core"
+title = "Functional Equivalence Verification Tools in High-Level Synthesis Flows"
+authors = ["Anmol Mathur", "Masahiro Fujita", "Edmund Clarke", "Pascal Urard"]
+year = 2009
+venue = "IEEE Design & Test 26(4), 2009"
+type = "article"
+pages = "88-95"
+doi = "10.1109/mdt.2009.79"
+url = "https://doi.org/10.1109/mdt.2009.79"
+note = "Survey of equivalence checking in HLS flows (SLEC and others): mapping points, transaction equivalence, and where it breaks down."
+
+[[paper]]
+key = "urard2008slec"
+section = "ec"
+priority = "core"
+title = "Leveraging sequential equivalence checking to enable system-level to RTL flows"
+authors = ["Pascal Urard", "Asma Maalej", "Roberto Guizzetti", "Nitin Chawla"]
+year = 2008
+venue = "DAC 2008"
+type = "inproceedings"
+pages = "816-821"
+doi = "10.1145/1391469.1391677"
+url = "https://doi.org/10.1145/1391469.1391677"
+note = "STMicroelectronics' experience using sequential equivalence checking to sign off system-level-to-RTL flows. Evidence for the practical value of the check svcc ships."
+
+[[paper]]
+key = "koelbl2005tutorial"
+section = "ec"
+priority = "core"
+title = "Embedded Tutorial: Formal Equivalence Checking Between System-Level Models and RTL"
+authors = ["Alfred Koelbl", "Yuan Lu", "Anmol Mathur"]
+year = 2005
+venue = "ICCAD 2005"
+type = "inproceedings"
+pages = "965-972"
+doi = "10.1109/iccad.2005.1560201"
+url = "https://doi.org/10.1109/iccad.2005.1560201"
+note = "Tutorial on system-level-versus-RTL equivalence: how to align transactions, latency and interfaces between an untimed model and RTL. Defines the notions of equivalence svcc's latency parameter approximates."
+
+[[paper]]
+key = "clarke2003consistency"
+section = "ec"
+priority = "core"
+title = "Behavioral consistency of C and Verilog programs using bounded model checking"
+authors = ["Edmund Clarke", "Daniel Kroening", "Karen Yorav"]
+year = 2003
+venue = "DAC 2003"
+type = "inproceedings"
+pages = "368-371"
+doi = "10.1109/dac.2003.1219026"
+url = "https://doi.org/10.1109/dac.2003.1219026"
+note = "First bounded-model-checking formulation of C-versus-Verilog consistency (CBMC with a Verilog front end). The origin of the miter construction svcc uses."
+
+[[paper]]
+key = "kroening2023cbmc"
+section = "ec"
+priority = "related"
+title = "CBMC: The C Bounded Model Checker"
+authors = ["Daniel Kroening", "Peter Schrammel", "Michael Tautschnig"]
+year = 2023
+venue = "arXiv preprint (book chapter), 2023"
+type = "misc"
+arxiv = "2302.02384"
+url = "https://arxiv.org/abs/2302.02384"
+pdf_url = "https://arxiv.org/pdf/2302.02384"
+note = "Current description of CBMC, the bit-precise C/C++ bounded model checker used for C-versus-RTL checks."
+
+[[paper]]
+key = "mann2021pono"
+section = "ec"
+priority = "related"
+title = "Pono: A Flexible and Extensible SMT-Based Model Checker"
+authors = ["Makai Mann", "Ahmed Irfan", "Florian Lonsing", "Yahan Yang", "Hongce Zhang", "Kristopher Brown", "Aarti Gupta", "Clark Barrett"]
+year = 2021
+venue = "CAV 2021 (LNCS 12760)"
+type = "inproceedings"
+pages = "461-474"
+doi = "10.1007/978-3-030-81688-9_22"
+url = "https://doi.org/10.1007/978-3-030-81688-9_22"
+pdf_url = "https://link.springer.com/content/pdf/10.1007/978-3-030-81688-9_22.pdf"
+note = "Open SMT-based model checker that reads Btor2; an independent back end for svcc's SEC problems."
+
+[[paper]]
+key = "herdt2019ivl"
+section = "ec"
+priority = "related"
+title = "Verifying SystemC Using Intermediate Verification Language and Stateful Symbolic Simulation"
+authors = ["Vladimir Herdt", "Hoang M. Le", "Daniel Große", "Rolf Drechsler"]
+year = 2019
+venue = "IEEE TCAD 38(7), 2019"
+type = "article"
+pages = "1359-1372"
+doi = "10.1109/tcad.2018.2846638"
+url = "https://doi.org/10.1109/tcad.2018.2846638"
+note = "Journal extension of the SystemC-to-IVL approach with stateful symbolic simulation."
+
+[[paper]]
+key = "mattarei2018cosa"
+section = "ec"
+priority = "related"
+title = "CoSA: Integrated Verification for Agile Hardware Design"
+authors = ["Cristian Mattarei", "Makai Mann", "Clark Barrett", "Ross G. Daly", "Dillon Huff", "Pat Hanrahan"]
+year = 2018
+venue = "FMCAD 2018"
+type = "inproceedings"
+pages = "1-5"
+doi = "10.23919/fmcad.2018.8603014"
+url = "https://doi.org/10.23919/fmcad.2018.8603014"
+note = "SMT-based verification for CoreIR/Verilog designs including equivalence checking; an open comparison point."
+
+[[paper]]
+key = "niemetz2018btor2"
+section = "ec"
+priority = "related"
+title = "Btor2, BtorMC and Boolector 3.0"
+authors = ["Aina Niemetz", "Mathias Preiner", "Clifford Wolf", "Armin Biere"]
+year = 2018
+venue = "CAV 2018 (LNCS 10981)"
+type = "inproceedings"
+pages = "587-595"
+doi = "10.1007/978-3-319-96145-3_32"
+url = "https://doi.org/10.1007/978-3-319-96145-3_32"
+pdf_url = "https://link.springer.com/content/pdf/10.1007/978-3-319-96145-3_32.pdf"
+in_paper = true
+note = "The Btor2 word-level model-checking format svcc emits for SEC."
+
+[[paper]]
+key = "behnam2017nested"
+section = "ec"
+priority = "related"
+title = "Automated Formal Equivalence Verification of Pipelined Nested Loops in Datapath Designs"
+authors = ["Payman Behnam", "Bijan Alizadeh", "Sajjad Taheri"]
+year = 2017
+venue = "arXiv preprint, 2017"
+type = "misc"
+arxiv = "1712.09818"
+url = "https://arxiv.org/abs/1712.09818"
+pdf_url = "https://arxiv.org/pdf/1712.09818"
+note = "Formal equivalence for pipelined nested-loop datapaths between a high-level specification and RTL."
+
+[[paper]]
+key = "mukherjee2016fpu"
+section = "ec"
+priority = "related"
+title = "Equivalence Checking of a Floating-Point Unit Against a High-Level C Model"
+authors = ["Rajdeep Mukherjee", "Saurabh Joshi", "Andreas Griesmayer", "Daniel Kroening", "Tom Melham"]
+year = 2016
+venue = "FM 2016 (LNCS 9995)"
+type = "inproceedings"
+pages = "551-558"
+doi = "10.1007/978-3-319-48989-6_33"
+arxiv = "1609.00169"
+url = "https://doi.org/10.1007/978-3-319-48989-6_33"
+pdf_url = "https://arxiv.org/pdf/1609.00169"
+note = "Equivalence check of an RTL floating-point unit against a C reference model; a realistic design-model benchmark."
+
+[[paper]]
+key = "hao2014pipelining"
+section = "ec"
+priority = "related"
+title = "Equivalence checking for function pipelining in behavioral synthesis"
+authors = ["Kecheng Hao", "Sandip Ray", "Fei Xie"]
+year = 2014
+venue = "DATE 2014"
+type = "inproceedings"
+pages = "1-6"
+doi = "10.7873/date.2014.163"
+url = "https://doi.org/10.7873/date.2014.163"
+note = "Equivalence checking across function pipelining, i.e. when latency changes between model and RTL."
+
+[[paper]]
+key = "le2013ivl"
+section = "ec"
+priority = "related"
+title = "Verifying SystemC using an intermediate verification language and symbolic simulation"
+authors = ["Hoang M. Le", "Daniel Große", "Vladimir Herdt", "Rolf Drechsler"]
+year = 2013
+venue = "DAC 2013"
+type = "inproceedings"
+pages = "1-6"
+doi = "10.1145/2463209.2488877"
+url = "https://doi.org/10.1145/2463209.2488877"
+note = "Translates SystemC to an intermediate verification language and verifies it by symbolic simulation."
+
+[[paper]]
+key = "yang2013equiv"
+section = "ec"
+priority = "related"
+title = "Equivalence checking for compiler transformations in behavioral synthesis"
+authors = ["Zhenkun Yang", "Kecheng Hao", "Kai Cong", "Sandip Ray", "Fei Xie"]
+year = 2013
+venue = "ICCD 2013"
+type = "inproceedings"
+pages = "491-494"
+doi = "10.1109/iccd.2013.6657090"
+url = "https://doi.org/10.1109/iccd.2013.6657090"
+note = "Equivalence checking across compiler transformations inside behavioral synthesis."
+
+[[paper]]
+key = "cimatti2011kratos"
+section = "ec"
+priority = "related"
+title = "Kratos – A Software Model Checker for SystemC"
+authors = ["Alessandro Cimatti", "Alberto Griggio", "Andrea Micheli", "Iman Narasamdya", "Marco Roveri"]
+year = 2011
+venue = "CAV 2011 (LNCS 6806)"
+type = "inproceedings"
+pages = "310-316"
+doi = "10.1007/978-3-642-22110-1_24"
+url = "https://doi.org/10.1007/978-3-642-22110-1_24"
+pdf_url = "https://link.springer.com/content/pdf/10.1007/978-3-642-22110-1_24.pdf"
+note = "Software model checker for SystemC that models the scheduler explicitly."
+
+[[paper]]
+key = "blanc2008scoot"
+section = "ec"
+priority = "related"
+title = "Scoot: A Tool for the Analysis of SystemC Models"
+authors = ["Nicolas Blanc", "Daniel Kroening", "Natasha Sharygina"]
+year = 2008
+venue = "TACAS 2008 (LNCS 4963)"
+type = "inproceedings"
+pages = "467-470"
+doi = "10.1007/978-3-540-78800-3_36"
+url = "https://doi.org/10.1007/978-3-540-78800-3_36"
+note = "Static analysis front end that extracts a formal model from SystemC source."
+
+[[paper]]
+key = "herber2008uppaal"
+section = "ec"
+priority = "related"
+title = "Model checking SystemC designs using timed automata"
+authors = ["Paula Herber", "Joachim Fellmuth", "Sabine Glesner"]
+year = 2008
+venue = "CODES+ISSS 2008"
+type = "inproceedings"
+pages = "131-136"
+doi = "10.1145/1450135.1450166"
+url = "https://doi.org/10.1145/1450135.1450166"
+note = "Maps SystemC designs to timed automata for model checking; another formal reading of the SystemC kernel."
+
+[[paper]]
+key = "koelbl2007memory"
+section = "ec"
+priority = "related"
+title = "Memory Modeling in ESL-RTL Equivalence Checking"
+authors = ["Alfred Koelbl", "Jerry R. Burch", "Carl Pixley"]
+year = 2007
+venue = "DAC 2007"
+type = "inproceedings"
+pages = "205-209"
+doi = "10.1109/dac.2007.375153"
+url = "https://doi.org/10.1109/dac.2007.375153"
+note = "Memory modeling for ESL-to-RTL equivalence. Relevant when svcc extends SEC beyond scalar datapaths to arrays and RAMs."
+
+[[paper]]
+key = "kroening2005partition"
+section = "ec"
+priority = "related"
+title = "Formal verification of SystemC by automatic hardware/software partitioning"
+authors = ["Daniel Kroening", "Natasha Sharygina"]
+year = 2005
+venue = "MEMOCODE 2005"
+type = "inproceedings"
+pages = "101-110"
+doi = "10.1109/memcod.2005.1487900"
+url = "https://doi.org/10.1109/memcod.2005.1487900"
+note = "Splits a SystemC model into hardware-like and software-like parts so each can be verified with the appropriate engine."
+
+[[paper]]
+key = "brayton2010abc"
+section = "ec"
+priority = "background"
+title = "ABC: An Academic Industrial-Strength Verification Tool"
+authors = ["Robert Brayton", "Alan Mishchenko"]
+year = 2010
+venue = "CAV 2010 (LNCS 6174)"
+type = "inproceedings"
+pages = "24-40"
+doi = "10.1007/978-3-642-14295-6_5"
+url = "https://doi.org/10.1007/978-3-642-14295-6_5"
+pdf_url = "https://link.springer.com/content/pdf/10.1007/978-3-642-14295-6_5.pdf"
+note = "ABC: the bit-level synthesis and sequential equivalence engine most open flows rely on."
+
+[[paper]]
+key = "grosse2010quality"
+section = "ec"
+priority = "background"
+title = "Quality-Driven SystemC Design"
+authors = ["Daniel Große", "Rolf Drechsler"]
+year = 2010
+venue = "Springer, 2010"
+type = "book"
+publisher = "Springer"
+doi = "10.1007/978-90-481-3631-5"
+url = "https://doi.org/10.1007/978-90-481-3631-5"
+note = "Book on SystemC verification quality: formal checks, CRAVE-style randomization and coverage."
+
+[[paper]]
+key = "demoura2008z3"
+section = "ec"
+priority = "background"
+title = "Z3: An Efficient SMT Solver"
+authors = ["Leonardo de Moura", "Nikolaj Bjørner"]
+year = 2008
+venue = "TACAS 2008 (LNCS 4963)"
+type = "inproceedings"
+pages = "337-340"
+doi = "10.1007/978-3-540-78800-3_24"
+url = "https://doi.org/10.1007/978-3-540-78800-3_24"
+in_paper = true
+note = "The SMT solver behind svcc-equiv."
+
+[[paper]]
+key = "vardi2007formal"
+section = "ec"
+priority = "background"
+title = "Formal techniques for SystemC verification"
+authors = ["Moshe Y. Vardi"]
+year = 2007
+venue = "DAC 2007"
+type = "inproceedings"
+pages = "188-192"
+doi = "10.1145/1278480.1278527"
+url = "https://doi.org/10.1145/1278480.1278527"
+note = "Position paper on what formal verification of SystemC needs, including a precise semantics."
+
+# ============================================================================
+# Translation validation and compiler correctness
+# ============================================================================
+
+[[paper]]
+key = "herklotz2021hlsfuzz"
+section = "tv"
+priority = "core"
+title = "An Empirical Study of the Reliability of High-Level Synthesis Tools"
+authors = ["Yann Herklotz", "Zewei Du", "Nadesh Ramanathan", "John Wickerson"]
+year = 2021
+venue = "FCCM 2021"
+type = "inproceedings"
+pages = "219-223"
+doi = "10.1109/fccm51124.2021.00034"
+url = "https://doi.org/10.1109/fccm51124.2021.00034"
+note = "Fuzzing found miscompilations in every major HLS tool tested. Motivation for checking each translation, and a method svcc can reuse to stress its own subset."
+
+[[paper]]
+key = "herklotz2021vericert"
+section = "tv"
+priority = "core"
+title = "Formal verification of high-level synthesis"
+authors = ["Yann Herklotz", "James D. Pollard", "Nadesh Ramanathan", "John Wickerson"]
+year = 2021
+venue = "PACMPL 5 (OOPSLA), 2021"
+type = "article"
+pages = "1-30"
+doi = "10.1145/3485494"
+url = "https://doi.org/10.1145/3485494"
+pdf_url = "https://dl.acm.org/doi/pdf/10.1145/3485494"
+note = "Vericert: an HLS tool from C to Verilog proved correct in Coq against a Verilog semantics. The verified-compiler alternative to svcc's validation approach, in the same C-to-RTL space."
+
+[[paper]]
+key = "lopes2021alive2"
+section = "tv"
+priority = "core"
+title = "Alive2: bounded translation validation for LLVM"
+authors = ["Nuno P. Lopes", "Juneyoung Lee", "Chung-Kil Hur", "Zhengyang Liu", "John Regehr"]
+year = 2021
+venue = "PLDI 2021"
+type = "inproceedings"
+pages = "65-79"
+doi = "10.1145/3453483.3454030"
+url = "https://doi.org/10.1145/3453483.3454030"
+in_paper = true
+note = "Bounded, SMT-based translation validation for LLVM. The model for svcc's per-run QF_BV checks."
+
+[[paper]]
+key = "kundu2010tvhls"
+section = "tv"
+priority = "core"
+title = "Translation Validation of High-Level Synthesis"
+authors = ["Sudipta Kundu", "Sorin Lerner", "Rajesh K. Gupta"]
+year = 2010
+venue = "IEEE TCAD 29(4), 2010"
+type = "article"
+pages = "566-579"
+doi = "10.1109/tcad.2010.2042889"
+url = "https://doi.org/10.1109/tcad.2010.2042889"
+note = "Journal version of translation validation for HLS, with the full algorithm and evaluation."
+
+[[paper]]
+key = "kundu2008validating"
+section = "tv"
+priority = "core"
+title = "Validating High-Level Synthesis"
+authors = ["Sudipta Kundu", "Sorin Lerner", "Rajesh Gupta"]
+year = 2008
+venue = "CAV 2008 (LNCS 5123)"
+type = "inproceedings"
+pages = "459-472"
+doi = "10.1007/978-3-540-70545-1_44"
+url = "https://doi.org/10.1007/978-3-540-70545-1_44"
+note = "Translation validation applied to an HLS tool by proving the input program and output RTL bisimilar."
+
+[[paper]]
+key = "pnueli1998tv"
+section = "tv"
+priority = "core"
+title = "Translation Validation"
+authors = ["Amir Pnueli", "Michael Siegel", "Eli Singerman"]
+year = 1998
+venue = "TACAS 1998 (LNCS 1384)"
+type = "inproceedings"
+pages = "151-166"
+doi = "10.1007/bfb0054170"
+url = "https://doi.org/10.1007/bfb0054170"
+in_paper = true
+note = "Introduces translation validation: check each run of the translator instead of proving the translator. The paper's stated methodology."
+
+[[paper]]
+key = "yin2025hec"
+section = "tv"
+priority = "related"
+title = "HEC: Equivalence Verification Checking for Code Transformation via Equality Saturation"
+authors = ["Jiaqi Yin", "Zhan Song", "Nicolas Bohm Agostini", "Antonino Tumeo", "Cunxi Yu"]
+year = 2025
+venue = "USENIX ATC 2025"
+type = "misc"
+arxiv = "2506.02290"
+url = "https://arxiv.org/abs/2506.02290"
+pdf_url = "https://arxiv.org/pdf/2506.02290"
+note = "Equivalence checking of code transformations through equality saturation over MLIR."
+
+[[paper]]
+key = "cheng2024seer"
+section = "tv"
+priority = "related"
+title = "SEER: Super-Optimization Explorer for High-Level Synthesis using E-graph Rewriting"
+authors = ["Jianyi Cheng", "Samuel Coward", "Lorenzo Chelini", "Rafael Barbalho", "Theo Drane"]
+year = 2024
+venue = "ASPLOS 2024"
+type = "inproceedings"
+pages = "1029-1044"
+doi = "10.1145/3620665.3640392"
+arxiv = "2308.07654"
+url = "https://doi.org/10.1145/3620665.3640392"
+pdf_url = "https://arxiv.org/pdf/2308.07654"
+note = "E-graph rewriting over MLIR for HLS, with each rewrite checked for equivalence."
+
+[[paper]]
+key = "herklotz2020verismith"
+section = "tv"
+priority = "related"
+title = "Finding and Understanding Bugs in FPGA Synthesis Tools"
+authors = ["Yann Herklotz", "John Wickerson"]
+year = 2020
+venue = "FPGA 2020"
+type = "inproceedings"
+pages = "277-287"
+doi = "10.1145/3373087.3375310"
+url = "https://doi.org/10.1145/3373087.3375310"
+note = "Random Verilog generation plus equivalence checking found bugs in synthesis tools; a ready source of synthesizable-subset test inputs."
+
+[[paper]]
+key = "chouksey2019codemotion"
+section = "tv"
+priority = "related"
+title = "Translation Validation of Code Motion Transformations Involving Loops"
+authors = ["Ramanuj Chouksey", "Chandan Karfa", "Purandar Bhaduri"]
+year = 2019
+venue = "IEEE TCAD 38(7), 2019"
+type = "article"
+pages = "1378-1382"
+doi = "10.1109/tcad.2018.2846654"
+url = "https://doi.org/10.1109/tcad.2018.2846654"
+note = "Translation validation for code-motion transformations with loops, using FSMD equivalence."
+
+[[paper]]
+key = "karfa2008equiv"
+section = "tv"
+priority = "related"
+title = "An Equivalence-Checking Method for Scheduling Verification in High-Level Synthesis"
+authors = ["Chandan Karfa", "Dipankar Sarkar", "Chittaranjan Mandal", "Pramod Kumar"]
+year = 2008
+venue = "IEEE TCAD 27(3), 2008"
+type = "article"
+pages = "556-569"
+doi = "10.1109/tcad.2007.913390"
+url = "https://doi.org/10.1109/tcad.2007.913390"
+note = "FSMD-based equivalence checking of the scheduling step in HLS."
+
+[[paper]]
+key = "necula2000tv"
+section = "tv"
+priority = "related"
+title = "Translation validation for an optimizing compiler"
+authors = ["George C. Necula"]
+year = 2000
+venue = "PLDI 2000"
+type = "inproceedings"
+pages = "83-94"
+doi = "10.1145/349299.349314"
+url = "https://doi.org/10.1145/349299.349314"
+note = "Translation validation for GCC: the first practical demonstration on a production compiler."
+
+[[paper]]
+key = "zhao2013vellvm"
+section = "tv"
+priority = "background"
+title = "Formal verification of SSA-based optimizations for LLVM"
+authors = ["Jianzhou Zhao", "Santosh Nagarakatte", "Milo M.K. Martin", "Steve Zdancewic"]
+year = 2013
+venue = "PLDI 2013"
+type = "inproceedings"
+pages = "175-186"
+doi = "10.1145/2491956.2462164"
+url = "https://doi.org/10.1145/2491956.2462164"
+note = "Mechanized proofs of LLVM SSA optimizations (Vellvm)."
+
+[[paper]]
+key = "yang2011csmith"
+section = "tv"
+priority = "background"
+title = "Finding and understanding bugs in C compilers"
+authors = ["Xuejun Yang", "Yang Chen", "Eric Eide", "John Regehr"]
+year = 2011
+venue = "PLDI 2011"
+type = "inproceedings"
+pages = "283-294"
+doi = "10.1145/1993498.1993532"
+url = "https://doi.org/10.1145/1993498.1993532"
+note = "Csmith: random differential testing of C compilers."
+
+[[paper]]
+key = "leroy2009compcert"
+section = "tv"
+priority = "background"
+title = "Formal verification of a realistic compiler"
+authors = ["Xavier Leroy"]
+year = 2009
+venue = "Communications of the ACM 52(7), 2009"
+type = "article"
+pages = "107-115"
+doi = "10.1145/1538788.1538814"
+url = "https://doi.org/10.1145/1538788.1538814"
+pdf_url = "https://inria.hal.science/inria-00415861v1/document"
+note = "CompCert: the reference verified compiler, and the baseline that translation validation is compared against."
+
+# ============================================================================
+# High-level synthesis
+# ============================================================================
+
+[[paper]]
+key = "ye2022scalehls"
+section = "hls"
+priority = "related"
+title = "ScaleHLS: A New Scalable High-Level Synthesis Framework on Multi-Level Intermediate Representation"
+authors = ["Hanchen Ye", "Cong Hao", "Jianyi Cheng", "Hyunmin Jeong", "Jack Huang", "Stephen Neuendorffer", "Deming Chen"]
+year = 2022
+venue = "HPCA 2022"
+type = "inproceedings"
+pages = "741-755"
+doi = "10.1109/hpca53966.2022.00060"
+arxiv = "2107.11673"
+url = "https://doi.org/10.1109/hpca53966.2022.00060"
+pdf_url = "https://arxiv.org/pdf/2107.11673"
+note = "HLS built on MLIR with multi-level transformations."
+
+[[paper]]
+key = "ferrandi2021bambu"
+section = "hls"
+priority = "related"
+title = "Bambu: An Open-Source Research Framework for the High-Level Synthesis of Complex Applications"
+authors = ["Fabrizio Ferrandi", "Vito Giovanni Castellana", "Serena Curzel", "Pietro Fezzardi", "Michele Fiorito", "Marco Lattuada", "Marco Minutoli", "Christian Pilato", "Antonino Tumeo"]
+year = 2021
+venue = "DAC 2021"
+type = "inproceedings"
+pages = "1327-1330"
+doi = "10.1109/dac18074.2021.9586110"
+url = "https://doi.org/10.1109/dac18074.2021.9586110"
+pdf_url = "https://re.public.polimi.it/bitstream/11311/1189606/1/dac21_bambu.pdf"
+note = "Bambu: open-source HLS with broad C/C++ support; an open back end for C2RTL comparisons."
+
+[[paper]]
+key = "lahti2019there"
+section = "hls"
+priority = "related"
+title = "Are We There Yet? A Study on the State of High-Level Synthesis"
+authors = ["Sakari Lahti", "Panu Sjovall", "Jarno Vanne", "Timo D. Hamalainen"]
+year = 2019
+venue = "IEEE TCAD 38(5), 2019"
+type = "article"
+pages = "898-911"
+doi = "10.1109/tcad.2018.2834439"
+url = "https://doi.org/10.1109/tcad.2018.2834439"
+note = "Literature study of HLS quality and productivity versus hand-written RTL."
+
+[[paper]]
+key = "nane2016survey"
+section = "hls"
+priority = "related"
+title = "A Survey and Evaluation of FPGA High-Level Synthesis Tools"
+authors = ["Razvan Nane", "Vlad-Mihai Sima", "Christian Pilato", "Jongsok Choi", "Blair Fort", "Andrew Canis", "Yu Ting Chen", "Hsuan Hsiao", "Stephen Brown", "Fabrizio Ferrandi", "Jason Anderson", "Koen Bertels"]
+year = 2016
+venue = "IEEE TCAD 35(10), 2016"
+type = "article"
+pages = "1591-1604"
+doi = "10.1109/tcad.2015.2513673"
+url = "https://doi.org/10.1109/tcad.2015.2513673"
+pdf_url = "https://re.public.polimi.it/bitstream/11311/998432/1/TCADHLSEVAL2016.pdf"
+note = "Survey and evaluation of FPGA HLS tools, including each tool's input-language limits."
+
+[[paper]]
+key = "cong2011hls"
+section = "hls"
+priority = "related"
+title = "High-Level Synthesis for FPGAs: From Prototyping to Deployment"
+authors = ["Jason Cong", "Bin Liu", "Stephen Neuendorffer", "Juanjo Noguera", "Kees Vissers", "Zhiru Zhang"]
+year = 2011
+venue = "IEEE TCAD 30(4), 2011"
+type = "article"
+pages = "473-491"
+doi = "10.1109/tcad.2011.2110592"
+url = "https://doi.org/10.1109/tcad.2011.2110592"
+note = "AutoESL/Vivado HLS: the C/C++/SystemC constructs an industrial FPGA HLS tool supports."
+
+[[paper]]
+key = "coussy2009intro"
+section = "hls"
+priority = "related"
+title = "An Introduction to High-Level Synthesis"
+authors = ["Philippe Coussy", "Daniel D. Gajski", "Michael Meredith", "Andres Takach"]
+year = 2009
+venue = "IEEE Design & Test 26(4), 2009"
+type = "article"
+pages = "8-17"
+doi = "10.1109/mdt.2009.69"
+url = "https://doi.org/10.1109/mdt.2009.69"
+note = "Compact introduction to the HLS steps (allocation, scheduling, binding)."
+
+[[paper]]
+key = "martin2009hls"
+section = "hls"
+priority = "related"
+title = "High-Level Synthesis: Past, Present, and Future"
+authors = ["Grant Martin", "Gary Smith"]
+year = 2009
+venue = "IEEE Design & Test 26(4), 2009"
+type = "article"
+pages = "18-25"
+doi = "10.1109/mdt.2009.83"
+url = "https://doi.org/10.1109/mdt.2009.83"
+note = "History of HLS generations and why earlier ones failed; context for input-language restrictions."
+
+[[paper]]
+key = "josipovic2018dynamatic"
+section = "hls"
+priority = "background"
+title = "Dynamically Scheduled High-level Synthesis"
+authors = ["Lana Josipović", "Radhika Ghosal", "Paolo Ienne"]
+year = 2018
+venue = "FPGA 2018"
+type = "inproceedings"
+pages = "127-136"
+doi = "10.1145/3174243.3174264"
+url = "https://doi.org/10.1145/3174243.3174264"
+oa_page = "https://infoscience.epfl.ch/handle/20.500.14299/194125"
+note = "Dynamatic: HLS producing dynamically scheduled (elastic) circuits."
+
+[[paper]]
+key = "canis2011legup"
+section = "hls"
+priority = "background"
+title = "LegUp: High-Level Synthesis for FPGA-Based Processor/Accelerator Systems"
+authors = ["Andrew Canis", "Jongsok Choi", "Mark Aldham", "Victor Zhang", "Ahmed Kammoona", "Jason H. Anderson", "Stephen Brown", "Tomasz Czajkowski"]
+year = 2011
+venue = "FPGA 2011"
+type = "inproceedings"
+pages = "33-36"
+doi = "10.1145/1950413.1950423"
+url = "https://doi.org/10.1145/1950413.1950423"
+note = "LegUp: open-source LLVM-based HLS."
+
+[[paper]]
+key = "wakabayashi2000cbased"
+section = "hls"
+priority = "background"
+title = "C-based SoC design flow and EDA tools: an ASIC and system vendor perspective"
+authors = ["Kazutoshi Wakabayashi", "Takumi Okamoto"]
+year = 2000
+venue = "IEEE TCAD 19(12), 2000"
+type = "article"
+pages = "1507-1522"
+doi = "10.1109/43.898829"
+url = "https://doi.org/10.1109/43.898829"
+note = "NEC's C-based design flow including behavioral synthesis and formal checks between levels."
+
+# ============================================================================
+# Hardware IRs and compiler infrastructure
+# ============================================================================
+
+[[paper]]
+key = "circt2024"
+section = "ir"
+priority = "core"
+title = "CIRCT: Circuit IR Compilers and Tools"
+authors = ["{LLVM CIRCT Project}"]
+year = 2024
+venue = "LLVM project"
+type = "misc"
+url = "https://circt.llvm.org/"
+in_paper = true
+note = "CIRCT: MLIR dialects for hardware, including SystemVerilog import (Moore) and a SystemC emission dialect. The main open alternative infrastructure."
+
+[[paper]]
+key = "lattner2021mlir"
+section = "ir"
+priority = "core"
+title = "MLIR: Scaling Compiler Infrastructure for Domain Specific Computation"
+authors = ["Chris Lattner", "Mehdi Amini", "Uday Bondhugula", "Albert Cohen", "Andy Davis", "Jacques Pienaar", "River Riddle", "Tatiana Shpeisman", "Nicolas Vasilache", "Oleksandr Zinenko"]
+year = 2021
+venue = "CGO 2021"
+type = "inproceedings"
+pages = "2-14"
+doi = "10.1109/cgo51591.2021.9370308"
+arxiv = "2002.11054"
+url = "https://doi.org/10.1109/cgo51591.2021.9370308"
+pdf_url = "https://arxiv.org/pdf/2002.11054"
+in_paper = true
+note = "The multi-dialect IR framework underlying CIRCT. The arXiv version carries an earlier title."
+
+[[paper]]
+key = "schuiki2020llhd"
+section = "ir"
+priority = "core"
+title = "LLHD: A Multi-level Intermediate Representation for Hardware Description Languages"
+authors = ["Fabian Schuiki", "Andreas Kurth", "Tobias Grosser", "Luca Benini"]
+year = 2020
+venue = "PLDI 2020"
+type = "inproceedings"
+pages = "258-271"
+doi = "10.1145/3385412.3386024"
+arxiv = "2004.03494"
+url = "https://doi.org/10.1145/3385412.3386024"
+pdf_url = "https://arxiv.org/pdf/2004.03494"
+in_paper = true
+note = "Multi-level IR that captures SystemVerilog behavior and lowers it to structural form; the nearest IR design to svcc-ir on the RTL side."
+
+[[paper]]
+key = "dargelas2024surelog"
+section = "ir"
+priority = "related"
+title = "Surelog and UHDM: SystemVerilog Pre-processor, Parser, Elaborator, and Universal Hardware Data Model"
+authors = ["Alain Dargelas", "{CHIPS Alliance}"]
+year = 2024
+venue = "Open-source tool"
+type = "misc"
+url = "https://github.com/chipsalliance/Surelog"
+in_paper = true
+note = "Surelog/UHDM: the other open full SystemVerilog front end."
+
+[[paper]]
+key = "majumder2023hir"
+section = "ir"
+priority = "related"
+title = "HIR: An MLIR-based Intermediate Representation for Hardware Accelerator Description"
+authors = ["Kingshuk Majumder", "Uday Bondhugula"]
+year = 2023
+venue = "ASPLOS 2023"
+type = "inproceedings"
+pages = "189-201"
+doi = "10.1145/3623278.3624767"
+arxiv = "2103.00194"
+url = "https://doi.org/10.1145/3623278.3624767"
+pdf_url = "https://arxiv.org/pdf/2103.00194"
+note = "MLIR-based IR that makes scheduling and timing explicit."
+
+[[paper]]
+key = "xu2022hector"
+section = "ir"
+priority = "related"
+title = "HECTOR: A Multi-Level Intermediate Representation for Hardware Synthesis Methodologies"
+authors = ["Ruifan Xu", "Youwei Xiao", "Jin Luo", "Yun Liang"]
+year = 2022
+venue = "ICCAD 2022"
+type = "inproceedings"
+pages = "1-9"
+doi = "10.1145/3508352.3549370"
+url = "https://doi.org/10.1145/3508352.3549370"
+note = "Multi-level IR unifying several hardware synthesis methodologies."
+
+[[paper]]
+key = "nigam2021calyx"
+section = "ir"
+priority = "related"
+title = "A Compiler Infrastructure for Accelerator Generators"
+authors = ["Rachit Nigam", "Samuel Thomas", "Zhijing Li", "Adrian Sampson"]
+year = 2021
+venue = "ASPLOS 2021"
+type = "inproceedings"
+pages = "804-817"
+doi = "10.1145/3445814.3446712"
+arxiv = "2102.09713"
+url = "https://doi.org/10.1145/3445814.3446712"
+pdf_url = "https://arxiv.org/pdf/2102.09713"
+note = "Calyx: IR separating structure from control for accelerator generators."
+
+[[paper]]
+key = "izraelevitz2017firrtl"
+section = "ir"
+priority = "related"
+title = "Reusability is FIRRTL ground: Hardware construction languages, compiler frameworks, and transformations"
+authors = ["Adam Izraelevitz", "Jack Koenig", "Patrick Li", "Richard Lin", "Angie Wang", "Albert Magyar", "Donggyu Kim", "Colin Schmidt", "Chick Markley", "Jim Lawson", "Jonathan Bachrach"]
+year = 2017
+venue = "ICCAD 2017"
+type = "inproceedings"
+pages = "209-216"
+doi = "10.1109/iccad.2017.8203780"
+url = "https://doi.org/10.1109/iccad.2017.8203780"
+note = "FIRRTL: an RTL IR with well-defined lowering passes and width inference."
+
+[[paper]]
+key = "wolf2013yosys"
+section = "ir"
+priority = "related"
+title = "Yosys Open SYnthesis Suite"
+authors = ["Clifford Wolf"]
+year = 2013
+venue = "Open-source tool"
+type = "misc"
+url = "https://yosyshq.net/yosys/"
+in_paper = true
+note = "Yosys and its RTLIL IR: the open synthesis reference and a practical oracle for whether SV is synthesizable."
+
+[[paper]]
+key = "bourgeat2020koika"
+section = "ir"
+priority = "background"
+title = "The essence of Bluespec: a core language for rule-based hardware design"
+authors = ["Thomas Bourgeat", "Clément Pit-Claudel", "Adam Chlipala", "Arvind"]
+year = 2020
+venue = "PLDI 2020"
+type = "inproceedings"
+pages = "243-257"
+doi = "10.1145/3385412.3385965"
+url = "https://doi.org/10.1145/3385412.3385965"
+pdf_url = "https://dl.acm.org/doi/pdf/10.1145/3385412.3385965"
+note = "Koika: a rule-based HDL with formal semantics and a verified compiler."
+
+[[paper]]
+key = "wang2020livehd"
+section = "ir"
+priority = "background"
+title = "LiveHD: A Productive Live Hardware Development Flow"
+authors = ["Sheng-Hong Wang", "Rafael Trapani Possignolo", "Haven Blake Skinner", "Jose Renau"]
+year = 2020
+venue = "IEEE Micro 40(4), 2020"
+type = "article"
+pages = "67-75"
+doi = "10.1109/mm.2020.2996508"
+url = "https://doi.org/10.1109/mm.2020.2996508"
+note = "LiveHD and its language-neutral AST for incremental hardware compilation."
+
+[[paper]]
+key = "bachrach2012chisel"
+section = "ir"
+priority = "background"
+title = "Chisel: Constructing Hardware in a Scala Embedded Language"
+authors = ["Jonathan Bachrach", "Huy Vo", "Brian Richards", "Yunsup Lee", "Andrew Waterman", "Rimas Avižienis", "John Wawrzynek", "Krste Asanović"]
+year = 2012
+venue = "DAC 2012"
+type = "inproceedings"
+pages = "1216-1225"
+doi = "10.1145/2228360.2228584"
+url = "https://doi.org/10.1145/2228360.2228584"
+note = "Chisel hardware construction language."
+
+# ============================================================================
+# UVM-SystemC, constrained random and coverage
+# ============================================================================
+
+[[paper]]
+key = "pham2023coverage"
+section = "dv"
+priority = "core"
+title = "Improve the Quality of SystemC IPs Through Coverage-Driven Random Verification"
+authors = ["Trung Pham", "Huy Phan", "Masayuki Masuda"]
+year = 2023
+venue = "DVCon Taiwan 2023"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/improve-the-quality-of-systemc-ips-through-coverage-driven-random-verification/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/Paper-1.4-Improve-the-quality-of-SystemC-IPs-through-coverage-driven-random-verification_paper.pdf"
+note = "Renesas case study combining UVM-SystemC, CRAVE and FC4SC on a production IP: the exact stack svcc emits."
+
+[[paper]]
+key = "moiseev2020assertions"
+section = "dv"
+priority = "core"
+title = "Temporal Assertions in SystemC"
+authors = ["Mikhail Moiseev", "Leonid Azarenkov", "Ilya Klotchkov"]
+year = 2020
+venue = "DVCon Europe 2020"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/temporal-assertions-in-systemc/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/temporal-assertions-in-systemc.pdf"
+note = "Temporal assertions in SystemC with SVA-like semantics, translated to SVA by the Intel compiler. Directly relevant to svcc's SVA checker translation."
+
+[[paper]]
+key = "barnasconi2014uvmsc"
+section = "dv"
+priority = "core"
+title = "Advancing System-Level Verification Using UVM in SystemC"
+authors = ["Martin Barnasconi", "François Pêcheux", "Thilo Vörtler"]
+year = 2014
+venue = "DVCon US 2014"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/advancing-system-level-verification-using-uvm-in-systemc/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/advancing-system-level-verification-using-uvm-in-systemc.pdf"
+note = "The founding UVM-SystemC paper: how UVM classes, phasing and sequences map onto SystemC."
+
+[[paper]]
+key = "haedicke2012crave"
+section = "dv"
+priority = "core"
+title = "CRAVE: An advanced constrained random verification environment for SystemC"
+authors = ["Finn Haedicke", "Hoang M. Le", "Daniel Große", "Rolf Drechsler"]
+year = 2012
+venue = "International Symposium on System-on-Chip (SoC) 2012"
+type = "inproceedings"
+pages = "1-7"
+doi = "10.1109/issoc.2012.6376356"
+url = "https://doi.org/10.1109/issoc.2012.6376356"
+in_paper = true
+note = "CRAVE: constrained random stimulus for SystemC/C++, the target of svcc's constraint translation."
+
+[[paper]]
+key = "accellera2026systemc"
+section = "dv"
+priority = "related"
+title = "SystemC 3.0.3, UVM-SystemC, CRAVE, and FC4SC Open-Source Reference Implementations"
+authors = ["{Accellera Systems Initiative}"]
+year = 2026
+venue = "Open-source reference implementations"
+type = "misc"
+url = "https://github.com/accellera-official"
+in_paper = true
+note = "SystemC 3.0.3, UVM-SystemC, CRAVE and FC4SC sources that svcc's output compiles against."
+
+[[paper]]
+key = "baskar2023uvmc"
+section = "dv"
+priority = "related"
+title = "Do Not Forget to 'Cover' Your SystemC Code with UVMC"
+authors = ["Vishal Baskar"]
+year = 2023
+venue = "DVCon US 2023"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/do-not-forget-to-cover-your-systemc-code-with-uvmc/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/1133-Do-not-forget-to-get-your-SystemC-code-covered-with-UVMC.pdf"
+note = "Collecting functional coverage for SystemC models from SV covergroups over UVM Connect: the mixed-language alternative to translating."
+
+[[paper]]
+key = "ieee1800_2_2020"
+section = "dv"
+priority = "related"
+title = "IEEE Standard for Universal Verification Methodology Language Reference Manual"
+authors = ["{IEEE}"]
+year = 2020
+venue = "IEEE Std 1800.2-2020"
+type = "misc"
+doi = "10.1109/IEEESTD.2020.9195920"
+url = "https://doi.org/10.1109/IEEESTD.2020.9195920"
+in_paper = true
+note = "UVM language reference manual."
+
+[[paper]]
+key = "gerth2017migrating"
+section = "dv"
+priority = "related"
+title = "UVM-SystemC: Migrating Complex Verification Environments"
+authors = ["Stephan Gerth", "Akhila Madhukumar"]
+year = 2017
+venue = "DVCon Europe 2017 (slides)"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/uvm-systemc-migrating-complex-verification-environments/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/uvm-systemc-migrating-complex-verification-environments.pdf"
+note = "Experience migrating complex UVM-SV environments to UVM-SystemC by hand; lists the constructs that do not map cleanly."
+
+[[paper]]
+key = "barnasconi2015uvmams"
+section = "dv"
+priority = "related"
+title = "UVM-SystemC-AMS Framework for System-Level Verification and Validation of Automotive Use Cases"
+authors = ["Martin Barnasconi", "Manfred Dietrich", "Karsten Einwich", "Thilo Vortler", "Jean-Paul Chaput", "Marie-Minerve Louerat", "Francois Pecheux", "Zhi Wang", "Philippe Cuenot", "Ingmar Neumann", "Thang Nguyen", "Ronan Lucas", "Emmanuel Vaumorin"]
+year = 2015
+venue = "IEEE Design & Test 32(6), 2015"
+type = "article"
+pages = "76-86"
+doi = "10.1109/mdat.2015.2427260"
+url = "https://doi.org/10.1109/mdat.2015.2427260"
+note = "UVM-SystemC with AMS for automotive system-level verification."
+
+[[paper]]
+key = "bartley2015systemcuvm"
+section = "dv"
+priority = "related"
+title = "A SystemC-Based UVM Verification Infrastructure"
+authors = ["Mike Bartley", "Harshavardhan Narla"]
+year = 2015
+venue = "DVCon Europe 2015"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/a-systemc-based-uvm-verification-infrastructure/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/a-systemc-based-uvm-verification-infrastructure.pdf"
+note = "A UVM-compliant SystemC test bench built before UVM-SystemC was released."
+
+[[paper]]
+key = "schulz2015uvmuniversal"
+section = "dv"
+priority = "related"
+title = "UVM Goes Universal: Introducing UVM in SystemC"
+authors = ["Stephan Schulz", "Thilo Vörtler", "Martin Barnasconi"]
+year = 2015
+venue = "DVCon Europe 2015 (tutorial slides)"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/wp-content/uploads/uvm-goesuniversal-introducinguvm-in-systemc.pdf"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/uvm-goesuniversal-introducinguvm-in-systemc.pdf"
+note = "Tutorial on UVM-SystemC covering its differences from UVM-SV."
+
+[[paper]]
+key = "jain2014uvmtlm"
+section = "dv"
+priority = "related"
+title = "Early Development of UVM based Verification Environment of Image Signal Processing Designs using TLM Reference Model of RTL"
+authors = ["Abhishek Jain", "Hima Gupta", "Sandeep Jana", "Krishna Kumar"]
+year = 2014
+venue = "IJACSA 5, 2014"
+type = "misc"
+arxiv = "1408.1150"
+url = "https://arxiv.org/abs/1408.1150"
+pdf_url = "https://arxiv.org/pdf/1408.1150"
+note = "Reusing a TLM reference model inside a UVM environment before RTL exists."
+
+[[paper]]
+key = "vortler2014enriching"
+section = "dv"
+priority = "related"
+title = "Enriching UVM in SystemC with AMS Extensions for Randomization and Functional Coverage"
+authors = ["Thilo Vörtler", "Thomas Klotz", "Karsten Einwich", "Yao Li", "Zhi Wang", "Marie-Minerve Louërat", "Jean-Paul Chaput", "François Pêcheux", "Ramy Iskander", "Martin Barnasconi"]
+year = 2014
+venue = "DVCon Europe 2014"
+type = "inproceedings"
+url = "https://dvcon-proceedings.org/document/enriching-uvm-in-systemc-with-ams-extensions-for-randomization-and-functional-coverage/"
+pdf_url = "https://dvcon-proceedings.org/wp-content/uploads/enriching-uvm-in-systemc-with-ams-extensions-for-randomization-and-functional-coverage.pdf"
+note = "Adds randomization and functional coverage to UVM-SystemC, with AMS extensions."
+
+[[paper]]
+key = "accellera_ucis10"
+section = "dv"
+priority = "related"
+title = "Unified Coverage Interoperability Standard (UCIS), Version 1.0"
+authors = ["{Accellera Systems Initiative}"]
+year = 2012
+venue = "Accellera standard"
+type = "misc"
+url = "https://www.accellera.org/downloads/standards/ucis"
+in_paper = true
+note = "UCIS coverage data model used for svcc's coverage-bin isomorphism check."
+
+[[paper]]
+key = "habibi2006tlm"
+section = "dv"
+priority = "related"
+title = "Design and verification of SystemC transaction-level models"
+authors = ["Ali Habibi", "Sofiène Tahar"]
+year = 2006
+venue = "IEEE TVLSI 14(1), 2006"
+type = "article"
+pages = "57-68"
+doi = "10.1109/tvlsi.2005.863187"
+url = "https://doi.org/10.1109/tvlsi.2005.863187"
+pdf_url = "https://spectrum.library.concordia.ca/977376/1/TVLSI-2006.pdf"
+note = "Design-for-verification flow for SystemC TLM with assertions and model checking."
+
+[[paper]]
+key = "gadde2024pyuvm"
+section = "dv"
+priority = "background"
+title = "Towards Efficient Design Verification -- Constrained Random Verification using PyUVM"
+authors = ["Deepak Narayan Gadde", "Suruchi Kumari", "Aman Kumar"]
+year = 2024
+venue = "DVCon US 2024"
+type = "misc"
+arxiv = "2407.10317"
+url = "https://arxiv.org/abs/2407.10317"
+pdf_url = "https://arxiv.org/pdf/2407.10317"
+note = "Constrained random verification with pyuvm: another non-SV host for UVM."
+
+[[paper]]
+key = "dobis2021chiselverif"
+section = "dv"
+priority = "background"
+title = "Open-Source Verification with Chisel and Scala"
+authors = ["Andrew Dobis", "Tjark Petersen", "Kasper Juul Hesse Rasmussen", "Enrico Tolotto", "Hans Jakob Damsgaard", "Simon Thye Andersen", "Richard Lin", "Martin Schoeberl"]
+year = 2021
+venue = "arXiv preprint, 2021"
+type = "misc"
+arxiv = "2102.13460"
+url = "https://arxiv.org/abs/2102.13460"
+pdf_url = "https://arxiv.org/pdf/2102.13460"
+note = "UVM-style verification in Chisel/Scala."
+
+[[paper]]
+key = "ghenassia2005tlm"
+section = "dv"
+priority = "background"
+title = "Transaction-Level Modeling with SystemC: TLM Concepts and Applications for Embedded Systems"
+authors = ["Frank Ghenassia"]
+year = 2005
+venue = "Springer, 2005"
+type = "book"
+publisher = "Springer"
+url = "https://doi.org/10.1007/b137175"
+in_paper = true
+note = "Standard reference on SystemC transaction-level modeling."
+
+# ============================================================================
+# LLM-based RTL generation and translation
+# ============================================================================
+
+[[paper]]
+key = "tang2026rtlrex"
+section = "llm"
+priority = "core"
+title = "RTLREX: LLM-Guided Framework for Exact High-Level RTL Recovery"
+authors = ["Wuqian Tang", "Fangzhou Liu", "Ruijie Wang", "TingTing Hwang", "Bei Yu", "Chun-Yao Wang"]
+year = 2026
+venue = "arXiv preprint, 2026"
+type = "misc"
+arxiv = "2611.10798"
+url = "https://arxiv.org/abs/2611.10798"
+pdf_url = "https://arxiv.org/pdf/2611.10798"
+note = "LLM-guided recovery of an exact high-level model from RTL. The learned counterpart of svcc's SV-to-C++ direction; compare on exactness guarantees."
+
+[[paper]]
+key = "lyu2026autoc2v"
+section = "llm"
+priority = "related"
+title = "AutoC2V: Synthesis-Guided LLM Training for QoR-Optimized C++-to-Verilog Generation"
+authors = ["Guanqi Lyu", "Fei Zhao", "Zhaojun Lu", "Jiaji He", "Yongqiang Lyu"]
+year = 2026
+venue = "arXiv preprint, 2026"
+type = "misc"
+arxiv = "2611.10824"
+url = "https://arxiv.org/abs/2611.10824"
+pdf_url = "https://arxiv.org/pdf/2611.10824"
+note = "LLM training for C++-to-Verilog generation guided by synthesis results."
+
+[[paper]]
+key = "collini2024c2hlsc"
+section = "llm"
+priority = "related"
+title = "C2HLSC: Can LLMs Bridge the Software-to-Hardware Design Gap?"
+authors = ["Luca Collini", "Siddharth Garg", "Ramesh Karri"]
+year = 2024
+venue = "IEEE LLM Aided Design Workshop (LAD) 2024"
+type = "inproceedings"
+pages = "1-12"
+doi = "10.1109/lad62341.2024.10691856"
+arxiv = "2406.09233"
+url = "https://doi.org/10.1109/lad62341.2024.10691856"
+pdf_url = "https://arxiv.org/pdf/2406.09233"
+note = "LLMs rewriting C into HLS-synthesizable C; shows how often models violate the synthesizable subset."
+
+[[paper]]
+key = "liao2024llmhls"
+section = "llm"
+priority = "related"
+title = "Are LLMs Any Good for High-Level Synthesis?"
+authors = ["Yuchao Liao", "Tosiron Adegbija", "Roman Lysecky"]
+year = 2024
+venue = "ICCAD 2024 special session"
+type = "misc"
+arxiv = "2408.10428"
+url = "https://arxiv.org/abs/2408.10428"
+pdf_url = "https://arxiv.org/pdf/2408.10428"
+note = "Compares LLM Verilog generation, LLM C-to-HLS and conventional HLS."
+
+[[paper]]
+key = "swaroopa2024hlsllm"
+section = "llm"
+priority = "related"
+title = "Evaluating Large Language Models for Automatic Register Transfer Logic Generation via High-Level Synthesis"
+authors = ["Sneha Swaroopa", "Rijoy Mukherjee", "Anushka Debnath", "Rajat Subhra Chakraborty"]
+year = 2024
+venue = "arXiv preprint, 2024"
+type = "misc"
+arxiv = "2408.02793"
+url = "https://arxiv.org/abs/2408.02793"
+pdf_url = "https://arxiv.org/pdf/2408.02793"
+note = "Evaluates LLMs generating RTL via HLS-ready C."
+
+[[paper]]
+key = "thakur2024verigen"
+section = "llm"
+priority = "related"
+title = "VeriGen: A Large Language Model for Verilog Code Generation"
+authors = ["Shailja Thakur", "Baleegh Ahmad", "Hammond Pearce", "Benjamin Tan", "Brendan Dolan-Gavitt", "Ramesh Karri", "Siddharth Garg"]
+year = 2024
+venue = "ACM TODAES 29(3), 2024"
+type = "article"
+pages = "1-31"
+doi = "10.1145/3643681"
+arxiv = "2308.00708"
+url = "https://doi.org/10.1145/3643681"
+pdf_url = "https://arxiv.org/pdf/2308.00708"
+in_paper = true
+note = "Fine-tuned LLM for Verilog generation."
+
+[[paper]]
+key = "xiong2024hlspilot"
+section = "llm"
+priority = "related"
+title = "HLSPilot: LLM-based High-Level Synthesis"
+authors = ["Chenwei Xiong", "Cheng Liu", "Huawei Li", "Xiaowei Li"]
+year = 2024
+venue = "ICCAD 2024"
+type = "inproceedings"
+pages = "1-9"
+doi = "10.1145/3676536.3676781"
+arxiv = "2408.06810"
+url = "https://doi.org/10.1145/3676536.3676781"
+pdf_url = "https://arxiv.org/pdf/2408.06810"
+note = "LLM-driven HLS flow from C/C++."
+
+[[paper]]
+key = "liu2023verilogeval"
+section = "llm"
+priority = "related"
+title = "VerilogEval: Evaluating Large Language Models for Verilog Code Generation"
+authors = ["Mingjie Liu", "Nathaniel Pinckney", "Brucek Khailany", "Haoxing Ren"]
+year = 2023
+venue = "ICCAD 2023"
+type = "inproceedings"
+pages = "1-8"
+doi = "10.1109/iccad57390.2023.10323812"
+arxiv = "2309.07544"
+url = "https://doi.org/10.1109/iccad57390.2023.10323812"
+pdf_url = "https://arxiv.org/pdf/2309.07544"
+in_paper = true
+note = "Benchmark for LLM Verilog generation."
+
+[[paper]]
+key = "xu2025llmeda"
+section = "llm"
+priority = "background"
+title = "Large Language Models (LLMs) for Electronic Design Automation (EDA)"
+authors = ["Kangwei Xu", "Denis Schwachhofer", "Jason Blocklove", "Ilia Polian", "Peter Domanski", "Dirk Pflüger", "Siddharth Garg", "Ramesh Karri", "Ozgur Sinanoglu", "Johann Knechtel", "Zhuorui Zhao", "Ulf Schlichtmann", "Bing Li"]
+year = 2025
+venue = "IEEE SOCC 2025"
+type = "misc"
+arxiv = "2508.20030"
+url = "https://arxiv.org/abs/2508.20030"
+pdf_url = "https://arxiv.org/pdf/2508.20030"
+note = "Survey of LLM use across EDA."
+
+[[paper]]
+key = "blocklove2023chipchat"
+section = "llm"
+priority = "background"
+title = "Chip-Chat: Challenges and Opportunities in Conversational Hardware Design"
+authors = ["Jason Blocklove", "Siddharth Garg", "Ramesh Karri", "Hammond Pearce"]
+year = 2023
+venue = "MLCAD 2023"
+type = "inproceedings"
+pages = "1-6"
+doi = "10.1109/mlcad58807.2023.10299874"
+arxiv = "2305.13243"
+url = "https://doi.org/10.1109/mlcad58807.2023.10299874"
+pdf_url = "https://arxiv.org/pdf/2305.13243"
+note = "Conversational LLM hardware design case study."
+
+# ============================================================================
+# Standards, books and the author's own tools
+# ============================================================================
+
+[[paper]]
+key = "ieee1800_2023"
+section = "std"
+priority = "core"
+title = "IEEE Standard for SystemVerilog: Unified Hardware Design, Specification, and Verification Language"
+authors = ["{IEEE}"]
+year = 2024
+venue = "IEEE Std 1800-2023"
+type = "misc"
+doi = "10.1109/IEEESTD.2024.10458102"
+url = "https://doi.org/10.1109/IEEESTD.2024.10458102"
+in_paper = true
+note = "SystemVerilog language reference manual; scheduling semantics are in clause 4."
+
+[[paper]]
+key = "ieee1666_2023"
+section = "std"
+priority = "core"
+title = "IEEE Standard for Standard SystemC Language Reference Manual"
+authors = ["{IEEE}"]
+year = 2023
+venue = "IEEE Std 1666-2023"
+type = "misc"
+doi = "10.1109/IEEESTD.2023.10264177"
+url = "https://doi.org/10.1109/IEEESTD.2023.10264177"
+in_paper = true
+note = "SystemC language reference manual; simulation semantics are in clause 4."
+
+[[paper]]
+key = "kubavat2026informal"
+section = "std"
+priority = "related"
+title = "InFormal: An Open-Source Formal Property Verifier for SystemVerilog with Checked Verdicts"
+authors = ["Mayur Kubavat"]
+year = 2026
+venue = "Zenodo technical report"
+type = "techreport"
+doi = "10.5281/zenodo.24261270"
+url = "https://doi.org/10.5281/zenodo.24261270"
+in_paper = true
+note = "InFormal: the formal property verifier svcc delegates unbounded proofs to."
+
+[[paper]]
+key = "kubavat2026scbench"
+section = "std"
+priority = "related"
+title = "SCBench: Do Verification Tools Help Coding Agents Maintain Open SystemC Libraries?"
+authors = ["Mayur Kubavat"]
+year = 2026
+venue = "SSRN preprint 7715040"
+type = "misc"
+url = "https://ssrn.com/abstract=7715040"
+in_paper = true
+note = "SCBench: benchmark of coding agents maintaining open SystemC libraries."
+
+[[paper]]
+key = "kubavat2026svlang"
+section = "std"
+priority = "related"
+title = "svlang and svlang-lint: A Pure-Rust IEEE 1800-2023 SystemVerilog Compiler Front End and Semantic Static Analyzer for Hardware Design and Verification"
+authors = ["Mayur Kubavat"]
+year = 2026
+venue = "Research Square preprint rs-11813840"
+type = "misc"
+url = "https://github.com/mayurkubavat/svlang"
+in_paper = true
+note = "svlang: the Rust SystemVerilog front end svcc builds on."
+
+[[paper]]
+key = "veldhuizen1995expr"
+section = "std"
+priority = "background"
+title = "Expression Templates"
+authors = ["Todd Veldhuizen"]
+year = 1995
+venue = "C++ Report 7(5), 1995"
+type = "article"
+pages = "26-31"
+url = "https://en.wikipedia.org/wiki/Expression_templates"
+in_paper = true
+note = "Expression templates, the C++ technique CRAVE constraints rely on."
