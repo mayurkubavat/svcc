@@ -1,0 +1,637 @@
+{
+  "designs": {
+    "corpus_rtl": [
+      {
+        "design": "13_alu32_pipe2.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "14_mac16_pipe2.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "15_crc8_step_comb.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "IndexError: list index out of range",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "16_gray_enc16_pipe1.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "17_sat_sub16_pipe1.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "18_shifter32_pipe2.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "IndexError: list index out of range",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "19_minmax32_pipe1.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "20_arb_prio4_comb.sv",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "NameError: name 's_num' is not defined",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      }
+    ],
+    "probes": [
+      {
+        "design": "p01_comb_blocking.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p02_signed.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p03_param.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "AttributeError: 'NoneType' object has no attribute 'group'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p04_wide.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "AttributeError: 'NoneType' object has no attribute 'group'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p05_mem.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p06_for.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "AttributeError: 'NoneType' object has no attribute 'group'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=397  first: ref=09 sc=00",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [roundtrip/rtl] RTL SEC mismatch in 'p06_for'",
+          "sec_verdict": "CounterexampleSat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p07_casez.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "IndexError: list assignment index out of range",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=395  first: ref=4 1 sc=0 1",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [roundtrip/rtl] RTL SEC mismatch in 'p07_casez'",
+          "sec_verdict": "CounterexampleSat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p08_function.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "KeyError: 'always0'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p09_generate.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "AttributeError: 'NoneType' object has no attribute 'group'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "not_run",
+          "cosim_detail": "  input [N-1:0] a",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [roundtrip/rtl] RTL SEC mismatch in 'p09_generate'",
+          "sec_verdict": "CounterexampleSat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p10_partsel.v",
+        "scav": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=397  first: ref=len sc=len",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p11_fsm.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "IndexError: list index out of range",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p12_ops.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-emit-sc/clang] emitted C++17 failed clang++ -Werror check:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p13_hier.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "AttributeError: 'NoneType' object has no attribute 'group'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "not_run",
+          "cosim_detail": "SC_BUILD_FAIL <tmpdir> In function \u2018int sc_main(int, ",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [svcc-equiv/netlist] failed lowering SEC miter to sv-netlist:",
+          "sec_verdict": null,
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p14_cnt.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p15_seq_blocking.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_error": "AttributeError: 'NoneType' object has no attribute 'group'",
+          "translator_exit": 1
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=392  first: ref=02 sc=11",
+          "roundtrip": "fail",
+          "roundtrip_error": "error: [roundtrip/rtl] RTL SEC mismatch in 'p15_seq_blocking'",
+          "sec_verdict": "CounterexampleSat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p16_width.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=209  first: ref=6d sc=ed",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p17_wrap.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=59  first: ref=1 sc=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      },
+      {
+        "design": "p18_latch_order.v",
+        "scav": {
+          "compiles_real_systemc": true,
+          "cosim": "not_run",
+          "cosim_detail": "HARNESS: port q2 not found in generated module",
+          "parses": true,
+          "translator_exit": 0
+        },
+        "svcc": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "roundtrip": "pass",
+          "sec_verdict": "EquivalentUnsat",
+          "sv2sc_exit": 0
+        }
+      }
+    ],
+    "scav_own_examples": [
+      {
+        "design": "halfadder.v",
+        "scav": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "fulladder.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "even_divide3.v",
+        "scav": {
+          "compiles_real_systemc": true,
+          "cosim": "match",
+          "cosim_detail": "cycles=397 mismatches=0",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "moore_fsm.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "s_to_p.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "rom_ctrl.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "code_83.v",
+        "scav": {
+          "compiles_real_systemc": true,
+          "cosim": "mismatch",
+          "cosim_detail": "cycles=397 mismatches=20  first: ref=3 sc=0",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "SM3_controller.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        }
+      },
+      {
+        "design": "CompressExtend.v",
+        "scav": {
+          "compiles_real_systemc": false,
+          "cosim": "not_run",
+          "cosim_detail": "does not compile",
+          "parses": true,
+          "translator_exit": 0
+        }
+      }
+    ]
+  },
+  "scav_commit": "2ef2e6bb69b81945d6eabaae37e6973401599fc7",
+  "systemc": "Version: 2.3.4-3build1",
+  "totals": {
+    "corpus_rtl": {
+      "scav": {
+        "compiles_real_systemc": 0,
+        "cosim_match": 0,
+        "designs": 8,
+        "translator_internal_error": 3
+      },
+      "svcc": {
+        "compiles_real_systemc": 8,
+        "cosim_match": 8,
+        "designs": 8,
+        "roundtrip_fail_but_cosim_match": 0,
+        "roundtrip_pass": 8,
+        "roundtrip_pass_but_cosim_mismatch": 0
+      }
+    },
+    "probes": {
+      "scav": {
+        "compiles_real_systemc": 2,
+        "cosim_match": 0,
+        "designs": 18,
+        "translator_internal_error": 9
+      },
+      "svcc": {
+        "compiles_real_systemc": 10,
+        "cosim_match": 3,
+        "designs": 18,
+        "roundtrip_fail_but_cosim_match": 0,
+        "roundtrip_pass": 5,
+        "roundtrip_pass_but_cosim_mismatch": 2
+      }
+    },
+    "scav_own_examples": {
+      "scav": {
+        "compiles_real_systemc": 3,
+        "cosim_match": 2,
+        "designs": 9,
+        "translator_internal_error": 0
+      }
+    }
+  }
+}

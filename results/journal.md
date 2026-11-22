@@ -118,3 +118,20 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `workspace_rust_loc`: `12600`
 - **Notes**: Zero uvir identifiers remaining; all 5 evaluated predictions (P1, P2, P3, P5, P6) confirmed; citation 10 removed.
 
+## [2026-11-22T19:01:10+00:00] `M5-scav-head-to-head` — SCAV vs svcc RTL head-to-head (Verilog -> SystemC, real SystemC 2.3.4 co-simulation)
+- **Commit**: `c59da4a` (`Linux-x86_64`, `rustc 1.97.0 (2d8144b78 2026-07-07)`)
+- **Command**: `cargo build --release -p svcc && python3 benchmarks/scav_compare/run_compare.py`
+- **Measured Metrics**:
+  - `corpus_rtl_scav_compiles`: `0/8`
+  - `corpus_rtl_svcc_cosim_match`: `8/8`
+  - `probes_scav_compiles`: `2/18`
+  - `probes_scav_cosim_match`: `0/18`
+  - `probes_scav_translator_crash`: `9/18`
+  - `probes_svcc_cosim_match`: `3/18`
+  - `probes_svcc_roundtrip_pass`: `5/18`
+  - `probes_svcc_roundtrip_pass_but_cosim_mismatch`: `2`
+  - `scav_commit`: `2ef2e6b`
+  - `scav_own_examples_compile`: `3/9`
+  - `scav_own_examples_cosim_match`: `2/9`
+- **Notes**: Cloud Linux container, g++ + libsystemc-dev 2.3.4, Icarus Verilog. svcc roundtrip-check reports EquivalentUnsat on p16_width and p17_wrap while the emitted SystemC mismatches RTL in simulation (SV context-determined width not modelled in C++). svcc RTL output needed stand-in uvm/crave2/fc4sc headers to compile against stock SystemC.
+
