@@ -217,3 +217,19 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `verilator`: `5.052`
 - **Notes**: See benchmarks/results/rtl_stress.md. Caliptra was re-run after the last fix and merged into the result. Remaining mismatches: 3 svlang parameter fill literal, 4 derived or generated clocks, 2 reference-side, 1 out-of-range under placeholder parameters, 4 unexplained (cvfpu).
 
+## [2026-11-22T21:31:41+00:00] `M6-typed-formal-gates` — Stress-run forms under the formal gate (branch rtl/stress-prove, not on main)
+- **Commit**: `b697994` (`Darwin-arm64`, `rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)`)
+- **Command**: `SYSTEMC_HOME=$HOME/.local/opt/accellera-svcc/systemc ./scripts/check.sh`
+- **Measured Metrics**:
+  - `cargo_tests_failed`: `0`
+  - `cargo_tests_passed`: `33`
+  - `check_sh`: `ALL CHECKS PASSED (exit 0)`
+  - `cosim_testdata_rtl`: `20/20`
+  - `forms_not_covered`: `lambda for replication of more than 16 copies into vectors over 64 bits, multi-dimensional array ports, multi-clock designs`
+  - `forms_proved`: `1-D array ports, posedge_event edges (gated clock), per-bit dynamic range writes, shift-based out-of-range reads, underscore-suffixed module names`
+  - `host`: `macOS arm64`
+  - `rtl_prove_failed`: `0`
+  - `rtl_prove_not_covered`: `3/46: array_elems and edges_misc (more than one clock), array_ports (multi-dimensional array port)`
+  - `rtl_prove_proved`: `43/46, all by induction`
+- **Notes**: The stress corpus (outside the repository, multi-file) was not put to the proof; its evidence is the simulation in benchmarks/results/rtl_stress.md. Rebase conflicts: cosim.rs, lib.rs, main.rs, docs/rtl_subset.md (kept both sides), result logs (both entries kept).
+
