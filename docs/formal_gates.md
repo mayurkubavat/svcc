@@ -192,7 +192,7 @@ How the reader treats each new form:
 
 | Emitted form | Result |
 | :--- | :--- |
-| `sig.posedge_event()` / `negedge_event()` on an internal signal | read as an edge; proved when the Btor2 model takes the clocking (a gated clock `clk & en` is proved), NOT COVERED when it reports several clocks |
+| `sig.posedge_event()` / `negedge_event()` on an internal signal | read as an edge; proved when the Btor2 model takes the clocking, NOT COVERED when it reports several clocks. A clock made by logic (a gated clock `clk & en`) is rejected by `rtl2sc` before any proof, because the SystemC would run it one delta cycle late; see `docs/rtl_subset.md`, Clock sources |
 | `sc_vector<sc_in<T>>` / `sc_vector<sc_out<T>>`, one dimension | proved, one output per element |
 | array ports with two or more dimensions | NOT COVERED |
 | lambda for replication of more than 16 copies into a vector over 64 bits | NOT COVERED (the lowering is still proved) |

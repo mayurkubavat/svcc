@@ -19,12 +19,14 @@ rust-version = "1.82"
 license = "Apache-2.0"
 repository = "https://github.com/mayurkubavat/svcc"
 authors = ["Mayur Kubavat"]
+keywords = ["systemverilog", "systemc", "rtl", "eda", "verification"]
+categories = ["development-tools", "compilers", "simulation"]
 
 [workspace.dependencies]
-# Pinned IEEE 1800-2023 SystemVerilog front-end & UVM design model (svlang v0.4.0)
-svlang = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
-svlang-model = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
-svlang-lint = { git = "https://github.com/mayurkubavat/svlang.git", rev = "478a0d10a4e91ea8199d3179ee0a8fc111d1e692" }
+# Pinned IEEE 1800-2023 SystemVerilog front-end & UVM design model (svlang 0.4.0 from crates.io)
+svlang = "0.4.0"
+svlang-model = "0.4.0"
+svlang-lint = "0.4.0"
 
 # Internal workspace crates
 svcc-ir = { path = "crates/svcc-ir", version = "0.1.0" }

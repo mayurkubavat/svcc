@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+exclude = ["tests/"]
 description = "Bidirectional IEEE 1800-2023 SystemVerilog <-> C++17 SystemC/UVM compiler, SDK, and Z3 equivalence verifier"
 
 [lib]
