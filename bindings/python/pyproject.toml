@@ -31,3 +31,6 @@ Documentation = "https://github.com/mayurkubavat/svcc/blob/main/docs/rtl_subset.
 bindings = "pyo3"
 module-name = "svcc"
 strip = true
+
+[tool.maturin.sbom]
+rust = false
