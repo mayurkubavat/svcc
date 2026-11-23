@@ -178,7 +178,9 @@ def prove(rec, files, dargs, module, opts):
     elif "NotCovered" in js:
         rec["prove_reason"] = js["NotCovered"].get("reason", "")[:240]
     if rec["prove"] in ("fail", "error", "timeout"):
-        rec["prove_messages"] = [l.strip()[:240] for l in (err + out).splitlines() if l.strip() and not l.startswith(("{", "}", " "))][:8]
+        # Verdict lines and their indented notes (the first note says why), not the JSON.
+        text = err + (out[:start] + out[out.rfind("}") + 1:] if start >= 0 else out)
+        rec["prove_messages"] = [l.strip()[:240] for l in text.splitlines() if l.strip()][:8]
     return rec
 
 
@@ -241,7 +243,8 @@ def do_report(path, md_path):
     out = []
     w = out.append
     w("# Typed RTL path on real designs\n")
-    w(f"svcc `{meta.get('svcc', '?')}`, stage `{meta.get('stage')}`, {meta.get('steps')} cosim steps. "
+    steps = "" if meta.get("stage") == "prove-from" else f", {meta.get('steps')} cosim steps"
+    w(f"svcc `{meta.get('svcc', '?')}`, stage `{meta.get('stage')}`{steps}. "
       "Every module of each design is tried as a top with its default parameters.\n")
     designs = sorted({r["design"] for r in recs})
     if meta.get("stage") == "prove-from":
@@ -311,6 +314,24 @@ def do_report(path, md_path):
         sys.stdout.write(text)
 
 
+def fail_cause(r):
+    """Cause of an rtl-prove exit 1, from its messages."""
+    text = " ".join(r.get("prove_messages") or [])
+    if "start values differ" in text or ("DIFFERENCE FOUND" in text and "z3 0 us" in text):
+        # pair.rs returns before calling the solver when declared start values disagree;
+        # earlier runs dropped the indented note, the zero solver time still marks this path.
+        return "start values of paired states differ (no solver run)"
+    if "DIFFERENCE FOUND" in text:
+        return "solver found a difference"
+    if "solver gave no answer" in text:
+        return "solver gave no answer (Z3 time limit)"
+    if "no outputs to compare" in text:
+        return "module has no outputs to compare"
+    if "[svcc-emit-sv/hdl]" in text or "[svcc-front-sv/hdl]" in text:
+        return "construct not supported on the proof path"
+    return "other"
+
+
 def prove_report(w, recs, designs, meta):
     """Proof results for modules that matched Verilator in co-simulation."""
     w("\n## Proof of the generated C++ (`svcc rtl-prove`) on modules that match Verilator\n")
@@ -336,6 +357,9 @@ def prove_report(w, recs, designs, meta):
         if r["prove"] != "notcovered":
             continue
         reason = re.sub(r"^\[[^\]]*\] ", "", r.get("prove_reason", "") or "(no reason)")
+        reason = re.sub(r"\s*\n\s*", " ", reason)
+        reason = re.sub(r"\S*/([\w.]+\.s?vh?):\d+:\d+: ", r"\1: ", reason)  # file name only, no line
+        reason = re.sub(r"(?<!\S)/\S*", "", reason).strip()  # trailing absolute paths
         reason = re.sub(r"\(([\w.$\[\]]+, )+[\w.$\[\]]+\)", "(...)", reason)
         reason = re.sub(r"'[\w$]+'", "'X'", reason)[:160]
         cnt[reason] += 1
@@ -346,13 +370,23 @@ def prove_report(w, recs, designs, meta):
         w("| ---: | :--- | :--- |")
         for c, k in cnt.most_common(25):
             w(f"| {k} | {c.replace('|', chr(92) + '|')} | {ex[c]} |")
+    fails = [r for r in recs if r["prove"] == "fail"]
+    if fails:
+        # rtl-prove exits 1 for every unproved result; split them by what the messages say.
+        causes = collections.Counter(fail_cause(r) for r in fails)
+        w("\n### Why the failed proofs failed\n")
+        w("| Modules | Cause |")
+        w("| ---: | :--- |")
+        for c, k in causes.most_common():
+            w(f"| {k} | {c} |")
     for kind, title in (("fail", "Proof failed (difference or no answer)"), ("bounded", "Bounded only"),
                         ("error", "Errors"), ("timeout", "Proof timeout")):
         rs = [r for r in recs if r["prove"] == kind]
         if rs:
             w(f"\n### {title} ({len(rs)})\n")
             for r in rs[:60]:
-                msg = (r.get("prove_messages") or [r.get("prove_reason", "")])[0]
+                msgs = r.get("prove_messages") or [r.get("prove_reason", "")]
+                msg = next((m for m in msgs if not m.startswith("error: [rtl-prove]")), msgs[0])
                 w(f"- `{r['design']}/{r['module']}`: lowering {r.get('prove_lowering', '?')}, "
                   f"generated C++ {r.get('prove_cpp', '?')}. {msg[:200]}")
 

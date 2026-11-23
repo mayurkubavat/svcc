@@ -308,3 +308,37 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
 
 ## [2026-11-23T08:45:00+00:00] `note-history-rewrite` — commit hashes in earlier entries after the author rewrite
 - **Notes**: The author rewrite of 2026-11-22 changed every commit hash. Entries above keep the hash that was HEAD when they were logged. `3c486e4` (M6-typed-formal-gates, mutation run) is the code committed as `5dd247d`, which holds `benchmarks/formal_gate/mutate.py` and its result files. `16a53ca` (M5.2-clock-gating, stress run) is `c8e16fb`. SystemC 3.0.3 in these runs is the author's fork of the Accellera repository at `9767bff`, built C++17.
+
+## [2026-11-23T08:24:49+00:00] `M6.3-prove-corpus` — rtl-prove on the stress-corpus modules that match Verilator
+- **Commit**: `c77d547` (`Linux-x86_64`, `unknown`)
+- **Command**: `DVQ_CPU=800% DVQ_MEM=12G dvq run formal -- python3 benchmarks/rtl_stress/run_stress.py --census-tool <svlang>/tools/quality --corpus <rtl-census> --prove-from benchmarks/results/rtl_stress_m52_cosim.jsonl --svcc target/release/svcc --jobs 8 --mem 1.5 --out benchmarks/results/rtl_prove_corpus.jsonl && python3 benchmarks/rtl_stress/run_stress.py --report benchmarks/results/rtl_prove_corpus.jsonl --md benchmarks/results/rtl_prove_corpus.md`
+- **Measured Metrics**:
+  - `bounded`: `129`
+  - `cosim_input`: `rtl_stress_m52_cosim.jsonl (M5.2 full run merged with its two re-runs; 1,187 pass records, 1,186 distinct modules)`
+  - `distinct_modules`: `1186`
+  - `duplicate_records`: `['serv/servant_ram (two source files)', 'opentitan/tlul_adapter_vh (two source files)']`
+  - `error`: `0`
+  - `fail`: `45`
+  - `fail_causes`: `{'module has no outputs to compare': 6, 'solver gave no answer (Z3 time limit)': 27, 'start values of paired states differ (no solver run)': 3, 'construct not supported on the proof path': 9}`
+  - `functional_differences`: `0`
+  - `jobs`: `8`
+  - `notcovered`: `414`
+  - `per_design`: `{'axi': {'notcovered': 4, 'fail': 1, 'proved': 2}, 'basejump_stl': {'proved': 19, 'fail': 4, 'notcovered': 1, 'bounded': 1}, 'biriscv': {'proved': 28, 'bounded': 3, 'fail': 5}, 'caliptra-rtl': {'notcovered': 72, 'proved': 146, 'fail': 8, 'bounded': 34}, 'common_cells': {'notcovered': 38, 'proved': 93, 'bounded': 42, 'fail': 2}, 'cv32e40p': {'proved': 49, 'notcovered': 34, 'fail': 6, 'bounded': 5}, 'cv32e40x': {'proved': 15, 'notcovered': 14, 'fail': 1}, 'cva6': {'notcovered': 4, 'proved': 3}, 'cvfpu': {'proved': 3, 'notcovered': 2, 'fail': 2}, 'ibex': {'proved': 6, 'notcovered': 11, 'bounded': 3}, 'opentitan': {'notcovered': 200, 'bounded': 31, 'proved': 182, 'fail': 4}, 'picorv32': {'proved': 6, 'notcovered': 2}, 'scr1': {'fail': 4, 'proved': 16, 'notcovered': 7, 'bounded': 2}, 'serv': {'proved': 13, 'notcovered': 6, 'fail': 4, 'bounded': 2}, 'tech_cells_generic': {'proved': 7, 'fail': 1, 'notcovered': 2}, 'verilog-axi': {'notcovered': 17, 'proved': 12, 'fail': 3, 'bounded': 6}}`
+  - `prove_timeout_s`: `600`
+  - `proved`: `600`
+  - `records`: `1188`
+  - `timeout`: `0`
+  - `z3`: `4.15.5`
+- **Notes**: check.sh 8/8 passed first (rtl-prove 45 proved, 5 not covered; rtl-cosim 24/24). No proof found a functional difference. The 3 DIFFERENCE FOUND results (verilog-axi axi_interconnect, axil_interconnect, axil_crossbar_addr) stop before the solver: start values differ for svlang_latch_0/1, the loop variables integer i, j that svlang models as latches; they never reach an output (precision gap in svcc-equiv pair.rs). 27 fails are Z3 giving no answer within its per-query limit, 9 are clock-gating latches with nonblocking assignments rejected on the proof path (svcc-emit-sv/hdl; cosim supports them since c8e16fb), plus one local declared with different types in nested blocks (mbox_csr), 6 are modules without outputs. Top not-covered reasons: more than one clock in btor2 (58+), svlang netlist lowering of immediate assertions / $isunknown in opentitan prim cells, and hdl-lift local-copy patterns. The 5 remaining cosim mismatches were adjudicated with Icarus (directly or on a yosys-slang netlist) and IEEE 1800: see benchmarks/results/cosim_adjudication.md. run_stress.py report now splits fails by cause and keeps the indented rtl-prove notes in prove_messages.
+
+## [2026-11-23T08:24:59+00:00] `M6.4-cosim-adjudication` — Third-simulator and IEEE 1800 adjudication of the svcc vs Verilator mismatches
+- **Commit**: `c77d547` (`Linux-x86_64`, `unknown`)
+- **Command**: `python3 benchmarks/rtl_stress/adjudicate.py --tools ~/Tools/oss-cad-suite/bin --census-tool <svlang>/tools/quality --corpus <rtl-census> --design <d> --module <m> --work <failing rtl-cosim work dir> --out <dir> --define VERILATOR [--via-yosys]; run_stress.py --stage cosim --module fpnew_fma_multi fpnew_cast_multi stream_mux with svcc built on svlang af574c9`
+- **Measured Metrics**:
+  - `modules_differing`: `5`
+  - `svcc_svlang_defect`: `fpnew_cast_multi x2, fpnew_fma_multi x2 first difference (2**N in a sized localparam evaluated at 32 bits; fixed by svlang af574c9)`
+  - `third_simulator`: `Icarus Verilog 14 devel; yosys 0.70 + slang plugin for fpnew`
+  - `unspecified_by_ieee`: `fpnew_fma_multi after af574c9 (src_fmt_i 5 or 7 outside fp_format_e: out-of-bounds read is x), stream_mux reads`
+  - `verilator_deviation`: `stream_mux out-of-range bit-select write not ignored (IEEE 1800 11.5.1)`
+  - `with_af574c9`: `fpnew_cast_multi 2/2 match; fpnew_fma_multi still differs only on x-valued outputs`
+- **Notes**: Root-causes the open fpnew_fma_multi item of M5.2. Harness follow-up: drive enum-typed ports with enumerated values only, or count a difference on an output Icarus reports as x as unspecified, not a mismatch. Exact IEEE wording for the out-of-range bit-select write should be checked against the published 1800-2023 text; Icarus ignores the write.
