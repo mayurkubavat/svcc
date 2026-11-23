@@ -11,10 +11,11 @@
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
-# array_elems, edges_misc, clock_gating: more than one clock or a computed clock (clock_gating
+# array_elems, edges_misc, clock_gating, clock_vector: more than one clock or a computed clock
+# (clock_vector gates each bank separately; clock_gating
 # has a falling-edge clock and a clock made from register outputs).
 # array_ports: multi-dimensional array port, and array ports in the generated header.
-EXPECT_NOT_COVERED="array_elems.sv array_ports.sv clock_gating.sv edges_misc.sv"
+EXPECT_NOT_COVERED="array_elems.sv array_ports.sv clock_gating.sv clock_vector.sv edges_misc.sv"
 FILES=("$@")
 STRICT=0
 if [[ ${#FILES[@]} -eq 0 ]]; then

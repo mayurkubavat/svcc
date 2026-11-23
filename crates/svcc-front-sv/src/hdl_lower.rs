@@ -91,6 +91,7 @@ pub fn lower_elaborated(
         clock_fns: HashMap::new(),
         comb_deps: HashMap::new(),
         cg_variants: HashMap::new(),
+        variant_why: HashMap::new(),
     };
     let mut tops = Vec::new();
     for &t in &design.tops {
@@ -248,6 +249,8 @@ struct Lowerer<'a> {
     /// Variants of modules for derived clock ports: (module, port, inverted, gated) ->
     /// (variant, enable port).
     cg_variants: HashMap<VariantKey, Option<(String, Option<String>)>>,
+    /// Why a clock variant could not be made: (module, port) -> reason.
+    variant_why: HashMap<(String, String), String>,
 }
 
 /// A clock variant of a module: (module, clock port, inverted, gated).
@@ -1254,9 +1257,14 @@ impl<'a> Lowerer<'a> {
                 continue;
             };
             for c in inst.conns.iter().filter(|c| clk_ports.contains(&c.port)) {
+                let why = self
+                    .variant_why
+                    .get(&(inst.module.clone(), c.port.clone()))
+                    .map(|w| format!(" (it cannot be converted to an enable because {w})"))
+                    .unwrap_or_default();
                 uses.push((
                     resolve(&c.sig),
-                    format!("port '{}' of instance '{}'", c.port, inst.name),
+                    format!("port '{}' of instance '{}'{why}", c.port, inst.name),
                 ));
             }
         }
@@ -4517,9 +4525,7 @@ impl<'v> ClockView<'v> {
                 }
                 let covers = match &lhs.sel {
                     None => true,
-                    Some(sel) => {
-                        sel.lo_dyn.is_some() || (sel.lo <= lo && lo < sel.lo + sel.w)
-                    }
+                    Some(sel) => sel.lo_dyn.is_some() || (sel.lo <= lo && lo < sel.lo + sel.w),
                 };
                 if !covers {
                     continue;
@@ -4862,6 +4868,20 @@ impl<'a> Lowerer<'a> {
         result
     }
 
+    /// Records why no clock variant of `module` for `port` can be made, for the clock check's
+    /// message, and returns `None`.
+    fn no_variant(
+        &mut self,
+        module: &str,
+        port: &str,
+        why: String,
+    ) -> Option<(String, Option<String>)> {
+        self.variant_why
+            .entry((module.to_string(), port.to_string()))
+            .or_insert(why);
+        None
+    }
+
     fn build_clock_variant(
         &mut self,
         module: &str,
@@ -4896,16 +4916,23 @@ impl<'a> Lowerer<'a> {
                 continue;
             }
             if read_sigs(&p.body).iter().any(|s| is_port(s)) {
-                return None;
+                return self.no_variant(
+                    module,
+                    port,
+                    format!(
+                        "module '{module}' reads its clock port '{port}' as data in '{}'",
+                        p.name
+                    ),
+                );
             }
             if let ProcKind::Seq { edges } = &p.kind {
                 for e in edges.iter().filter(|e| is_port(&e.sig)) {
                     if e.is_async_ctrl {
-                        return None;
+                        return self.no_variant(module, port, format!("module '{module}' uses its clock port '{port}' as an asynchronous control"));
                     }
                     // The falling edge of a gated clock has no enable form.
                     if gated && e.posedge == inv {
-                        return None;
+                        return self.no_variant(module, port, format!("module '{module}' has registers on the falling edge of the gated clock '{port}'"));
                     }
                 }
             }
@@ -4953,10 +4980,16 @@ impl<'a> Lowerer<'a> {
                         k != ii && other.conns.iter().any(|x| outs.contains(&&x.sig))
                     });
                     if read {
-                        return None;
+                        return self.no_variant(
+                            module,
+                            port,
+                            format!(
+                                "module '{module}' also uses a clock derived from '{port}' as data"
+                            ),
+                        );
                     }
                 } else {
-                    return None;
+                    return self.no_variant(module, port, format!("module '{module}' passes its clock port '{port}' to port '{}' of instance '{}', which does not use it as a clock", c.port, inst.name));
                 }
             }
         }
