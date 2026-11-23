@@ -31,7 +31,7 @@ path, and the first two rows are regression tests that must fail the gate
 | SV against SV | `svcc prove-sec <a.sv> <b.sv>` | two SystemVerilog designs, outputs matched by name | induction over paired state, else bounded |
 | Differential simulation | `svcc rtl-cosim <in.sv>` | generated SystemC, compiled against real SystemC, against Verilator | random stimulus. **Not a proof.** |
 
-`scripts/rtl_prove.sh` runs the first gate over `testdata/rtl` (20 designs),
+`scripts/rtl_prove.sh` runs the first gate over `testdata/rtl` (24 designs),
 `benchmarks/scav_compare/probes` (18) and corpus designs 13..20 (8); it is step 7 of
 `scripts/check.sh` and needs only `z3`.
 
@@ -132,9 +132,12 @@ design, could be wrong:
 
 ## Evidence for the gate itself
 
-- 42 of 42 designs pass `rtl-prove`, all with `ProvedInductive` for both the lowering and
-  the generated C++ (macOS arm64, Z3 on `PATH`); the same 42 pass `rtl-cosim` against
-  SystemC 3.0.3 and Verilator.
+- At main 00c80f0 (v0.1.1), `scripts/rtl_prove.sh` covers 50 designs: 45 are proved by
+  induction for both the lowering and the generated C++, none is only bounded, and 5 are
+  NOT COVERED (more than one clock, or a form the reader does not model). Measured on Linux
+  x86_64 with Z3 5.4.1; journal entry M6.1-rtl-prove-main.
+- At an earlier commit, the 42 designs then in the set passed `rtl-cosim` against SystemC
+  3.0.3 and Verilator (macOS arm64). `rtl-cosim` has not been re-run on all 50 at 00c80f0.
 - 8 of 8 golden models pass `prove-sec` with `ProvedInductive`.
 - Negative tests in `crates/svcc/tests/formal_gates.rs`: the two historical width bugs, a
   dropped sign conversion, an unguarded division, a missing sensitivity entry, a wrong
@@ -179,8 +182,8 @@ How to read it, and what it does not show:
 ## Coverage after the stress-run changes
 
 The stress run on real designs added emitter forms and four corpus designs. Measured on the
-branch that integrates them (46 designs: 20 in `testdata/rtl`, 18 probes, 8 benchmark
-designs):
+branch that integrated them, before the clock-gating work (46 designs: 20 in `testdata/rtl`,
+18 probes, 8 benchmark designs). The current totals are in the previous section.
 
 | Outcome | Designs |
 | :--- | :--- |
@@ -192,7 +195,7 @@ How the reader treats each new form:
 
 | Emitted form | Result |
 | :--- | :--- |
-| `sig.posedge_event()` / `negedge_event()` on an internal signal | read as an edge; proved when the Btor2 model takes the clocking, NOT COVERED when it reports several clocks. A clock made by logic (a gated clock `clk & en`) is rejected by `rtl2sc` before any proof, because the SystemC would run it one delta cycle late; see `docs/rtl_subset.md`, Clock sources |
+| `sig.posedge_event()` / `negedge_event()` on an internal signal | read as an edge; proved when the Btor2 model takes the clocking, NOT COVERED when it reports several clocks. Since v0.1.1, `rtl2sc` converts a clock-gating cell, clock buffer or inverter into a clock enable on the root clock; a clock made by other logic is still rejected, because the SystemC would run it one delta cycle late. See `docs/rtl_subset.md`, Clock sources. The proof does not model delta-cycle scheduling, so a hand-written header that keeps a derived clock can pass it; use `rtl-cosim` for scheduling |
 | `sc_vector<sc_in<T>>` / `sc_vector<sc_out<T>>`, one dimension | proved, one output per element |
 | array ports with two or more dimensions | NOT COVERED |
 | lambda for replication of more than 16 copies into a vector over 64 bits | NOT COVERED (the lowering is still proved) |

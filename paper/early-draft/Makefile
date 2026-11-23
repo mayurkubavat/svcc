@@ -5,7 +5,7 @@ BIBTEX   ?= /Library/TeX/texbin/bibtex
 
 all: main.pdf
 
-main.pdf: main.tex refs.bib
+main.pdf: main.tex ../refs.bib
 	$(PDFLATEX) -interaction=nonstopmode -halt-on-error main.tex
 	$(BIBTEX) main
 	$(PDFLATEX) -interaction=nonstopmode -halt-on-error main.tex

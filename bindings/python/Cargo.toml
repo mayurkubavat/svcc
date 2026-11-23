@@ -1,10 +1,10 @@
 [package]
 name = "svcc-py"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.82"
 license = "Apache-2.0"
-description = "PyO3 Python extension bindings (`import svcc`) for the svcc SV <-> C++17 compiler and Z3 prover"
+description = "PyO3 Python bindings (`import svcc`) for svcc: SystemVerilog RTL to SystemC conversion and Z3 checks"
 
 [workspace]
 

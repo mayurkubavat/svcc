@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use svcc, please cite the software archive below."
+title: "svcc: SystemVerilog-to-SystemC Conversion with a Formal Check of the Generated C++"
+type: software
+authors:
+  - family-names: Kubavat
+    given-names: Mayur
+    affiliation: Independent Researcher
+    orcid: "https://orcid.org/0009-0009-1087-8558"
+version: 0.1.2
+license: Apache-2.0
+repository-code: "https://github.com/mayurkubavat/svcc"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24455889
+    description: "Zenodo archive, all versions"
+keywords:
+  - SystemVerilog
+  - SystemC
+  - RTL
+  - translation validation
+  - equivalence checking
+  - hardware verification

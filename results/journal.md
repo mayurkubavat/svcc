@@ -277,3 +277,17 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `proved_inductive`: `45`
 - **Notes**: Run in a Linux x86_64 cloud container for the paper drafts (paper/rtl-tv, paper/softwarex). No SystemC or Verilator there, so no co-simulation in this run.
 
+## [2026-11-23T06:22:45+00:00] `R0.1.2-release-check` — 0.1.2 release prep: check.sh steps 1-7 pass; co-simulation step not run (no Verilator in this environment)
+- **Commit**: `df7df2d` (`Linux-x86_64`, `rustc 1.97.0 (2d8144b78 2026-07-07)`)
+- **Command**: `./scripts/check.sh`
+- **Measured Metrics**:
+  - `cosim`: `not run`
+  - `host`: `Linux x86_64 cloud container`
+  - `rtl_prove_bounded_only`: `0`
+  - `rtl_prove_failed`: `0`
+  - `rtl_prove_not_covered`: `5`
+  - `rtl_prove_proved`: `45`
+  - `steps_passed`: `1-7 of 8`
+  - `z3`: `5.4.1`
+- **Notes**: Changes since v0.1.1 are documentation, package metadata, version 0.1.2 and the rtl-prove help text. Step 8 (rtl-cosim against Verilator) stopped with 'verilator not on PATH'; re-run it on the linux device before publishing.
+

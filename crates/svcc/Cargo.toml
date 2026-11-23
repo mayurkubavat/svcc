@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
 exclude = ["tests/"]
-description = "Bidirectional IEEE 1800-2023 SystemVerilog <-> C++17 SystemC/UVM compiler, SDK, and Z3 equivalence verifier"
+description = "Converts synthesizable SystemVerilog RTL to readable SystemC and checks the generated C++ against the source with Z3"
 
 [lib]
 name = "svcc"

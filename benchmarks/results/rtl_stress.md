@@ -1,6 +1,6 @@
 # Typed RTL path on real designs
 
-Stress run of `svcc rtl2sc` and `svcc rtl-cosim` on 15 open-source designs, 2,184 modules,
+Stress run of `svcc rtl2sc` and `svcc rtl-cosim` on 16 open-source code bases, 2,184 modules,
 each module tried as a top with its default parameters. Three stages: convert, compile the
 generated header with g++ against SystemC, simulate against Verilator for 3,000 random steps.
 
@@ -20,6 +20,11 @@ python3 benchmarks/rtl_stress/run_stress.py --report rtl_stress.jsonl
 ```
 
 ## Summary
+
+This table is from the first run, before svlang 0.5.1 and the clock-gating conversion of
+v0.1.1. The later run used in `paper/rtl-tv` (numbers in `paper/rtl-tv/numbers.tex`) gives
+1,185 modules that match Verilator and 5 that differ, of the same 2,184; the other 994 were
+not converted or not compared.
 
 | | Modules |
 | :--- | ---: |

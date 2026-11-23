@@ -313,7 +313,7 @@ fn print_pair(stage: &str, top: &str, r: &svcc_equiv::pair::PairReport) {
 
 fn print_usage() {
     println!(
-        "svcc {} — Bidirectional IEEE 1800-2023 SV (RTL + UVM) <-> C++17 SystemC Compiler\n\
+        "svcc {} — SystemVerilog RTL to SystemC conversion with a formal check of the generated C++\n\
          \n\
          USAGE:\n\
          \x20 svcc targets                                          List SV/C++ capability profiles\n\
@@ -325,7 +325,7 @@ fn print_usage() {
          \x20 svcc roundtrip-check <in.sv> [--shims <dir>]          SV -> C++17 (clang++) -> SV (svlang) + Z3 CRV/SVA/SEC\n\
          \x20 svcc prove-equiv <lhs> <rhs>                          Prove Z3 QF_BV CRV/Enum/Dist & UCIS equivalence\n\
          \x20 svcc prove-sec <spec.sv|hpp> <imp.sv> [--latency L]   Prove Btor2 + Z3 Sequential Equivalence (SEC/C2RTL)\n\
-         \x20 svcc rtl-prove <files.sv...>                          Prove generated SystemC equal to its RTL source (z3)\n\
+         \x20 svcc rtl-prove <in.sv> [--top M] [--header <h.hpp>]  Prove generated (or given) SystemC equal to its RTL source (z3)\n\
          \x20 svcc bench <in.sv> [--iters 50]                       Emit JSON latency & formal equivalence telemetry",
         env!("CARGO_PKG_VERSION")
     );

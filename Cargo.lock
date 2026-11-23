@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "svcc"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -286,14 +286,14 @@ dependencies = [
 
 [[package]]
 name = "svcc-emit-sc"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "svcc-ir",
 ]
 
 [[package]]
 name = "svcc-emit-sv"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "svcc-ir",
  "svcc-svlang",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "svcc-equiv"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -311,14 +311,14 @@ dependencies = [
 
 [[package]]
 name = "svcc-front-sc"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "svcc-ir",
 ]
 
 [[package]]
 name = "svcc-front-sv"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "svcc-ir",
  "svcc-svlang",
@@ -326,7 +326,7 @@ dependencies = [
 
 [[package]]
 name = "svcc-ir"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -334,14 +334,14 @@ dependencies = [
 
 [[package]]
 name = "svcc-passes"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "svcc-ir",
 ]
 
 [[package]]
 name = "svcc-svlang"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "svlang",
  "svlang-lint",

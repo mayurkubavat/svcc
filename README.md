@@ -1,47 +1,122 @@
-# `svcc` — Bidirectional SystemVerilog/UVM and SystemC Compiler with SMT Translation Validation
+# svcc
 
-`svcc` is an open-source Rust compiler, Python SDK (`svcc-py`), and Z3/Btor2 translation-validation verifier (`12,600` LOC) translating bidirectionally between **IEEE 1800-2023 SystemVerilog / IEEE 1800.2-2020 UVM (`sv-uvm`)** and **IEEE 1666-2023 SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC (`sc-uvm`, C++17)** and untimed C++17 reference models (`C2RTL`) over a 7-dialect intermediate representation (`svcc-ir`: `types`, `uvm`, `crv`, `cov`, `sched`, `sva`, `rtl`).
+`svcc` converts synthesizable SystemVerilog RTL (IEEE 1800-2023) into readable SystemC
+(IEEE 1666, C++17), and then checks the generated C++ against the source. The check reads the
+generated header with C++17 and SystemC evaluation rules, treats undefined behavior as a
+failure, and proves the result equal to the SystemVerilog source with Z3. A second command
+simulates the generated SystemC against Verilator.
 
-## Workspace & Artifacts
+**Status: 0.1.2, early release.** The RTL path is the part that has been checked on real
+designs. Read [What a result means](#what-a-result-means) and
+[Known limits](#known-limits) before relying on it.
 
-- **`crates/svcc`**: Top-level Rust SDK (`use svcc::{sv_to_sc, sc_to_sv, prove_sources_equivalent, compile_cpp_to_btor2};`) + `svcc` CLI binary.
-- **`crates/svcc-{ir,front-sv,front-sc,passes,equiv,emit-sc,emit-sv}`**: Modular front ends (`svlang` semantic + lossless CST recovery, `svlang-lint` emission gate, C++17 clause splitter & SSA lowers), semantic legalizer (`P2`/`P3`/`P5` CRAVE passes), and Z3 `QF_BV` / SVA BMC / UCIS 1.0 / Btor2 SEC provers. For synthesizable design code: a typed, elaborated RTL path (`rtl2sc`), a C++ reader that gives generated SystemC its C++ meaning (`svcc-front-sc/src/hdl_lift.rs`), and the equivalence engine that proves it against the source (`svcc-equiv/src/pair.rs`); see `docs/formal_gates.md`.
-- **`crates/svcc-svlang`**: The only crate that depends on `svlang`, `svlang-model` and `svlang-lint`; the front end, emitter lint gate and Btor2 SEC reach `svlang` through it.
-- **`bindings/python`**: `maturin` + `PyO3` Python SDK (`svcc-py`).
-- **`benchmarks/`**: 20-design benchmark suite (`run_benchmarks.py`), live Accellera SystemC 3.0.3 / UVM-SystemC / CRAVE / FC4SC evaluation (`run_m4_extended.py`), and external open-source corpus audit (`ibex`, `cv32e40p`, `uvm-verilator`, `accellera-crave`).
-- **`paper/`**: Technical report source (`paper/main.tex`, `paper/refs.bib`) and compiled PDF (`paper/main.pdf`).
-
-## Quick Start
+## Install
 
 ```bash
-# Full gate: rustfmt + clippy (-D warnings) + SDK/CLI tests + clang++ -Werror + svlang + svlang-lint + Z3 QF_BV / SVA BMC / Btor2 SEC
-./scripts/check.sh
+cargo install svcc        # command-line tool and Rust library (Rust 1.82 or later)
+pip install svcc          # Python package (CPython 3.9 or later)
+```
 
-# Round-trip check SV/UVM -> C++17 (clang++ -Werror) -> SV (svlang + svlang-lint) + Z3 proofs
-cargo run --release -p svcc -- roundtrip-check testdata/sv/axi4_burst_env.sv --shims testdata/cpp_shims
-cargo run --release -p svcc -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims testdata/cpp_shims
+Python wheels are built for Linux x86_64 and macOS arm64; other platforms build from source
+and need Rust. The proofs need the `z3` executable on `PATH` (tested with Z3 5.4.1).
+Co-simulation needs `verilator` on `PATH` (tested with 5.052), a C++17 compiler and
+`SYSTEMC_HOME` pointing at a SystemC 3.0 install (tested with 3.0.3).
 
-# Convert synthesizable SV RTL to SystemC (typed, elaborated path; see docs/rtl_subset.md)
-cargo run --release -p svcc -- rtl2sc testdata/rtl/fsm_enum.sv --top fsm_enum -o fsm_enum.hpp
+## Quick start
 
-# Prove the generated SystemC equal to its source (needs z3; reads the C++ with C++ width
-# rules, see docs/formal_gates.md for what a pass means and what it assumes)
-cargo run --release -p svcc -- rtl-prove testdata/rtl/fsm_enum.sv
-./scripts/rtl_prove.sh
+```bash
+# Convert synthesizable RTL to a SystemC header
+svcc rtl2sc testdata/rtl/fsm_enum.sv --top fsm_enum -o fsm_enum.hpp
+
+# Prove the generated header equal to its source (or a header you pass with --header)
+svcc rtl-prove testdata/rtl/fsm_enum.sv
+svcc rtl-prove testdata/rtl/fsm_enum.sv --header my_fsm_enum.hpp
+
+# Simulate the generated SystemC against Verilator on random stimulus (not a proof)
+svcc rtl-cosim testdata/rtl/fsm_enum.sv --top fsm_enum --steps 5000
 
 # Prove an untimed C++ golden function equal to pipelined RTL, 2 cycles later
-cargo run --release -p svcc -- prove-sec testdata/sc/alu_golden_c2rtl.hpp testdata/sv/alu_pipe_rtl.sv --latency 2
-
-# Simulate the generated SystemC against Verilator on the same random stimulus
-# (needs verilator on PATH and SYSTEMC_HOME; simulation evidence, not a proof)
-cargo run --release -p svcc -- rtl-cosim testdata/rtl/fsm_enum.sv --top fsm_enum
-./scripts/rtl_cosim.sh
-
-# Reproduce benchmark suite and live Accellera CRAVE / external corpus measurements
-python3 benchmarks/run_benchmarks.py
-python3 benchmarks/run_m4_extended.py
+svcc prove-sec testdata/sc/alu_golden_c2rtl.hpp testdata/sv/alu_pipe_rtl.sv --latency 2
 ```
+
+From Python:
+
+```python
+import json, svcc
+
+src = open("counter.sv").read()
+header = svcc.rtl_to_sc("counter.sv", src, ["counter"])   # SystemC header text
+for item in json.loads(svcc.rtl_prove_json("counter.sv", src)):
+    print(item)                                            # Proved / Skipped / NotCovered
+```
+
+Exit codes of `rtl-prove`: 0 when every module is proved or bounded, 1 on a mismatch or when
+the solver gives no answer, 3 when a module is outside the proof model. The other commands
+exit with 0 or 1, so they can gate a regression run.
+
+## What a result means
+
+- **Proved**: equal for every run from equal start states, by induction over registers
+  mapped by name.
+- **Bounded**: induction did not close and 8 steps (`--bound K`) from the initial state found
+  no difference. It exits 0 and prints `[PASS] ... (bounded)`.
+- **Mismatch**: with a concrete input sequence that shows the difference.
+- **NOT COVERED** (exit 3): the design is outside the proof model, for example more than one
+  clock. Use `rtl-cosim` for these designs.
+
+What each check proves and assumes is in [`docs/formal_gates.md`](docs/formal_gates.md).
+The accepted subset and the mapping to SystemC are in [`docs/rtl_subset.md`](docs/rtl_subset.md).
+
+## Known limits
+
+- Two-state model: X and Z read as 0, in the conversion and in the proof.
+- The proof handles one clock, and sees an asynchronous reset at the clock step.
+- The proof does not model SystemC delta-cycle scheduling. A hand-written header with a
+  process on an internal copy of a clock can pass it; `rtl-cosim` is the check for that.
+- `svlang` gives the meaning of SystemVerilog to the converter and to both sides of the
+  proof, so a front-end defect can be invisible to the proof.
+- `initial` blocks and system tasks such as `$display` are dropped with a note.
+  Other constructs outside the subset are errors with a source location.
+- The UVM testbench path (`sv2sc`, `sc2sv`, `roundtrip-check`) and the SystemC-to-SystemVerilog
+  direction ship in the same tool but have not had the same scrutiny as the RTL path.
+
+## Repository layout
+
+| Path | Contents |
+| :--- | :--- |
+| `crates/svcc` | Command-line tool and Rust library |
+| `crates/svcc-front-sv`, `crates/svcc-svlang` | SystemVerilog lowering; the only crate that depends on `svlang` |
+| `crates/svcc-front-sc` | Reader that gives generated C++ its C++17 meaning |
+| `crates/svcc-ir`, `crates/svcc-passes` | Typed intermediate representation and passes |
+| `crates/svcc-emit-sc`, `crates/svcc-emit-sv` | SystemC emitter and SystemVerilog printer |
+| `crates/svcc-equiv` | Btor2 and SMT-LIB2 generation, Z3 calls |
+| `bindings/python` | Python package (PyO3) |
+| `testdata/rtl` | RTL designs used by the proof and co-simulation scripts |
+| `benchmarks/` | Benchmark suites, stress-run driver, results |
+| `results/` | Experiment log (`experiment_log.jsonl`) and journal of every recorded run |
+| `paper/` | Papers on svcc, see [`paper/README.md`](paper/README.md) |
+
+## Reproducing the checks
+
+```bash
+./scripts/check.sh        # format, clippy, tests, and the proof over every repository design
+./scripts/rtl_prove.sh    # proof only (needs z3)
+./scripts/rtl_cosim.sh    # co-simulation only (needs verilator and SYSTEMC_HOME)
+```
+
+Every measured run is recorded in `results/experiment_log.jsonl` and summarized in
+`results/journal.md`, with the commit, machine and tool versions.
+
+## Citing
+
+If you use svcc in published work, please cite the software archive
+(DOI [10.5281/zenodo.24455889](https://doi.org/10.5281/zenodo.24455889), all versions) and
+the paper in `paper/softwarex/`. `CITATION.cff` has the details.
+
+## Support
+
+Questions and bug reports: open a GitHub issue, or write to mkubavat01@gmail.com.
 
 ## License
 
-Apache License 2.0 (`LICENSE`).
+Apache License 2.0, see [`LICENSE`](LICENSE).

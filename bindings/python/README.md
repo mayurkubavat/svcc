@@ -2,7 +2,7 @@
 
 SystemVerilog to SystemC conversion for RTL, with formal checks of the result.
 
-**Status: 0.1, early release.** The RTL conversion path is the part of `svcc` that has been
+**Status: 0.1.2, early release.** The RTL conversion path is the part of `svcc` that has been
 checked on real designs. Read "What is checked" and "Known limits" before relying on it.
 
 ## What it does
@@ -53,36 +53,37 @@ and `svcc.__version__`.
   notes.
 - **Proof.** For a design in the proof model, the generated SystemC is proved equal to the
   source for all runs from equal start states (by induction), or for a bounded number of
-  cycles when induction does not close. Designs outside the model are reported as NOT
-  COVERED (exit code 3), never as passing.
-- **Real designs.** Every module of 15 open-source designs (2,184 modules, among them ibex,
-  cv32e40p, cva6, OpenTitan, Caliptra, common_cells) was tried as a top. 1,191 converted;
-  all of them compile against SystemC, and 1,170 match Verilator over 3,000 random steps.
-  The remaining differences are listed in the repository
-  (`benchmarks/results/rtl_stress.md`); the ones that were `svcc`'s mapping of derived
-  clocks are now rejected with an error.
+  cycles when induction does not close. A bounded result also exits 0 and prints
+  `[PASS] ... (bounded)`; a script that needs a full proof must check for that word.
+  Designs outside the model are reported as NOT COVERED (exit code 3), never as passing.
+- **Real designs.** Every module of 16 open-source code bases (2,184 modules, among them ibex,
+  cv32e40p, cva6, OpenTitan, Caliptra, common_cells) was tried as a top. In the latest run,
+  1,185 converted and match Verilator over 3,000 random steps, and 5 differ. This is
+  simulation only; the proof was not run on these designs. Details are in
+  `benchmarks/results/rtl_stress.md` and `paper/rtl-tv/numbers.tex`.
 
 ## Known limits
 
 - **Two-state.** `x` and `z` read as 0, in the conversion and in the proof. A design that
   relies on X behaviour is outside the model.
 - **Clocks.** A register may be clocked by an input port, a plain copy of it, or a register
-  output (a divider written with nonblocking assignments). A gated clock, a clock made by
-  other logic, or a clock written with a blocking assignment is rejected: SystemC would run
-  it one delta cycle late. Signals written by blocks on different clocks are rejected.
+  output (a divider written with nonblocking assignments). Since 0.1.1, clock-gating cells,
+  clock buffers and inverters become clock enables on the root clock. Any other clock made
+  by logic, or a clock written with a blocking assignment, is rejected: SystemC would run it
+  one delta cycle late. Signals written by blocks on different clocks are rejected.
 - **Proof model.** One clock; an asynchronous reset is treated as taking effect at the clock
-  step. Designs with several clocks are simulated, not proved.
+  step. Designs with several clocks are simulated, not proved. The proof does not model
+  SystemC delta-cycle scheduling: a hand-written header with a process on an internal copy of
+  a clock can pass it. Use `rtl-cosim` for scheduling.
 - **Front end.** `svlang` is the meaning of SystemVerilog for both the conversion and the
   proof, so an `svlang` defect can affect both sides of a proof alike. This release uses
   svlang 0.5.1, which fixes the three elaboration defects the stress run found.
 - **Not supported:** interfaces, `inout`, unpacked structs, hierarchical references, tasks,
   `foreach`, arrays local to a process, gate primitives, among others (see the subset page).
-- **Known differences on real designs.** In the 2,184-module stress run, the modules that
-  still differ from Verilator are `popcount` and `prim_pad_attr` (the Verilator reference
-  is wrong or sees different source), `stream_mux` with a placeholder parameter of 0
-  (undefined in two-state), and `fpnew_cast_multi` / `fpnew_opgroup_block` from cvfpu, which
-  are not yet explained. (`lfsr` and `cc_lfsr` differed because of an svlang defect fixed
-  in svlang 0.5.1, which this release uses; they now match.)
+- **Known differences on real designs.** In the latest 2,184-module stress run, the modules
+  that differ from Verilator are `stream_mux` with a placeholder parameter of 0 (undefined
+  in two-state) and two configurations each of `fpnew_cast_multi` and `fpnew_fma_multi` from
+  cvfpu, which are not yet explained.
 - **Other directions.** The UVM/verification-class translation (`sv2sc`, `sc2sv`) and the
   SystemC-to-SystemVerilog direction ship in this package but have not had the same scrutiny
   on real code as the RTL path. Treat their output as a starting point.
