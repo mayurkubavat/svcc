@@ -4358,6 +4358,34 @@ impl<'v> ClockView<'v> {
             if let Some(src) = inverted_sig(rhs) {
                 return Some((self.resolve(src), true, Vec::new()));
             }
+            // One bit of a vector of clocks (`.clk(gclk[i][k])`): follow it to whatever
+            // writes that bit.
+            if let Expr::Slice {
+                base,
+                lo,
+                lo_dyn: None,
+                ty,
+            } = strip_bit(rhs)
+            {
+                // A select of a select (`gclk[i][k]` on a packed array) adds up the offsets.
+                let mut base = base.as_ref();
+                let mut lo = *lo;
+                while let Expr::Slice {
+                    base: inner,
+                    lo: l2,
+                    lo_dyn: None,
+                    ..
+                } = base
+                {
+                    lo += l2;
+                    base = inner.as_ref();
+                }
+                if let (1, Expr::Sig { name: v, .. }) = (ty.w, base) {
+                    if let Some(src) = self.bit_source(v, lo) {
+                        return Some((self.resolve(&src), false, Vec::new()));
+                    }
+                }
+            }
             if let Expr::Binary {
                 op: BinOp::BitAnd | BinOp::LogAnd,
                 lhs,
@@ -4454,6 +4482,75 @@ impl<'v> ClockView<'v> {
             }
         }
         (steps > 0).then_some((cur, pos, ens))
+    }
+
+    /// The plain signal that bit `lo` of vector `v` is a copy of: an unconditional
+    /// combinational `v[lo] = x;`, and nothing else writing that bit.
+    fn bit_source(&self, v: &str, lo: u32) -> Option<String> {
+        fn flat<'s>(stmts: &'s [Stmt], out: &mut Vec<&'s Stmt>) -> bool {
+            for st in stmts {
+                match st {
+                    Stmt::Block { body, .. } => {
+                        if !flat(body, out) {
+                            return false;
+                        }
+                    }
+                    Stmt::Assign { .. } => out.push(st),
+                    _ => return false,
+                }
+            }
+            true
+        }
+        let mut found: Option<String> = None;
+        for p in self.processes {
+            if !driver_keys(&p.body).contains(v) {
+                continue;
+            }
+            let mut stmts = Vec::new();
+            let unconditional = matches!(p.kind, ProcKind::Comb) && flat(&p.body, &mut stmts);
+            for st in stmts.iter().copied().chain(std::iter::empty()) {
+                let Stmt::Assign { lhs, rhs, .. } = st else {
+                    continue;
+                };
+                if lhs.base.name() != v {
+                    continue;
+                }
+                let covers = match &lhs.sel {
+                    None => true,
+                    Some(sel) => {
+                        sel.lo_dyn.is_some() || (sel.lo <= lo && lo < sel.lo + sel.w)
+                    }
+                };
+                if !covers {
+                    continue;
+                }
+                let exact = matches!(&lhs.sel, Some(sel) if sel.lo == lo && sel.w == 1 && sel.lo_dyn.is_none());
+                match (exact, plain_sig(rhs)) {
+                    (true, Some(x)) if found.is_none() => found = Some(x.to_string()),
+                    _ => return None,
+                }
+            }
+            // A process that writes the vector under a condition may also write this bit.
+            if !unconditional {
+                let mut touches = false;
+                walk_stmts(&p.body, &mut |st| {
+                    if let Stmt::Assign { lhs, .. } = st {
+                        if lhs.base.name() == v {
+                            touches |= match &lhs.sel {
+                                None => true,
+                                Some(sel) => {
+                                    sel.lo_dyn.is_some() || (sel.lo <= lo && lo < sel.lo + sel.w)
+                                }
+                            };
+                        }
+                    }
+                });
+                if touches {
+                    return None;
+                }
+            }
+        }
+        found
     }
 
     /// For a latch `l` written only as `if (clk is low) l = en;`, returns `en`.
