@@ -4,6 +4,7 @@
 % official ACCESS_latex_template zip in template/ before running make.
 
 \usepackage{cite}
+\vol{XX}\def\theyear{2026}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage[scaled=0.83]{beramono}
@@ -20,7 +21,7 @@
 \newcommand{\code}[1]{{\fontshape{n}\ttfamily #1}}
 
 % Draft markers: numbers that must be regenerated before submission print in red.
-\newif\ifdraft \drafttrue
+\newif\ifdraft \draftfalse
 \newcommand{\fresh}[1]{\ifdraft\textcolor{red}{#1}\else #1\fi}
 \input{numbers}
 
@@ -613,7 +614,7 @@ its command, commit, machine and tool versions in the repository's experiment lo
 
 \section*{Acknowledgment}
 
-This work received no external funding. The author thanks the maintainers of Verilator, SystemC and Z3. The author used Google Antigravity
+This work received no external funding, and the author declares no conflict of interest. The author thanks the maintainers of Verilator, SystemC and Z3. The author used Google Antigravity
 IDE to help develop the \code{svcc} implementation and to refine this manuscript, and other AI coding
 and writing assistants to help prepare parts of the benchmark scripts, the evaluation runs and the
 manuscript text. The author
@@ -623,7 +624,7 @@ full responsibility for the content.
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
 
-\begin{IEEEbiographynophoto}{Mayur Kubavat}
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{photo-kubavat.jpg}}]{Mayur Kubavat}
 received the M.E. degree in VLSI and Embedded Systems Design from Gujarat Technological
 University, Ahmedabad, India, in 2015.
 
@@ -632,7 +633,7 @@ India, and in Mountain View and Sunnyvale, CA, USA, from 2019 to 2026, on proces
 designs. He is currently a Design Verification Engineer in industry. His research interests
 include Hardware Verification, SystemVerilog, SystemC, Formal Methods, and open-source Electronic
 Design Automation (EDA) tools.
-\end{IEEEbiographynophoto}
+\end{IEEEbiography}
 
 \EOD
 
