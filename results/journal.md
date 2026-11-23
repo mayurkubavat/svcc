@@ -305,3 +305,6 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `z3`: `5.4.1`
 - **Notes**: Co-simulation step 8 of check.sh was skipped here and must be run on the linux device before merging to main. Next: run rtl-prove on the 1,185 stress-corpus modules that match Verilator.
 
+
+## [2026-11-23T08:45:00+00:00] `note-history-rewrite` — commit hashes in earlier entries after the author rewrite
+- **Notes**: The author rewrite of 2026-11-22 changed every commit hash. Entries above keep the hash that was HEAD when they were logged. `3c486e4` (M6-typed-formal-gates, mutation run) is the code committed as `5dd247d`, which holds `benchmarks/formal_gate/mutate.py` and its result files. `16a53ca` (M5.2-clock-gating, stress run) is `c8e16fb`. SystemC 3.0.3 in these runs is the author's fork of the Accellera repository at `9767bff`, built C++17.

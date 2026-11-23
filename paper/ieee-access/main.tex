@@ -15,7 +15,7 @@
 \usepackage[hyphens]{url}
 \usepackage[hidelinks]{hyperref}
 
-\Urlmuskip=0mu plus 1.5mu\relax
+\Urlmuskip=0mu plus 0.5mu\relax
 \setlength{\emergencystretch}{1.4em}
 \newcommand{\code}[1]{{\fontshape{n}\ttfamily #1}}
 
@@ -73,7 +73,7 @@ Verilator. The proof does not model SystemC process scheduling.
 \end{abstract}
 
 \begin{keywords}
-Equivalence checking, hardware description languages, RTL, SystemC, SystemVerilog, translation
+Equivalence checking, hardware design languages, RTL, SystemC, SystemVerilog, translation
 validation.
 \end{keywords}
 
@@ -84,18 +84,18 @@ validation.
 \section{Introduction}
 \label{sec:intro}
 
-\PARstart{R}{TL} is written in SystemVerilog~\cite{ieee1800_2023}, and a lot of the work around it runs on
+\PARstart{R}{TL} is written in SystemVerilog~\cite{ieee1800_2023}, and much of the work around it runs on
 C++ models of the same logic. Virtual platforms boot firmware before silicon, reference models
 check RTL in simulation, and SystemC~\cite{ieee1666_2023} models run without a simulator license.
 Verilator~\cite{snyder2020verilator} turns RTL into fast C++, and with \code{-{}-sc} into a SystemC
-wrapper, but its output is a simulation engine. Nobody reads it or edits it. Readable models come
+wrapper, but its output is a simulation engine. It is not meant to be read or edited. Readable models come
 from hand translation, from translators~\cite{bombieri2010hifsuite,syed2013vhdl2sc,zheng2026bidir}
 and from language models asked to translate between C++ and hardware
 languages~\cite{collini2024c2hlsc,lyu2026autoc2v}.
 
 None of these sources is verified, and their errors produce no warning. SystemVerilog sizes an
 expression from its context. C++ promotes small integer types to \code{int} and converts SystemC's
-\code{sc\_uint<W>} to a 64-bit integer. A translation of \code{(a + b) >> 1} that does not truncate
+\code{sc\_uint<W>} to a 64-bit integer. A translation of \code{(a + b) {>}{>} 1} that does not truncate
 the sum keeps the carry, and \code{a = b = 0xff} gives \code{0xff} instead of \code{0x7f}. The
 two models agree on most inputs.
 
@@ -145,7 +145,7 @@ Topic & SystemVerilog (IEEE 1800-2023) & C++17 / SystemC \\
 Width & Context-determined: operands extend to the widest width in the expression and the assignment target (11.6) & Integer promotion to \code{int}; \code{sc\_uint<W>} converts to \code{unsigned long long}; result width set by the C++ type \\
 Signedness & Any unsigned operand makes the expression unsigned (11.8) & Usual arithmetic conversions: a mixed comparison is unsigned when the unsigned type's rank is at least the signed type's, or when the signed type cannot hold all its values \\
 Undefined ops & Division by zero gives X; shifts beyond the width give 0 & Signed overflow, division by zero and shift $\ge$ width are undefined behavior \\
-Update order & Nonblocking updates wait in the NBA region until all active events of the time step, including a derived clock's change, have run & \code{sc\_signal} updates commit at the end of every delta cycle, so a process woken by a derived clock can see values already updated \\
+Update order & Nonblocking updates wait in the nonblocking assignment (NBA) region until all active events of the time step, including a derived clock's change, have run & \code{sc\_signal} updates commit at the end of every delta cycle, so a process woken by a derived clock can see values already updated \\
 Values & Four states (0, 1, X, Z) & Two states in \code{sc\_uint}; four in \code{sc\_lv} \\
 \bottomrule
 \end{tabularx}
@@ -160,7 +160,7 @@ version of our own check made the same mistake.
 \label{sec:failure}
 
 \code{svcc} first carried RTL through a text-based path in which expressions were kept as strings
-in the intermediate representation. To validate a conversion, the check took the emitted C++,
+in the intermediate representation (IR). To validate a conversion, the check took the emitted C++,
 re-read it as if it were SystemVerilog, and asked a solver whether the re-read design was
 equivalent to the source. It reported every design in our suite equivalent.
 
@@ -178,13 +178,13 @@ run on a real SystemC kernel. Two designs the check had proved were wrong
 \toprule
 Source (8-bit) & What the C++ did & First difference \\
 \midrule
-\code{y = (a + b) >> 1} & shifted the 64-bit sum & \code{a=b=0xff}: \code{7f} vs \code{ff} \\
+\code{y = (a + b) {>}{>} 1} & shifted the 64-bit sum & \code{a=b=0xff}: \code{7f} vs \code{ff} \\
 \code{lt = (a - b) < c} & compared the 64-bit difference & \code{a=3e, b=c1, c=7e} \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The check could not have found these. Read with SystemVerilog's rules, \code{(a + b) >> 1}
+The check could not have found these. Read with SystemVerilog's rules, \code{(a + b) {>}{>} 1}
 assigned to an 8-bit target is evaluated in 8 bits, exactly as in the source. The 64-bit
 evaluation exists only under C++'s rules, and the check never applied them. The same problem
 appears whenever the checked side is derived from the translator's own intermediate form: if the
@@ -265,13 +265,13 @@ paths use and which the check trusts.}
 The reader parses the subset of C++ that \code{rtl2sc} emits and gives each expression the value
 C++17 and SystemC give it. \code{bool} and 8- and 16-bit integers promote to \code{int}.
 \code{sc\_uint<W>} converts to \code{unsigned long long} and \code{sc\_int<W>} to \code{long long}
-(LP64). Binary operators bring both operands to a common type by the usual arithmetic conversions
+(the LP64 data model). Binary operators bring both operands to a common type by the usual arithmetic conversions
 and compute in that type. A value is truncated only where the code constructs or assigns a
 narrower object. \code{sc\_biguint} arithmetic is exact. A \code{write} in an edge-triggered method
 is a nonblocking assignment. A level-sensitive method must be sensitive to every signal it reads;
 it is read as combinational logic, or as a latch where it does not assign on every path. Behavior
 the standard leaves to the implementation is fixed as C++20 defines it: narrowing to a signed type
-wraps, and \code{>>} of a negative value is arithmetic.
+wraps, and \code{{>}{>}} of a negative value is arithmetic.
 
 \emph{Undefined behavior.} An operation whose result C++ or SystemC does not define gets no value.
 It raises a 1-bit flag, an extra output of the lifted module that the proof must show stays at 0.
@@ -297,10 +297,10 @@ equal start states, with no bound. This is a register-mapped equivalence check; 
 retiming or state re-encoding. If the inductive step fails, a bounded check from reset (8 steps by
 default) gives a concrete \emph{mismatch} or, if none is found, \emph{bounded}. A bounded verdict
 is printed as \code{[BND]} and exits with code 2 unless \code{-{}-accept-bounded} is given;
-Section~\ref{sec:limits} explains why it is not a pass. A solver timeout is \emph{inconclusive} and counts as a failure. A design
+Section~\ref{sec:limits} explains why it is not a pass. A register without a partner, or no answer from Z3 on the inductive step, also leads to the bounded check; no answer there is \emph{inconclusive} and counts as a failure. A design
 the model does not cover (more than one clock, a multi-dimensional array port, or C++ the reader
 does not model) gets \emph{not covered} and exit code 3. The check also proves the lowering (typed
-IR against source) separately, which tells a front-end failure apart from an emitter failure.
+IR against source) separately, which tells a lowering failure apart from an emitter failure.
 
 The same machinery checks an untimed C++ reference function against pipelined RTL with
 \code{prove-sec -{}-latency L}: from an arbitrary RTL state, with resets held inactive, the RTL output
@@ -337,10 +337,10 @@ We ask four questions. \textbf{RQ1}: how much of a design suite does the check p
 conversion do on real designs, and what defects did those runs find? \textbf{RQ4}: how does
 \code{svcc} compare with a recent translator?
 
-\emph{Setup.} \code{svlang}~0.5.1, Z3~5.4.1, Verilator~5.052 and SystemC~3.0.3 (Accellera
-\code{development} branch, C++17). RQ1 was run at \code{svcc} commit \code{00c80f0} on Linux x86\_64
+\emph{Setup.} \code{svlang}~0.5.1, Z3~5.4.1, Verilator~5.052 and SystemC~3.0.3 (the author's fork of the Accellera
+repository, commit \code{9767bff}, C++17). RQ1 was run at \code{svcc} commit \code{00c80f0} on Linux x86\_64
 and repeated on the same RTL code in a second Linux container. The mutation experiment (RQ2) was
-run at commit \code{3c486e4} on macOS arm64. The stress run (RQ3) was run at commit \code{16a53ca} and
+run at commit \code{5dd247d} on macOS arm64. The stress run (RQ3) was run at commit \code{c8e16fb} and
 its proof stage at commit \code{1db5bb2}, both on Linux x86\_64. Every command and result is recorded in the repository's experiment log.
 
 \subsection{RQ1: Proof coverage on the design suite}
@@ -420,8 +420,8 @@ parameters: picorv32, SERV, biRISC-V, verilog-axi, SCR1, tech\_cells\_generic, c
 PULP AXI, CVFPU, Ibex, CV32E40P, CV32E40X, CVA6, Caliptra, OpenTitan and BaseJump STL, \nModules{}
 modules in all. Each module passes through three stages: convert, compile the header against
 SystemC, and co-simulate against Verilator for \nSteps{} random steps, comparing every output after
-every step. Clocks and data change in separate steps, so a run is between 750 and 1,500 clock
-cycles depending on the number of clocks. Both models run two-state, inputs that reach an edge
+every step. Each step changes the data inputs and then toggles one clock chosen at random, so a run has
+1,500 clock cycles in all, about $1{,}500/k$ per clock for a module with $k$ clocks. Both models run two-state, inputs that reach an edge
 sensitivity are driven as clocks one at a time, synchronous resets are ordinary random inputs, and
 Verilator is built without the \code{VERILATOR} macro so that both models come from the same text.
 No coverage was measured.
@@ -523,7 +523,7 @@ ground.
 \section{Related Work}
 \label{sec:related}
 
-\emph{HDL-to-SystemC translation.} HIFSuite~\cite{bombieri2010hifsuite} converts VHDL and Verilog
+\emph{Hardware description language (HDL) to SystemC translation.} HIFSuite~\cite{bombieri2010hifsuite} converts VHDL and Verilog
 to SystemC and back through a common intermediate format, and Syed et al.~\cite{syed2013vhdl2sc}
 translate RTL VHDL to SystemC with attention to process and delta-cycle mapping.
 v2c~\cite{mukherjee2016v2c} translates synthesizable Verilog to C so that software verifiers can
@@ -554,7 +554,7 @@ SystemC, and Herber et al.~\cite{herber2008scta} model check SystemC designs, in
 scheduler, with timed automata; our proof does not model the scheduler at all.
 
 \emph{Language models.} Language models generate Verilog~\cite{liu2023verilogeval} and
-translate C++ to HLS-ready code or Verilog~\cite{collini2024c2hlsc,lyu2026autoc2v}. Their outputs
+translate C++ to high-level-synthesis-ready code or Verilog~\cite{collini2024c2hlsc,lyu2026autoc2v}. Their outputs
 are mostly judged by tests. A check
 that reads generated code with the target's semantics can judge such outputs too, provided they
 stay inside the subset the reader models. We have not evaluated this.
@@ -583,7 +583,7 @@ bounded, inconclusive or simulation-only evidence, and the simulation has no cov
 false differences on \code{integer} loop variables inferred as latches.
 \item The SCAV comparison uses different harnesses for the two tools and probes that were part of
 \code{svcc}'s development.
-\item \code{svcc} also translates UVM testbench components, constraints, covergroups and
+\item \code{svcc} also translates Universal Verification Methodology (UVM) testbench components, constraints, covergroups and
 assertions to UVM-SystemC, CRAVE and FC4SC. Those checks still compare through \code{svcc}'s own
 representation and have not been rebuilt to rule R1. This paper makes no claim about them.
 \end{itemize}
@@ -613,7 +613,7 @@ its command, commit, machine and tool versions in the repository's experiment lo
 
 \section*{Acknowledgment}
 
-The author thanks the maintainers of Verilator, SystemC and Z3. The author used Google Antigravity
+This work received no external funding. The author thanks the maintainers of Verilator, SystemC and Z3. The author used Google Antigravity
 IDE to help develop the \code{svcc} implementation and to refine this manuscript, and other AI coding
 and writing assistants to help prepare parts of the benchmark scripts, the evaluation runs and the
 manuscript text. The author
