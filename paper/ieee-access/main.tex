@@ -221,7 +221,7 @@ y.write(sc_uint<8>(sc_uint<8>(a.read() + b.read()) >> 1U));
 \end{lstlisting}
 
 \emph{Subset.} There is no standard synthesizable subset of SystemVerilog. We follow what
-synthesis tools accept~\cite{sutherland2014synth} and stay inside the IEEE~1666.1 synthesizable
+synthesis tools accept~\cite{sutherland2014synth} and stay inside the Accellera synthesizable
 subset of SystemC~\cite{ieee1666_1_2016}. Supported constructs are continuous assignments,
 \code{always\_comb}, \code{always\_ff} and \code{always\_latch}; blocking and nonblocking
 assignment; \code{if}, \code{case}, \code{casez}, \code{casex}, \code{case inside}, \code{for} and
@@ -338,7 +338,7 @@ We ask four questions. \textbf{RQ1}: how much of a design suite does the check p
 conversion do on real designs, and what defects did those runs find? \textbf{RQ4}: how does
 \code{svcc} compare with a recent translator?
 
-\emph{Setup.} \code{svlang}~0.5.1, Z3~5.4.1, Verilator~5.052 and SystemC~3.0.3 (the author's fork of the Accellera
+\emph{Setup.} \code{svlang}~0.5.1, Z3~5.4.1 (4.15.5 for the corpus proof), Verilator~5.052 and SystemC~3.0.3 (the author's fork of the Accellera
 repository, commit \code{9767bff}, C++17). RQ1 was run at \code{svcc} commit \code{00c80f0} on Linux x86\_64
 and repeated on the same RTL code in a second Linux container. The mutation experiment (RQ2) was
 run at commit \code{5dd247d} on macOS arm64. The stress run (RQ3) was run at commit \code{c8e16fb} and
