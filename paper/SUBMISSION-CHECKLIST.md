@@ -1,13 +1,41 @@
-# Before submitting the two papers
+# Submission status of the papers
 
-Open items from the PC-style review of 2026-11-23 (full review kept outside the repository).
+## IEEE Access: submitted 2026-11-23
 
-- Zenodo: done. v0.1.1 (tag on 00c80f0) is DOI 10.5281/zenodo.24455890, in SoftwareX C2 and the preprint. Still to do: publish 0.1.1 to crates.io and PyPI (version strings in the tag read 0.1.0), and add ORCID to the Zenodo record.
-- Verilator: file the self-instantiating-top issue upstream (5.052 and 5.055) and cite the issue link.
-- SCAV: read the JETC article (doi 10.1145/3798042) and confirm SCAV is its implementation; summarize the article's own evaluation in RQ4.
-- Stress run: regenerate `benchmarks/results/rtl_stress.md` from the M5.2 run (it still shows the M5.1 run: 1,170 matches, "15 designs"), and add the per-stage split of the 994 non-matching modules.
-- CVFPU: root-cause the two `fpnew_fma_multi` mismatches before Access submission.
-- Tool (chosen to stay as is for the preprint): bounded verdict exits 0; clock-copy header with `gclk.posedge_event()` passes. Both are stated in the papers as limits.
-- Reviewer suggestions not done: proof on the 1,185 matching corpus modules, Verilator `--sc` and LLM baselines, scheduling and structural mutation operators, clang AST cross-check of the C++ reader.
+"Translation Validation of SystemVerilog-to-SystemC RTL Conversion by Reading the Generated C++",
+Research Article, submitted through the IEEE Author Portal (Research Exchange) on 2026-11-23,
+submission ID d6d5d20d-a8eb-4ad7-8dae-0bf62c1ccc7e. The ScholarOne manuscript ID follows by e-mail;
+add it here when it arrives.
+
+- Submitted build: the Mac build of `paper/ieee-access` before 7feab51 (the review PDF opens
+  "RTL is written in SystemVerilog"). 7feab51 adds acronym definitions at first use (RTL, HLS, AXI,
+  UVM, UB) and the outputs of Table 2 row 2; carry these into the revision, or into a
+  return-to-draft if the editorial office asks for the acronyms.
+- Uploaded with it: LaTeX source, cover letter, biography and photo sheet, and the SoftwareX
+  manuscript as the related manuscript under review.
+- PC-style review of 2026-11-23 (kept outside the repository): points expected from reviewers,
+  to prepare for the revision: wider mutation operators (operators, constants) and an ablation
+  against the first check; an independent second front end (yosys-slang) for the reference; the
+  scheduling gap; related work (SCCL, ICSC, EquivFusion, Lööw 2025 are in refs.bib, uncited;
+  hw-cbmc/EBMC; commercial C-to-RTL tools); coverage for co-simulation; RQ4 under one harness.
+
+## Done since the review
+
+- Verilator: both behaviors filed upstream (verilator/verilator#9328, #9329) and cited; fix
+  branches prepared for upstream PRs.
+- CVFPU `fpnew_fma_multi`: root-caused (M6.4, benchmarks/results/cosim_adjudication.md).
+- Proof on the matching corpus modules: done (M6.3, benchmarks/results/rtl_prove_corpus.md).
+- Bounded verdict exits 2 (M6.2).
+
+## Still open
+
+- Zenodo: publish 0.1.1 to crates.io and PyPI (version strings in the tag read 0.1.0), and add
+  ORCID to the Zenodo record.
+- svlang: release af574c9 (the `2**N` fix) as 0.5.2 so the papers can cite a released version.
+- SCAV: read the JETC article (doi 10.1145/3798042) and confirm SCAV is its implementation.
+- Stress run: regenerate `benchmarks/results/rtl_stress.md` from the latest run, with the
+  per-stage split of the non-matching modules (a full run with proofs, rtl_stress_m6.jsonl, was
+  started 2026-11-23).
 - SoftwareX: check the official template and the generative-AI declaration wording.
-- Set `\draftfalse` in `paper/rtl-tv/main.tex` before building the arXiv source.
+- arXiv (`paper/rtl-tv`): set `\draftfalse` and bring it in line with the IEEE Access text before
+  building the arXiv source.
