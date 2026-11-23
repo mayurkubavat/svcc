@@ -1,7 +1,6 @@
 %% SoftwareX Original Software Publication: svcc 0.1.1
-%% Structure follows the SoftwareX OSP layout (code metadata table C1-C9, sections 1-5).
-%% Check against the current SoftwareX template before submission: the guide for
-%% authors could not be read from the build machine (ScienceDirect refused the fetch).
+%% Layout follows the SoftwareX article template Version 6 (March 2026):
+%% metadata table C1-C8, sections 1-5.
 \documentclass[preprint,12pt]{elsarticle}
 
 \usepackage[T1]{fontenc}
@@ -39,14 +38,11 @@
 \begin{abstract}
 \code{svcc} is an open-source Rust tool, with a Python package, that converts synthesizable
 IEEE~1800-2023 SystemVerilog register-transfer level (RTL) code into readable IEEE~1666 SystemC.
-After conversion it can check the generated model formally. The check reads the generated C++
-with C++17 and SystemC evaluation rules, treats undefined behavior as a failure, and proves the
-result equivalent to the SystemVerilog source by induction over registers mapped by name. A
-design outside the proof model is reported as not covered, with its own exit code. A second
-command simulates the generated SystemC against Verilator on random stimulus, which covers
-designs and behavior the proof does not. \code{svcc} also carries an earlier, less tested path
-for UVM testbench components. Version 0.1.1 is archived on Zenodo, and the packages are on
-crates.io and PyPI, under the Apache 2.0 license.
+A second command checks the generated model formally. It reads the generated C++ with C++17 and
+SystemC evaluation rules, treats undefined behavior as a failure, and proves the result equivalent
+to the SystemVerilog source by induction over registers mapped by name. A design outside the proof
+model is reported as not covered. A third command simulates the generated SystemC against
+Verilator on random stimulus. Version 0.1.1 is released under the Apache 2.0 license.
 \end{abstract}
 
 \begin{keyword}
@@ -56,26 +52,25 @@ SystemVerilog \sep SystemC \sep RTL \sep translation validation \sep equivalence
 \end{frontmatter}
 
 %% ---------------------------------------------------------------------------
-\section*{Code metadata}
+\section*{Metadata}
 
 \begin{table}[h]
 \centering\small
 \begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}p{0.38\textwidth} >{\raggedright\arraybackslash}X@{}}
 \toprule
-Nr. & Code metadata description & Metadata \\
+Nr & Code metadata description & Metadata \\
 \midrule
-C1 & Current code version & 0.1.1 \\
-C2 & Permanent link to code/repository used for this code version & \url{https://doi.org/10.5281/zenodo.24455890} (repository: \url{https://github.com/mayurkubavat/svcc}) \\
-C3 & Permanent link to Reproducible Capsule & None \\
-C4 & Legal Code License & Apache License 2.0 \\
-C5 & Code versioning system used & git \\
-C6 & Software code languages, tools, and services used & Rust, Python (PyO3 bindings), C++17; Z3; svlang \\
-C7 & Compilation requirements, operating environments \& dependencies & Rust 1.82 or later; Linux or macOS. Proofs need the \code{z3} executable. Co-simulation needs Verilator 5 and a SystemC installation (\code{SYSTEMC\_HOME}). \\
-C8 & If available Link to developer documentation/manual & \url{https://github.com/mayurkubavat/svcc/tree/main/docs} \\
-C9 & Support email for questions & mkubavat01@gmail.com \\
+C1 & Current code version & v0.1.1 \\
+C2 & Permanent link to code/repository used for this code version & \url{https://github.com/mayurkubavat/svcc/tree/v0.1.1} (archived at \url{https://doi.org/10.5281/zenodo.24455890}) \\
+C3 & Legal code license & Apache License 2.0 \\
+C4 & Code versioning system used & git \\
+C5 & Software code languages, tools and services used & Rust, Python (PyO3 bindings), C++17; Z3; svlang \\
+C6 & Compilation requirements, operating environments and dependencies & Rust 1.82 or later; Linux or macOS. Python 3.9 or later for the Python package (wheels for Linux x86\_64 and macOS arm64, other platforms build from source). Proofs need the \code{z3} executable (tested with 5.4.1). Co-simulation needs a C++17 compiler, Verilator 5 (tested with 5.052) and SystemC (tested with 3.0.3, \code{SYSTEMC\_HOME}). \\
+C7 & If available, link to developer documentation/manual & \url{https://github.com/mayurkubavat/svcc/tree/v0.1.1/docs} \\
+C8 & Support email for questions & mkubavat01@gmail.com \\
 \bottomrule
 \end{tabularx}
-\caption{Code metadata (mandatory).}
+\caption{Code metadata.}
 \end{table}
 
 %% ---------------------------------------------------------------------------
@@ -85,18 +80,18 @@ C9 & Support email for questions & mkubavat01@gmail.com \\
 Design verification and software teams often need a C++ model of RTL that already exists in
 SystemVerilog~\cite{ieee1800_2023}: for a virtual platform, as a reference model in a testbench,
 or to run regressions without a simulator license. SystemC~\cite{ieee1666_2023} is the usual
-form. These models are mostly written by hand and kept in step with the RTL by hand. Three kinds
-of error are common and hard to see in review:
+form. Teams usually write these models by hand and update them by hand when the RTL changes. Three
+kinds of error compile without warning and are easy to miss in review:
 
 \begin{itemize}
-\item \emph{Expression width.} SystemVerilog evaluates \code{(a + b) >> 1} on 8-bit operands in 8
-bits. In SystemC, \code{sc\_uint<8>} operands convert to a 64-bit integer, so the carry survives
+\item \emph{Expression width.} SystemVerilog evaluates \code{y = (a + b) >> 1} in 8 bits when
+\code{a}, \code{b} and \code{y} are 8 bits wide. In SystemC, \code{sc\_uint<8>} operands convert to a 64-bit integer, so the carry survives
 the shift and \code{a = b = 0xff} gives \code{0xff} instead of \code{0x7f}.
 \item \emph{Update order.} A SystemC signal update commits at the end of each delta cycle. A
 register on a clock made by logic, such as a clock-gating cell, can then sample a value that a
 register on the root clock has already updated.
-\item \emph{Undefined behavior.} \code{uint16\_t * uint16\_t} multiplies in \code{int} and can
-overflow, which C++ leaves undefined.
+\item \emph{Undefined behavior.} Where \code{int} is 32 bits, \code{uint16\_t * uint16\_t}
+multiplies in \code{int} and can overflow, which C++ leaves undefined.
 \end{itemize}
 
 Verilator~\cite{snyder2020verilator} compiles RTL into fast C++ for simulation, but that output is
@@ -105,19 +100,19 @@ HIFSuite~\cite{bombieri2010hifsuite}, a VHDL-to-SystemC framework~\cite{syed2013
 2026 bidirectional SystemC and Verilog translator~\cite{zheng2026bidir}, produce readable models
 but do not check their output against the source. Tools in the other direction, from SystemC to
 RTL~\cite{wu2023sccl,moiseev2019icsc}, solve a different problem. Language models are now asked to
-translate between C++ and HDLs~\cite{collini2024c2hlsc,lyu2026autoc2v}, which adds more unchecked
-translations.
+translate between C++ and HDLs~\cite{collini2024c2hlsc,lyu2026autoc2v}. Their output is another
+source of unchecked translations.
 
 \code{svcc} pairs a converter with a translation validation~\cite{pnueli1998tv,necula2000tv} check
 of each converted model. The check method, why an earlier version of it failed, and its evaluation
 are the subject of a companion paper~\cite{kubavat2026rtltv}. This article describes the software,
-how to use it, and what its results do and do not establish.
+its commands and the limits of each verdict.
 
 %% ---------------------------------------------------------------------------
 \section{Software description}
 \label{sec:description}
 
-\code{svcc} is a Rust workspace of nine crates (about 25,700 lines) with a command-line tool, a
+\code{svcc} is a Rust workspace of nine crates (about 25,600 lines of Rust) with a command-line tool, a
 Rust library API and a Python package built with PyO3. SystemVerilog parsing and elaboration come
 from \code{svlang}~\cite{kubavat2026svlang}, an open-source Rust front end by the same author. Proofs
 call the Z3 solver~\cite{demoura2008z3} as an external process on transition systems written in
@@ -125,8 +120,9 @@ Btor2~\cite{niemetz2018btor2}.
 
 \subsection{Software architecture}
 
-Figure~\ref{fig:arch} shows how the crates depend on each other. Only \code{svcc-svlang} depends
-on \code{svlang}, so a change in the front end touches one adapter crate.
+Figure~\ref{fig:arch} shows the main dependencies between the crates. \code{svcc-svlang} is the only
+crate that declares \code{svlang} as a dependency. It re-exports the elaborated design types of
+\code{svlang}, which \code{svcc-front-sv} and \code{svcc-equiv} use directly.
 
 \begin{figure}[t]
 \centering
@@ -158,12 +154,13 @@ on \code{svlang}, so a change in the front end touches one adapter crate.
 \draw[arr] (adp) -- (svl);
 \draw[arr] (fsv) -- (ir);
 \draw[arr] (fsc) -- (ir);
-\draw[arr] (ir) -- (esc);
-\draw[arr] (ir) -- (esv);
+\draw[arr] (esc) -- (ir);
+\draw[arr] (esv) -- (ir);
 \draw[arr] (eq) -- (z3);
 \end{tikzpicture}}
-\caption{Crates of \code{svcc} 0.1.1 and the external tools they call. Arrows point from a user to
-what it uses. \code{rtl2sc} runs the SystemVerilog front end and the SystemC emitter;
+\caption{Main crates of \code{svcc} 0.1.1 and the external tools they call. Arrows point from a
+crate to a crate or tool it uses. Minor dependencies are not drawn, except that \code{svcc-equiv}
+also uses \code{svcc-svlang} to lower both sides of a proof. \code{rtl2sc} runs the SystemVerilog front end and the SystemC emitter;
 \code{rtl-prove} adds the C++ reader, the SystemVerilog printer and \code{svcc-equiv}.}
 \label{fig:arch}
 \end{figure}
@@ -172,12 +169,15 @@ what it uses. \code{rtl2sc} runs the SystemVerilog front end and the SystemC emi
 expression with the width and signedness rules of IEEE~1800-2023. \code{svcc-front-sv} lowers the
 result to one typed module per parameter set in \code{svcc-ir}, and \code{svcc-emit-sc} writes one
 \code{SC\_MODULE} for each, with an explicit truncation wherever C++ would compute in a wider type.
-The subset follows what synthesis tools accept~\cite{sutherland2014synth} and stays inside the
-IEEE~1666.1 synthesizable subset~\cite{ieee1666_1_2016}: parameters, generate, hierarchy,
+The input subset follows what synthesis tools accept~\cite{sutherland2014synth}, and the generated
+code is meant to stay inside the IEEE~1666.1 synthesizable subset~\cite{ieee1666_1_2016}, which no
+tool checks. The input subset covers parameters, generate, hierarchy,
 functions, \code{case}, \code{casez} and \code{case inside}, loops, part selects, memories, packed
 structs and enums, and vectors wider than 64 bits. Clock-gating cells, clock buffers and inverters
-become clock enables on the root clock. Anything outside the subset is an error with a source
-location; unknown constructs are never passed through.
+become clock enables on the root clock. Other constructs are errors with a source location, except
+\code{initial} blocks and system tasks such as \code{\$display}, which are dropped with a note.
+\code{rtl-prove} then reports a design whose start values depend on an \code{initial} block as a
+failure.
 
 \emph{Check} (\code{rtl-prove}). \code{svcc-front-sc} parses the generated header and gives each
 expression the value C++17 and SystemC give it. Operations C++ leaves undefined raise a flag the
@@ -190,14 +190,17 @@ proved equal to pipelined RTL \code{L} cycles later, from an arbitrary RTL state
 C-to-RTL equivalence checking~\cite{koelbl2009c2rtl}.
 
 \emph{Co-simulation} (\code{rtl-cosim}). The generated SystemC and a Verilator model of the same
-source are built into one executable and driven with the same random stimulus, and every output is
-compared after every step. This is the only check in \code{svcc} that runs a real SystemC kernel,
+source are built into one executable and driven with the same random stimulus (20,000 steps with a
+fixed seed by default, set with \code{-{}-steps} and \code{-{}-seed}), and every output is compared after
+every step. This is the only check in \code{svcc} that runs a real SystemC kernel,
 so it is the evidence for scheduling and for designs the proof does not cover.
 
 \subsection{Software functionalities}
 
-Table~\ref{tab:cli} lists the commands. Each exits with 0 on success, 1 on failure, and 3 when a
-design is outside the proof model, so they can be used in scripts and regression flows.
+Table~\ref{tab:cli} lists the commands. \code{rtl-prove} exits with 0 when every module is proved
+or bounded, 1 on a mismatch or when the solver gives no answer, and 3 when a module is outside the
+proof model. The other commands exit with 0 or 1. The exit codes let the commands gate a regression
+run.
 
 \begin{table}[t]
 \centering\small
@@ -207,16 +210,17 @@ design is outside the proof model, so they can be used in scripts and regression
 \toprule
 Command & Purpose \\
 \midrule
-\code{rtl2sc in.sv --top M} & Convert synthesizable RTL to a SystemC header \\
-\code{rtl-prove in.sv [--header h]} & Check the generated (or a given) header against the source \\
-\code{rtl-cosim in.sv --top M} & Simulate the generated SystemC against Verilator \\
-\code{prove-sec golden.hpp rtl.sv --latency L} & Prove a C++ golden function against pipelined RTL \\
+\code{rtl2sc in.sv -{}-top M} & Convert synthesizable RTL to a SystemC header \\
+\code{rtl-prove in.sv [-{}-header h]} & Check the generated (or a given) header against the source \\
+\code{rtl-cosim in.sv -{}-top M} & Simulate the generated SystemC against Verilator \\
+\code{prove-sec golden.hpp rtl.sv -{}-latency L} & Prove a C++ golden function against pipelined RTL \\
 \code{sv2sc}, \code{sc2sv}, \code{roundtrip-check} & Testbench path: UVM classes, constraints, covergroups and assertions \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The Python package (\code{pip install svcc}) exposes the same operations as functions
+The Python package (\code{pip install svcc}) exposes conversion and the proofs, but not
+co-simulation, as functions
 (\code{rtl\_to\_sc}, \code{rtl\_prove\_json}, \code{prove\_sec\_json}, \code{sv\_to\_sc},
 \code{sc\_to\_sv}) that return generated code or a JSON verdict. The Rust crate \code{svcc} exposes
 them as a library.
@@ -225,8 +229,8 @@ A proof verdict is one of \emph{proved} (by induction, for every run from equal 
 \emph{bounded}, \emph{mismatch} (with a concrete input sequence), \emph{inconclusive}, or \emph{not
 covered}. Users should know three things about these verdicts in 0.1.1:
 \begin{itemize}
-\item \emph{Bounded} means the inductive step failed and a run of 8 steps from reset found no
-difference. It exits with 0 and prints \code{[PASS]} with the word \code{bounded}. A script that
+\item \emph{Bounded} means the inductive step failed and a run of 8 steps (set with
+\code{-{}-bound}) from the initial state found no difference. It exits with 0 and prints \code{[PASS]} with the word \code{bounded}. A script that
 needs a full proof must look for that word.
 \item The proof does not model SystemC process scheduling. A process sensitive to the edge of an
 internal copy of a clock is treated as if it were on the root clock. Use \code{rtl-cosim} for
@@ -234,9 +238,9 @@ scheduling.
 \item \code{svlang} gives the meaning of SystemVerilog on both sides of the proof, and the converter
 uses it too, so a front-end bug can be invisible to the proof.
 \end{itemize}
-The other assumptions, listed in \code{docs/formal\_gates.md}, are a two-state model in which X and
-Z read as 0, one clock with asynchronous reset seen at the clock step, and \code{svcc}'s model of
-C++.
+The other assumptions, listed in \code{docs/formal\_gates.md}, are equal start states on both sides,
+a two-state model in which X and Z read as 0, one clock with asynchronous reset seen at the clock
+step, and \code{svcc}'s model of C++.
 
 %% ---------------------------------------------------------------------------
 \section{Illustrative examples}
@@ -250,7 +254,7 @@ module avg8(input [7:0] a, input [7:0] b, output [7:0] y);
 endmodule
 \end{lstlisting}
 
-\noindent \code{svcc rtl2sc avg8.sv --top avg8} writes a header whose method truncates the sum
+\noindent \code{svcc rtl2sc avg8.sv -{}-top avg8} writes a header whose method truncates the sum
 before the shift:
 
 \begin{lstlisting}[language=C++]
@@ -259,10 +263,10 @@ void assign_y() {
 }
 \end{lstlisting}
 
-\noindent \code{svcc rtl-prove avg8.sv} proves both the lowering and the generated C++, each in a
-few tens of milliseconds of solver time. To see what the check catches, remove the inner
-\code{sc\_uint<8>(...)}, the form a hand translation often has, and pass the edited header with
-\code{--header}:
+\noindent \code{svcc rtl-prove avg8.sv} proves both the lowering and the generated C++, with 10 to
+20~ms of Z3 time for each (Linux x86\_64, Z3 5.4.1). To see what the check catches, remove the
+inner \code{sc\_uint<8>(...)}, the form a direct hand translation gives, and pass the edited header
+with \code{-{}-header}. The output, abridged, is:
 
 \begin{lstlisting}
 [PASS] lowering      'avg8': proved for all runs from equal start states
@@ -287,25 +291,26 @@ as not covered and exits with code 3. For this design \code{rtl-cosim} is the on
 \section{Impact}
 \label{sec:impact}
 
-\emph{A checked model where the check reaches.} A design or verification team gets a SystemC model
+\emph{What a user gets.} A design or verification team gets a SystemC model
 of its RTL with either a proof, a counterexample, or a stated reason why the proof does not apply,
 plus co-simulation against Verilator. Because the check starts from the header text, it can also
 check C++ that \code{svcc} did not write, as long as the code stays in the subset the reader
-models. Output from a language model asked to translate RTL is one such case. We have not
-evaluated that yet.
+models. Output from a language model asked to translate RTL is one such case. This use has not
+been evaluated.
 
-\emph{Use on open-source designs.} The companion paper~\cite{kubavat2026rtltv} reports the
-results of running every module of 16 open-source code bases through the converter and the
-co-simulation, and of running the proof on the repository's own designs. The same runs serve as a
+\emph{Use on open-source designs.} The companion paper~\cite{kubavat2026rtltv} runs every module of
+16 open-source code bases through the converter and the co-simulation. Of 2,184 modules, 1,185
+converted and matched Verilator over 3,000 random steps; no proof was run on them. The same runs serve as a
 differential test of \code{svlang} and Verilator; three \code{svlang} elaboration defects found
 this way are fixed in \code{svlang}~0.5.1.
 
 \emph{Golden-model checking.} \code{prove-sec} found undefined behavior in one of \code{svcc}'s own
-benchmark golden models (a 16-bit product computed in \code{int}), an error that passes testing on
-a given compiler.
+benchmark golden models. A 16-bit product computed in a 32-bit \code{int} overflows when it
+exceeds $2^{31}-1$, for example when both operands exceed 46,340; C++ leaves the result undefined, so a test can pass on one compiler and fail on
+another.
 
 \emph{Adoption.} Version 0.1.0 was published to crates.io and PyPI on 22 November 2026, and
-version 0.1.1, which adds the clock-gating conversion, was archived on Zenodo on 23 November 2026. It is too
+version 0.1.1, which adds the clock-gating conversion, was archived on Zenodo on 23 November 2026~\cite{kubavat2026svcczenodo}. It is too
 early to report outside users.
 
 %% ---------------------------------------------------------------------------
@@ -313,8 +318,8 @@ early to report outside users.
 \label{sec:conclusions}
 
 \code{svcc} converts synthesizable SystemVerilog to readable SystemC and checks each result by
-reading the C++ with C++ rules, where its proof model applies. The limits of that proof are part of
-the tool's output: one clock, two-state values, a synchronous view of asynchronous reset, no
+reading the C++ with C++ rules, where its proof model applies. The tool reports when the proof does
+not apply (exit code 3) and when it is only bounded. The proof assumes one clock, two-state values, a synchronous view of asynchronous reset, no
 model of SystemC scheduling, and a model of C++ that is not a compiler front end. Planned work is a
 failing exit code for bounded results, a scheduling check for processes on internal clocks, the
 proof on multi-file designs, and checks of the same kind for the testbench path (UVM-SystemC,
@@ -326,10 +331,21 @@ appeared to influence the work reported in this paper. The work was done indepen
 personal equipment, and is not affiliated with or endorsed by any employer.
 
 \section*{Declaration of generative AI and AI-assisted technologies in the writing process}
-During the preparation of this work the author used AI coding and writing assistants to draft
-parts of the software, test scripts and this manuscript. The author made the design decisions,
-reviewed and edited all generated material, ran every command and measurement reported here, and
-takes full responsibility for the content of the publication.
+During the preparation of this work, the author used an AI writing assistant for drafting parts of the
+code, test scripts and text. The author reviewed and edited the output as needed and takes full
+responsibility for the content of the published article.
+
+\section*{CRediT authorship contribution statement}
+\textbf{Mayur Kubavat:} Conceptualization, Methodology, Software, Validation, Investigation,
+Writing -- original draft, Writing -- review \& editing.
+
+\section*{Funding}
+This research did not receive any specific grant from funding agencies in the public, commercial,
+or not-for-profit sectors.
+
+\section*{Data availability}
+The source code, test designs, scripts and result logs are in the repository and the Zenodo
+archive given in the metadata table.
 
 \section*{Acknowledgements}
 The author thanks the maintainers of Verilator, SystemC and Z3.

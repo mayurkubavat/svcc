@@ -82,7 +82,7 @@ SystemVerilog, SystemC, RTL, translation validation, equivalence checking.
 RTL is written in SystemVerilog~\cite{ieee1800_2023}, and a lot of the work around it runs on
 C++ models of the same logic. Virtual platforms boot firmware before silicon, reference models
 check RTL in simulation, and SystemC~\cite{ieee1666_2023} models run without a simulator license.
-Verilator~\cite{snyder2020verilator} turns RTL into fast C++, and with \code{--sc} into a SystemC
+Verilator~\cite{snyder2020verilator} turns RTL into fast C++, and with \code{-{}-sc} into a SystemC
 wrapper, but its output is a simulation engine. Nobody reads it or edits it. Readable models come
 from hand translation, from translators~\cite{bombieri2010hifsuite,syed2013vhdl2sc,zheng2026bidir}
 and from language models asked to translate between C++ and hardware
@@ -320,7 +320,7 @@ does not model) gets \emph{not covered} and exit code 3. The check also proves t
 IR against source) separately, which tells a front-end failure apart from an emitter failure.
 
 The same machinery checks an untimed C++ reference function against pipelined RTL with
-\code{prove-sec --latency L}: from an arbitrary RTL state, with resets held inactive, the RTL output
+\code{prove-sec -{}-latency L}: from an arbitrary RTL state, with resets held inactive, the RTL output
 equals the function of the inputs $L$ cycles earlier, in the style of C-to-RTL equivalence
 checking~\cite{koelbl2009c2rtl}.
 
