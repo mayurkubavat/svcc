@@ -248,3 +248,20 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `stress_rejected_by_clock_check`: `68`
 - **Notes**: Clock check rejects gated/derived/blocking-assigned/expression clocks. Remaining mismatches with svlang 0.5.1: popcount, prim_pad_attr (reference), stream_mux (placeholder parameter), fpnew_cast_multi and fpnew_opgroup_block x2 (unexplained).
 
+## [2026-11-23T02:34:36+00:00] `M5.2-clock-gating` — Clock-gating cells, clock buffers and inverters, and register-derived clocks in the typed RTL path
+- **Commit**: `16a53ca` (`Linux-x86_64`, `unknown`)
+- **Command**: `SYSTEMC_HOME=$HOME/.local/opt/accellera-svcc/systemc ./scripts/check.sh && python3 benchmarks/rtl_stress/run_stress.py --census-tool <svlang>/tools/quality --corpus <rtl-census> --stage cosim --steps 3000`
+- **Measured Metrics**:
+  - `clock_check_rejections_after`: `13`
+  - `clock_check_rejections_before`: `65`
+  - `cosim_match_after`: `1185`
+  - `cosim_match_before`: `1127`
+  - `newly_matching`: `caliptra-rtl 32, cv32e40p 11, serv 5, opentitan 5, common_cells 2, cv32e40x 2, cvfpu 1, ibex 1`
+  - `regressions`: `0`
+  - `repo_corpus_cosim`: `23/23`
+  - `rtl_prove`: `45 proved, 4 not covered`
+  - `stress_modules`: `2184`
+  - `svlang`: `0.5.1 (crates.io)`
+  - `verilator`: `5.052`
+- **Notes**: Remaining clock-check rejections are clock muxes, dividers whose output depends on an input clock, clocks from inputs through logic, VeeR BHT bank clocks (bits of a packed vector), and a testbench. Remaining mismatches: stream_mux (Verilator wraps out-of-range writes), fpnew_cast_multi x2 (fixed by unreleased svlang af574c9), fpnew_fma_multi x2 (differs in the special-result path even with af574c9; not root-caused).
+

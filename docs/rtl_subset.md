@@ -69,12 +69,28 @@ constant (`$clog2`, `$bits`, parameters, enum members).
   accepted for asynchronous set and reset edges only (see the next point).
 - **Clock sources.** A register may be clocked by an input port, by a plain copy of one
   (`assign gclk = clk;`, a buffer instance), or by a register output written with nonblocking
-  assignments (a divider). Any other clock is an error: one produced by combinational logic
-  (a clock-gating cell, `clk & en`), by an instance output that is not a register output, by a
-  blocking assignment in an edge-triggered block, or by an edge on an expression. A signal
-  write takes one delta cycle, so registers on such a clock would run after the registers on
-  the source clock had been updated and would sample the new values, where SystemVerilog
-  samples the old ones. The check follows clocks through instance ports.
+  assignments (a divider). Three derived clocks are converted into that form:
+  - *Clock-gating cells*: a latch transparent while the clock is low, ANDed with the clock
+    (`always_latch if (!clk) en_l = en; assign gclk = clk & en_l;`). `gclk` rises exactly when
+    `clk` rises with the enable set before the edge (IEEE 1800-2023 9.2.2.4, 9.4.2), so a
+    register on `posedge gclk` becomes a register on `posedge clk` that updates only when
+    `en` is set; asynchronous resets are not gated. A gated clock gated again combines the
+    enables. A falling edge of a gated clock is not converted.
+  - *Clock buffers and inverters*: `~clk`, `~~clk`; an inverted clock turns a rising edge
+    into a falling one.
+  - *Clocks made by logic that only reads register outputs* (a valid pulse, a bit of a
+    counter): they change after the nonblocking update in both languages and are accepted
+    as they are.
+
+  These are followed through instance ports. An instance whose clock port is gated or
+  inverted gets a variant of its module (`<module>_ck`) clocked by the root clock, with an
+  enable input `svcc_cg_<port>`; a module whose gated output clock has an enable from its
+  own registers brings the enable out on an extra output `svcc_cge_<port>` (not on a top
+  module). Any other clock is an error: a clock mux, a clock from an input through logic,
+  a blocking assignment in an edge-triggered block, or a gated clock that is also used as
+  data inside the instance it reaches. A signal write takes one delta cycle, so registers on
+  such a clock would run after the registers on the source clock had been updated and would
+  sample the new values, where SystemVerilog samples the old ones.
 - **Arrays with several writers.** Each element is its own signal. A process writes back only
   the elements it assigns; elements assigned through a computed index make the whole array
   belong to one process.
@@ -130,7 +146,8 @@ Inputs that reach an edge sensitivity, directly or through gating logic and inst
 boundaries, are driven as clocks: one of them changes per step, alone. Asynchronous controls
 start inactive, are asserted at step 1 and released at step 3. Verilator runs with
 `--no-assert`, because the design's own assertions about its environment do not hold under
-random stimulus, and with `-UVERILATOR`: Verilator defines the `VERILATOR` macro and svcc
+random stimulus, with `--no-timing` (delays only occur in code svcc skips), and with
+`-UVERILATOR`: Verilator defines the `VERILATOR` macro and svcc
 does not, so without it the two models are built from different text wherever the source
 tests it.
 

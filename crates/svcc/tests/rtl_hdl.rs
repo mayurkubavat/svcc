@@ -128,9 +128,11 @@ fn derived_clocks_fail_closed() {
     // edge-triggered block, or by an edge on an expression would run one delta cycle after
     // the registers on the source clock and sample their new values. Each of these differed
     // from Verilator before the check existed.
-    let cases: [(&str, &str, &str); 4] = [
-        ("gated", "module gated (input logic clk, input logic en, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic en_l, gclk;\n  logic [7:0] a;\n  always_latch if (!clk) en_l = en;\n  assign gclk = clk & en_l;\n  always_ff @(posedge clk) a <= d;\n  always_ff @(posedge gclk) g <= a;\n  assign q = a;\nendmodule\n", "combinational logic"),
-        ("gated_inst", "module ckg (input logic clk_i, input logic en_i, output logic clk_o);\n  logic en_l;\n  always_latch if (!clk_i) en_l = en_i;\n  assign clk_o = clk_i & en_l;\nendmodule\nmodule leaf (input logic ck, input logic [7:0] d, output logic [7:0] q);\n  always_ff @(posedge ck) q <= d;\nendmodule\nmodule gated_inst (input logic clk, input logic en, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic gclk; logic [7:0] a;\n  ckg u_g (.clk_i(clk), .en_i(en), .clk_o(gclk));\n  always_ff @(posedge clk) a <= d;\n  leaf u_l (.ck(gclk), .d(a), .q(g));\n  assign q = a;\nendmodule\n", "not a register output"),
+    let cases: [(&str, &str, &str); 5] = [
+        ("muxed", "module muxed (input logic clk, input logic clk2, input logic sel, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic gclk;\n  logic [7:0] a;\n  assign gclk = sel ? clk2 : clk;\n  always_ff @(posedge clk) a <= d;\n  always_ff @(posedge gclk) g <= a;\n  assign q = a;\nendmodule\n", "combinational logic"),
+        ("muxed_inst", "module ckm (input logic clk_i, input logic clk2_i, input logic sel_i, output logic clk_o);\n  assign clk_o = sel_i ? clk2_i : clk_i;\nendmodule\nmodule leaf (input logic ck, input logic [7:0] d, output logic [7:0] q);\n  always_ff @(posedge ck) q <= d;\nendmodule\nmodule muxed_inst (input logic clk, input logic clk2, input logic sel, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic gclk; logic [7:0] a;\n  ckm u_g (.clk_i(clk), .clk2_i(clk2), .sel_i(sel), .clk_o(gclk));\n  always_ff @(posedge clk) a <= d;\n  leaf u_l (.ck(gclk), .d(a), .q(g));\n  assign q = a;\nendmodule\n", "not a register output"),
+        // A latch that is transparent while the clock is high is not a gating cell.
+        ("highlatch", "module highlatch (input logic clk, input logic en, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic en_l, gclk;\n  logic [7:0] a;\n  always_latch if (clk) en_l = en;\n  assign gclk = clk & en_l;\n  always_ff @(posedge clk) a <= d;\n  always_ff @(posedge gclk) g <= a;\n  assign q = a;\nendmodule\n", "combinational logic"),
         ("divblk", "module divblk (input logic clk, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic div; logic [7:0] a;\n  initial div = 0;\n  always_ff @(posedge clk) div = ~div;\n  always_ff @(posedge clk) a <= d;\n  always_ff @(posedge div) g <= a;\n  assign q = a;\nendmodule\n", "blocking assignment"),
         ("exprck", "module leafv (input logic [1:0] ck, input logic [7:0] d, output logic [7:0] q);\n  always_ff @(posedge ck[0]) q <= d;\nendmodule\nmodule exprck (input logic clk, input logic [7:0] d, output logic [7:0] q, output logic [7:0] g);\n  logic [7:0] a;\n  always_ff @(posedge clk) a <= d;\n  leafv u_l (.ck({1'b0, clk}), .d(a), .q(g));\n  assign q = a;\nendmodule\n", "combinational logic"),
     ];
@@ -140,6 +142,31 @@ fn derived_clocks_fail_closed() {
         assert!(err.message.contains("clock '"), "{name}: {err}");
         assert!(err.message.contains(why), "{name}: {err}");
     }
+}
+
+#[test]
+fn clock_gating_cells_become_clock_enables() {
+    // IEEE 1800-2023 9.2.2.4 and 9.4.2: a latch transparent while the clock is low, ANDed with
+    // the clock, rises with the clock exactly when the enable was set before the edge. The
+    // register on the gated clock becomes a register on the root clock with that enable.
+    let code = convert(
+        "module gated (input logic clk, input logic rst_n, input logic en, input logic [7:0] d, output logic [7:0] g);\n  logic en_l, gclk;\n  always_latch if (!clk) en_l = en;\n  assign gclk = clk & en_l;\n  always_ff @(posedge gclk or negedge rst_n) if (!rst_n) g <= '0; else g <= d;\nendmodule\n",
+    );
+    assert!(
+        code.contains("sensitive << clk.pos() << rst_n.neg();"),
+        "{code}"
+    );
+    // The enable gates the update, the reset is not gated.
+    assert!(code.contains("if (en.read() || !rst_n.read())"), "{code}");
+
+    // A register in an instance whose clock port is gated: the instance becomes an enable
+    // variant of its module, clocked by the root clock.
+    let code = convert(
+        "module ckg (input logic clk_i, input logic en_i, output logic clk_o);\n  logic en_l;\n  always_latch if (clk_i == 1'b0) en_l <= en_i;\n  assign clk_o = clk_i & en_l;\nendmodule\nmodule leaf (input logic ck, input logic [7:0] d, output logic [7:0] q);\n  always_ff @(posedge ck) q <= d;\nendmodule\nmodule gated_inst (input logic clk, input logic en, input logic [7:0] d, output logic [7:0] g);\n  logic gclk;\n  ckg u_g (.clk_i(clk), .en_i(en), .clk_o(gclk));\n  leaf u_l (.ck(gclk), .d(d), .q(g));\nendmodule\n",
+    );
+    assert!(code.contains("SC_MODULE(leaf_ck)"), "{code}");
+    assert!(code.contains("u_l.ck(clk);"), "{code}");
+    assert!(code.contains("u_l.svcc_cg_ck("), "{code}");
 }
 
 #[test]

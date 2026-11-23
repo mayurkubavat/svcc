@@ -35,6 +35,9 @@ pub struct CosimOptions {
 }
 
 pub struct CosimReport {
+    /// Both models were built with the `VERILATOR` macro defined: the reference could not be
+    /// built from the text svcc converts by default (see `run_cosim`).
+    pub verilator_macro: bool,
     pub top: String,
     pub steps: u64,
     pub comparisons: u64,
@@ -582,8 +585,34 @@ fn tail(s: &str, n: usize) -> String {
 }
 
 /// Converts `sv_path`, builds the two models and runs the comparison.
+///
+/// Both models are built from the same text: svcc does not define `VERILATOR`, so the
+/// reference is built with it undefined. Where the source hides code from Verilator that
+/// Verilator cannot build (assertions with constructs it does not support), the comparison is
+/// redone with `VERILATOR` defined for both, and the report says so.
 pub fn run_cosim(sv_path: &str, opts: &CosimOptions) -> Result<CosimReport, SvccError> {
-    let (code, design) = if opts.design_args.is_empty() {
+    match run_cosim_with(sv_path, opts, false) {
+        Err(e) if opts.header.is_none() && e.message.contains("build failed in") => {
+            run_cosim_with(sv_path, opts, true).map_err(|e2| {
+                SvccError::new(
+                    STAGE,
+                    format!(
+                        "{}\n(with VERILATOR defined for both models:)\n{}",
+                        e.message, e2.message
+                    ),
+                )
+            })
+        }
+        other => other,
+    }
+}
+
+fn run_cosim_with(
+    sv_path: &str,
+    opts: &CosimOptions,
+    verilator_macro: bool,
+) -> Result<CosimReport, SvccError> {
+    let (code, design) = if opts.design_args.is_empty() && !verilator_macro {
         let src = std::fs::read_to_string(sv_path)
             .map_err(|e| SvccError::new("io", format!("cannot read {sv_path}: {e}")))?;
         let tops: Vec<String> = opts.top.iter().cloned().collect();
@@ -591,6 +620,9 @@ pub fn run_cosim(sv_path: &str, opts: &CosimOptions) -> Result<CosimReport, Svcc
     } else {
         let mut args = vec![sv_path.to_string()];
         args.extend(opts.design_args.iter().cloned());
+        if verilator_macro {
+            args.push("+define+VERILATOR".into());
+        }
         if let Some(t) = &opts.top {
             args.push("-top".into());
             args.push(t.clone());
@@ -670,7 +702,12 @@ pub fn run_cosim(sv_path: &str, opts: &CosimOptions) -> Result<CosimReport, Svcc
         .args(["--top-module", &ref_top])
         // Verilator defines `VERILATOR`; svcc does not. Without this the two models can be
         // built from different text wherever the source tests it with `ifdef`.
-        .arg("-UVERILATOR")
+        .args((!verilator_macro).then_some("-UVERILATOR"))
+        // Source meant for other simulators can hold delays (in blocks svcc skips).
+        .arg("--no-timing")
+        // With VERILATOR undefined, synthesis pragmas in comments that the source otherwise
+        // hides from Verilator become visible; they are not Verilator's.
+        .arg("-Wno-BADVLTPRAGMA")
         .args(["-Wno-fatal", "-Wno-lint", "-Wno-style", "-Wno-MULTITOP"])
         // The comparison drives random stimulus; the design's own assertions about its
         // environment are not part of it.
@@ -752,6 +789,7 @@ pub fn run_cosim(sv_path: &str, opts: &CosimOptions) -> Result<CosimReport, Svcc
         })
         .unwrap_or(0);
     let report = CosimReport {
+        verilator_macro,
         top: top.definition.clone(),
         steps: opts.steps,
         comparisons,

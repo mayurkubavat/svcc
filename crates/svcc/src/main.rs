@@ -143,8 +143,16 @@ fn run_cli() -> Result<(), SvccError> {
             };
             let rep = svcc::cosim::run_cosim(input, &opts)?;
             println!(
-                "[PASS] cosim '{}': SystemC == Verilator on {} outputs, {} steps, {} comparisons",
-                rep.top, rep.outputs, rep.steps, rep.comparisons
+                "[PASS] cosim '{}': SystemC == Verilator on {} outputs, {} steps, {} comparisons{}",
+                rep.top,
+                rep.outputs,
+                rep.steps,
+                rep.comparisons,
+                if rep.verilator_macro {
+                    " (VERILATOR defined for both models)"
+                } else {
+                    ""
+                }
             );
             Ok(())
         }

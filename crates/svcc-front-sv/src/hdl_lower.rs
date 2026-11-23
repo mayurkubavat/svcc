@@ -88,6 +88,9 @@ pub fn lower_elaborated(
         pass_through: HashMap::new(),
         clock_ins: HashMap::new(),
         reg_outs: HashMap::new(),
+        clock_fns: HashMap::new(),
+        comb_deps: HashMap::new(),
+        cg_variants: HashMap::new(),
     };
     let mut tops = Vec::new();
     for &t in &design.tops {
@@ -149,6 +152,8 @@ struct ModState {
     func_stack: Vec<(usize, NodeId, String)>,
     /// Helper signals created for edges on expressions, by expression.
     edge_glue: HashMap<String, String>,
+    /// The module is a top of the design: its ports are the design's interface.
+    is_top: bool,
 }
 
 impl ModState {
@@ -234,7 +239,19 @@ struct Lowerer<'a> {
     /// Per module: output ports driven directly by a register (nonblocking assignments in an
     /// edge-triggered block). Only these, and input ports, may clock a register in a parent.
     reg_outs: HashMap<String, HashSet<String>>,
+    /// Per module: for each output port, the input ports it depends on through combinational
+    /// logic. A missing entry means unknown.
+    comb_deps: HashMap<String, HashMap<String, HashSet<String>>>,
+    /// Per module: output ports that carry a clock derived from an input clock by gating
+    /// cells, buffers and inverters.
+    clock_fns: HashMap<String, HashMap<String, ClockFn>>,
+    /// Variants of modules for derived clock ports: (module, port, inverted, gated) ->
+    /// (variant, enable port).
+    cg_variants: HashMap<VariantKey, Option<(String, Option<String>)>>,
 }
+
+/// A clock variant of a module: (module, clock port, inverted, gated).
+type VariantKey = (String, String, bool, bool);
 
 fn ity(t: &RtlType) -> Option<Ty> {
     t.integral_shape().map(|(w, s, _)| Ty::new(w, s))
@@ -734,6 +751,7 @@ impl<'a> Lowerer<'a> {
         }
 
         self.resolve_drivers(inst.loc);
+        self.m.is_top = inst.parent.is_none();
         self.follow_clock_aliases(&name, inst.loc);
         // A missing driver is only worth reporting when nothing was rejected before it.
         if self.errs.len() == errs_before {
@@ -1177,6 +1195,7 @@ impl<'a> Lowerer<'a> {
             }
         }
         self.pass_through.insert(module_name.to_string(), pass);
+        self.apply_clock_gating(module_name);
         self.check_clock_sources(module_name, loc, &resolve);
     }
 
@@ -1243,6 +1262,93 @@ impl<'a> Lowerer<'a> {
         }
 
         // What drives a signal, as far as clocking is concerned.
+        // Signals used as clocks here: a clock derived from one of them, or from an input
+        // (which may be a clock in a parent), runs a delta late. A clock whose combinational
+        // logic only reads register outputs changes after the nonblocking update in both
+        // languages, like a divider register, and is accepted.
+        let clock_sigs: HashSet<String> = uses.iter().map(|(s, _)| resolve(s)).collect();
+        let register_only = |start: &str| -> bool {
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut todo = vec![resolve(start)];
+            let mut first = true;
+            while let Some(sig) = todo.pop() {
+                if !seen.insert(sig.clone()) {
+                    continue;
+                }
+                if !first && clock_sigs.contains(&sig) {
+                    return false;
+                }
+                first = false;
+                if self
+                    .m
+                    .ports
+                    .iter()
+                    .any(|p| p.name == sig && p.dir == Dir::In)
+                {
+                    return false;
+                }
+                let mut driven = false;
+                for p in &self.m.processes {
+                    let drives = driver_keys(&p.body)
+                        .iter()
+                        .any(|k| k.split('[').next().unwrap_or(k) == sig);
+                    if !drives {
+                        continue;
+                    }
+                    driven = true;
+                    match &p.kind {
+                        ProcKind::Comb => todo.extend(read_sigs(&p.body)),
+                        ProcKind::Seq { .. } => {
+                            // A register written with blocking assignments changes before
+                            // the nonblocking update; leave it to the check below.
+                            let mut blocking = false;
+                            walk_stmts(&p.body, &mut |st| {
+                                if let Stmt::Assign {
+                                    lhs,
+                                    nonblocking: false,
+                                    ..
+                                } = st
+                                {
+                                    blocking |= lhs.base.name() == sig;
+                                }
+                            });
+                            if blocking {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                for inst in &self.m.instances {
+                    for c in inst.conns.iter().filter(|c| c.sig == sig) {
+                        let child = self.out.iter().find(|m| m.name == inst.module);
+                        let is_out = child
+                            .and_then(|m| m.ports.iter().find(|p| p.name == c.port))
+                            .is_some_and(|p| p.dir == Dir::Out);
+                        if !is_out {
+                            continue;
+                        }
+                        driven = true;
+                        let Some(deps) = self
+                            .comb_deps
+                            .get(&inst.module)
+                            .and_then(|t| t.get(&c.port))
+                        else {
+                            return false;
+                        };
+                        for d in deps {
+                            match inst.conns.iter().find(|x| x.port == *d) {
+                                Some(x) => todo.push(x.sig.clone()),
+                                None => return false,
+                            }
+                        }
+                    }
+                }
+                if !driven {
+                    return false;
+                }
+            }
+            true
+        };
         let classify = |sig: &str| -> Result<bool, String> {
             // Ok(true): an input port. Ok(false): a register output, or no driver here.
             if self
@@ -1260,7 +1366,7 @@ impl<'a> Lowerer<'a> {
                 if !drives {
                     continue;
                 }
-                if matches!(p.kind, ProcKind::Comb) {
+                if matches!(p.kind, ProcKind::Comb) && !register_only(sig) {
                     return Err(
                         "is driven by combinational logic (a gated or derived clock, \
                                 or an edge on an expression)"
@@ -1296,7 +1402,7 @@ impl<'a> Lowerer<'a> {
                         .reg_outs
                         .get(&inst.module)
                         .is_some_and(|r| r.contains(&c.port));
-                    if is_out && !is_reg {
+                    if is_out && !is_reg && !register_only(sig) {
                         return Err(format!(
                             "is driven by output '{}' of instance '{}', which is not a \
                              register output",
@@ -1345,9 +1451,76 @@ impl<'a> Lowerer<'a> {
         }
         self.clock_ins.insert(module_name.to_string(), clock_ins);
         self.reg_outs.insert(module_name.to_string(), reg_outs);
+        self.record_comb_deps(module_name, resolve);
         for e in errors {
             self.err(loc, e);
         }
+    }
+
+    /// Records, for each output port of this module, the input ports it depends on through
+    /// combinational logic (stopping at registers), for the clock check in parents.
+    fn record_comb_deps(&mut self, module_name: &str, resolve: &dyn Fn(&str) -> String) {
+        let mut table = HashMap::new();
+        for port in self.m.ports.iter().filter(|p| p.dir == Dir::Out) {
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut ins: HashSet<String> = HashSet::new();
+            let mut todo = vec![resolve(&port.name)];
+            let mut ok = true;
+            while let Some(sig) = todo.pop() {
+                if !seen.insert(sig.clone()) || seen.len() > 20_000 {
+                    continue;
+                }
+                if self
+                    .m
+                    .ports
+                    .iter()
+                    .any(|p| p.name == sig && p.dir == Dir::In)
+                {
+                    ins.insert(sig);
+                    continue;
+                }
+                for p in &self.m.processes {
+                    if matches!(p.kind, ProcKind::Comb)
+                        && driver_keys(&p.body)
+                            .iter()
+                            .any(|k| k.split('[').next().unwrap_or(k) == sig)
+                    {
+                        todo.extend(read_sigs(&p.body));
+                    }
+                }
+                for inst in &self.m.instances {
+                    for c in inst.conns.iter().filter(|c| c.sig == sig) {
+                        let is_out = self
+                            .out
+                            .iter()
+                            .find(|m| m.name == inst.module)
+                            .and_then(|m| m.ports.iter().find(|p| p.name == c.port))
+                            .is_some_and(|p| p.dir == Dir::Out);
+                        if !is_out {
+                            continue;
+                        }
+                        match self
+                            .comb_deps
+                            .get(&inst.module)
+                            .and_then(|t| t.get(&c.port))
+                        {
+                            Some(deps) => {
+                                for d in deps {
+                                    if let Some(x) = inst.conns.iter().find(|x| x.port == *d) {
+                                        todo.push(x.sig.clone());
+                                    }
+                                }
+                            }
+                            None => ok = false,
+                        }
+                    }
+                }
+            }
+            if ok {
+                table.insert(port.name.clone(), ins);
+            }
+        }
+        self.comb_deps.insert(module_name.to_string(), table);
     }
 
     /// Fail-closed check: a signal that is read, or an output port, with no driver at all.
@@ -3893,4 +4066,909 @@ fn read_sigs(stmts: &[Stmt]) -> HashSet<String> {
         Stmt::Block { .. } => {}
     });
     out
+}
+
+// ----------------------------------------------------------------------
+// Clock gating, clock buffers and clock inverters
+//
+// A clock-gating cell is a latch that is transparent while the clock is low, followed by an
+// AND with the clock:
+//
+//     always_latch if (!clk) en_l = en;
+//     assign gclk = clk & en_l;
+//
+// `gclk` rises exactly when `clk` rises with `en_l` set, and `en_l` then holds the value `en`
+// had just before the edge, which is what any edge-triggered block on `clk` reads as `en`. A
+// register on `posedge gclk` therefore behaves as a register on `posedge clk` that only
+// updates when `en` is set (IEEE 1800-2023 9.2.2.4 for the latch, 9.4.2 for the edge). A
+// clock buffer is a copy, and a clock inverter turns a rising edge into a falling one. In
+// those forms the register maps to SystemC without the delta cycle that a derived clock
+// signal would add.
+// ----------------------------------------------------------------------
+
+/// How a clock signal is derived from a root clock: optionally inverted, and gated by a list
+/// of enables (all sampled at the root clock edge that drives it).
+#[derive(Clone, Debug)]
+struct ClockFn {
+    clk: String,
+    inv: bool,
+    ens: Vec<Expr>,
+}
+
+/// Removes width-preserving conversions around a 1-bit expression.
+fn strip_bit(e: &Expr) -> &Expr {
+    match e {
+        Expr::Resize { arg, ty } | Expr::Cast { arg, ty } if ty.w == 1 && arg.ty().w == 1 => {
+            strip_bit(arg)
+        }
+        Expr::Unary {
+            op: UnOp::RedOr,
+            arg,
+            ..
+        } if arg.ty().w == 1 => strip_bit(arg),
+        _ => e,
+    }
+}
+
+/// The plain 1-bit signal an expression reads, if it is nothing more than that.
+fn plain_sig(e: &Expr) -> Option<&str> {
+    match strip_bit(e) {
+        Expr::Sig { name, ty } if ty.w == 1 => Some(name),
+        _ => None,
+    }
+}
+
+/// The signal an expression inverts (`~x`, `!x`), if that is all it does.
+fn inverted_sig(e: &Expr) -> Option<&str> {
+    match strip_bit(e) {
+        Expr::Unary {
+            op: UnOp::LogNot | UnOp::BitNot,
+            arg,
+            ..
+        } => plain_sig(arg),
+        _ => None,
+    }
+}
+
+/// Whether `cond` tests that the clock is low: `!clk`, `~clk`, `clk == 0`, `0 == clk`.
+fn tests_low(cond: &Expr, clk: &dyn Fn(&str) -> bool) -> bool {
+    if inverted_sig(cond).is_some_and(clk) {
+        return true;
+    }
+    match strip_bit(cond) {
+        Expr::Binary {
+            op: BinOp::Eq,
+            lhs,
+            rhs,
+            ..
+        } => {
+            (plain_sig(lhs).is_some_and(clk) && rhs.as_u64() == Some(0))
+                || (plain_sig(rhs).is_some_and(clk) && lhs.as_u64() == Some(0))
+        }
+        _ => false,
+    }
+}
+
+/// The single whole-signal assignment a statement list makes, looking through blocks.
+fn single_assign(stmts: &[Stmt]) -> Option<(&str, &Expr)> {
+    match stmts {
+        [Stmt::Assign {
+            lhs:
+                Lval {
+                    base: LvBase::Sig { name, .. },
+                    sel: None,
+                },
+            rhs,
+            ..
+        }] => Some((name, rhs)),
+        [Stmt::Block { locals, body }] if locals.is_empty() => single_assign(body),
+        _ => None,
+    }
+}
+
+/// Replaces each plain signal read in `e` by `f(name)` where it returns a replacement.
+fn map_sigs(e: &Expr, f: &dyn Fn(&str, Ty) -> Option<Expr>) -> Expr {
+    let rec = |x: &Expr| Box::new(map_sigs(x, f));
+    match e {
+        Expr::Sig { name, ty } => f(name, *ty).unwrap_or_else(|| e.clone()),
+        Expr::Const { .. } | Expr::Local { .. } => e.clone(),
+        Expr::Elem { name, idx, ty } => Expr::Elem {
+            name: name.clone(),
+            idx: idx.iter().map(|i| map_sigs(i, f)).collect(),
+            ty: *ty,
+        },
+        Expr::Unary { op, arg, ty } => Expr::Unary {
+            op: *op,
+            arg: rec(arg),
+            ty: *ty,
+        },
+        Expr::Binary { op, lhs, rhs, ty } => Expr::Binary {
+            op: *op,
+            lhs: rec(lhs),
+            rhs: rec(rhs),
+            ty: *ty,
+        },
+        Expr::Cond {
+            cond,
+            then_e,
+            else_e,
+            ty,
+        } => Expr::Cond {
+            cond: rec(cond),
+            then_e: rec(then_e),
+            else_e: rec(else_e),
+            ty: *ty,
+        },
+        Expr::Concat { parts, ty } => Expr::Concat {
+            parts: parts.iter().map(|p| map_sigs(p, f)).collect(),
+            ty: *ty,
+        },
+        Expr::Repl { count, arg, ty } => Expr::Repl {
+            count: *count,
+            arg: rec(arg),
+            ty: *ty,
+        },
+        Expr::Slice {
+            base,
+            lo,
+            lo_dyn,
+            ty,
+        } => Expr::Slice {
+            base: rec(base),
+            lo: *lo,
+            lo_dyn: lo_dyn.as_ref().map(|d| rec(d)),
+            ty: *ty,
+        },
+        Expr::Resize { arg, ty } => Expr::Resize {
+            arg: rec(arg),
+            ty: *ty,
+        },
+        Expr::Cast { arg, ty } => Expr::Cast {
+            arg: rec(arg),
+            ty: *ty,
+        },
+        Expr::Call { func, args, ty } => Expr::Call {
+            func: func.clone(),
+            args: args.iter().map(|a| map_sigs(a, f)).collect(),
+            ty: *ty,
+        },
+        Expr::CountOnes { arg, ty } => Expr::CountOnes {
+            arg: rec(arg),
+            ty: *ty,
+        },
+    }
+}
+
+/// Names of the signals an expression reads; `None` if it reads locals or calls functions.
+fn expr_sigs(e: &Expr) -> Option<HashSet<String>> {
+    let mut out = HashSet::new();
+    let mut ok = true;
+    e.walk(&mut |x| match x {
+        Expr::Sig { name, .. } | Expr::Elem { name, .. } => {
+            out.insert(name.clone());
+        }
+        Expr::Local { .. } | Expr::Call { .. } => ok = false,
+        _ => {}
+    });
+    ok.then_some(out)
+}
+
+/// The clock-relevant view of one module's body.
+struct ClockView<'v> {
+    ports: &'v [hdl::Port],
+    processes: &'v [Process],
+    instances: &'v [hdl::Instance],
+    /// Plain copies: signal -> the signal it copies (`assign a = b;`, pass-through instances).
+    alias: HashMap<String, String>,
+    /// Whole-signal combinational definitions `assign a = expr;`, for inlining enables.
+    defs: HashMap<String, Expr>,
+}
+
+impl<'v> ClockView<'v> {
+    fn new(
+        ports: &'v [hdl::Port],
+        processes: &'v [Process],
+        instances: &'v [hdl::Instance],
+        pass_through: &HashMap<String, HashMap<String, String>>,
+    ) -> Self {
+        let mut alias = HashMap::new();
+        let mut defs = HashMap::new();
+        for p in processes {
+            if !matches!(p.kind, ProcKind::Comb) || p.merged_from != 1 {
+                continue;
+            }
+            if let Some((name, rhs)) = single_assign(&p.body) {
+                if let Expr::Sig { name: src, ty } = rhs {
+                    if *ty == rhs.ty() {
+                        alias.insert(name.to_string(), src.clone());
+                    }
+                }
+                defs.insert(name.to_string(), rhs.clone());
+            }
+        }
+        for inst in instances {
+            let Some(pass) = pass_through.get(&inst.module) else {
+                continue;
+            };
+            for c in &inst.conns {
+                if let Some(src_port) = pass.get(&c.port) {
+                    if let Some(src) = inst.conns.iter().find(|x| x.port == *src_port) {
+                        if c.elem.is_empty() && src.elem.is_empty() {
+                            alias.insert(c.sig.clone(), src.sig.clone());
+                        }
+                    }
+                }
+            }
+        }
+        ClockView {
+            ports,
+            processes,
+            instances,
+            alias,
+            defs,
+        }
+    }
+
+    fn resolve(&self, s: &str) -> String {
+        let mut cur = s.to_string();
+        for _ in 0..32 {
+            match self.alias.get(&cur) {
+                Some(n) => cur = n.clone(),
+                None => break,
+            }
+        }
+        cur
+    }
+
+    fn is_input(&self, s: &str) -> bool {
+        self.ports.iter().any(|p| p.name == s && p.dir == Dir::In)
+    }
+
+    /// `e` with combinational definitions substituted, down to inputs, registers and
+    /// constants.
+    fn inline(&self, e: &Expr, depth: u32) -> Expr {
+        if depth > 16 {
+            return e.clone();
+        }
+        map_sigs(e, &|name, ty| {
+            let d = self.defs.get(name)?;
+            (d.ty() == ty).then(|| self.inline(d, depth + 1))
+        })
+    }
+
+    /// One step back from `sig` towards its root clock: a gating cell, a buffer or an
+    /// inverter written here, or one an instance's module exports. Returns the source
+    /// signal, whether this step inverts, and an enable when it gates.
+    fn step(
+        &self,
+        sig: &str,
+        fns: &HashMap<String, HashMap<String, ClockFn>>,
+    ) -> Option<(String, bool, Vec<Expr>)> {
+        let sig = self.resolve(sig);
+        for p in self.processes {
+            if !matches!(p.kind, ProcKind::Comb) {
+                continue;
+            }
+            let Some((name, rhs)) = single_assign(&p.body) else {
+                continue;
+            };
+            if name != sig {
+                continue;
+            }
+            if let Some(src) = inverted_sig(rhs) {
+                return Some((self.resolve(src), true, Vec::new()));
+            }
+            if let Expr::Binary {
+                op: BinOp::BitAnd | BinOp::LogAnd,
+                lhs,
+                rhs: r2,
+                ..
+            } = strip_bit(rhs)
+            {
+                for (c, l) in [(lhs, r2), (r2, lhs)] {
+                    let (Some(c), Some(l)) = (plain_sig(c), plain_sig(l)) else {
+                        continue;
+                    };
+                    let clk = self.resolve(c);
+                    if let Some(en) = self.latch_enable(l, &clk) {
+                        return Some((clk, false, vec![en]));
+                    }
+                }
+            }
+        }
+        for inst in self.instances {
+            let Some(tbl) = fns.get(&inst.module) else {
+                continue;
+            };
+            for c in inst
+                .conns
+                .iter()
+                .filter(|c| c.sig == sig && c.elem.is_empty())
+            {
+                let Some(f) = tbl.get(&c.port) else {
+                    continue;
+                };
+                let actual = |port: &str| {
+                    inst.conns
+                        .iter()
+                        .find(|x| x.port == port && x.elem.is_empty())
+                        .map(|x| x.sig.clone())
+                };
+                let clk = self.resolve(&actual(&f.clk)?);
+                let missing = std::cell::Cell::new(false);
+                let ens = f
+                    .ens
+                    .iter()
+                    .map(|e| {
+                        map_sigs(e, &|name, ty| match actual(name) {
+                            Some(s) => Some(Expr::Sig { name: s, ty }),
+                            None => {
+                                missing.set(true);
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                if missing.get() {
+                    return None;
+                }
+                return Some((clk, f.inv, ens));
+            }
+        }
+        None
+    }
+
+    /// Follows `sig` back to its root clock. `posedge` is the edge the register uses. Returns
+    /// the root, the edge on the root, and the enables. `None` when nothing is derived, or the
+    /// derivation cannot be expressed as an edge with enables (a falling edge of a gated
+    /// clock, an enable that reads its own clock).
+    fn derive(
+        &self,
+        sig: &str,
+        posedge: bool,
+        fns: &HashMap<String, HashMap<String, ClockFn>>,
+    ) -> Option<(String, bool, Vec<Expr>)> {
+        let mut cur = self.resolve(sig);
+        let mut pos = posedge;
+        let mut ens: Vec<Expr> = Vec::new();
+        let mut steps = 0;
+        while let Some((src, inv, more)) = self.step(&cur, fns) {
+            if !more.is_empty() {
+                // A gated clock rises with its clock; its falling edge has no enable form.
+                if !pos {
+                    return None;
+                }
+                for e in &more {
+                    let reads = expr_sigs(&self.inline(e, 0))?;
+                    if reads.iter().any(|x| self.resolve(x) == src) {
+                        return None;
+                    }
+                }
+                ens.extend(more);
+            }
+            pos ^= inv;
+            cur = src;
+            steps += 1;
+            if steps > 16 {
+                return None;
+            }
+        }
+        (steps > 0).then_some((cur, pos, ens))
+    }
+
+    /// For a latch `l` written only as `if (clk is low) l = en;`, returns `en`.
+    fn latch_enable(&self, l: &str, clk: &str) -> Option<Expr> {
+        let is_clk = |s: &str| self.resolve(s) == clk;
+        let mut found = None;
+        for p in self.processes {
+            if !driver_keys(&p.body).contains(l) {
+                continue;
+            }
+            if found.is_some() || !matches!(p.kind, ProcKind::Comb) {
+                return None;
+            }
+            let body = match p.body.as_slice() {
+                [Stmt::Block { locals, body }] if locals.is_empty() => body.as_slice(),
+                b => b,
+            };
+            let [Stmt::If {
+                cond,
+                then_s,
+                else_s,
+            }] = body
+            else {
+                return None;
+            };
+            if !else_s.is_empty() || !tests_low(cond, &is_clk) {
+                return None;
+            }
+            let (name, en) = single_assign(then_s)?;
+            if name != l {
+                return None;
+            }
+            found = Some(en.clone());
+        }
+        found
+    }
+}
+
+fn and_all(ens: &[Expr]) -> Expr {
+    let mut it = ens.iter().map(|e| truth(e.clone()));
+    let first = it.next().unwrap_or_else(|| Expr::konst(Ty::BIT, 1));
+    it.fold(first, |acc, e| bin(BinOp::LogAnd, acc, e, Ty::BIT))
+}
+
+impl<'a> Lowerer<'a> {
+    /// Rewrites registers clocked by a gated, buffered or inverted clock into registers on the
+    /// root clock (with an enable, on the right edge), and instances whose clock port is
+    /// derived that way into variants of their module. Then records how this module's outputs
+    /// derive from its input clocks. Other derived clocks are left for `check_clock_sources`
+    /// to reject.
+    fn apply_clock_gating(&mut self, module_name: &str) {
+        self.connect_enable_ports();
+        let fns = std::mem::take(&mut self.clock_fns);
+        let pass_through = std::mem::take(&mut self.pass_through);
+        let (proc_rewrites, inst_rewrites) = {
+            let view = ClockView::new(
+                &self.m.ports,
+                &self.m.processes,
+                &self.m.instances,
+                &pass_through,
+            );
+            // Registers in this module.
+            let mut procs = Vec::new();
+            for (pi, p) in self.m.processes.iter().enumerate() {
+                let ProcKind::Seq { edges } = &p.kind else {
+                    continue;
+                };
+                let clocks: Vec<usize> = (0..edges.len())
+                    .filter(|&i| !edges[i].is_async_ctrl)
+                    .collect();
+                let [ci] = clocks.as_slice() else { continue };
+                let e = &edges[*ci];
+                if let Some((root, pos, ens)) = view.derive(&e.sig, e.posedge, &fns) {
+                    procs.push((pi, *ci, root, pos, ens));
+                }
+            }
+            // Instances whose clock port is derived.
+            let mut insts = Vec::new();
+            for (ii, inst) in self.m.instances.iter().enumerate() {
+                let Some(clk_ports) = self.clock_ins.get(&inst.module) else {
+                    continue;
+                };
+                for (cj, c) in inst.conns.iter().enumerate() {
+                    if !clk_ports.contains(&c.port) || !c.elem.is_empty() {
+                        continue;
+                    }
+                    if let Some((root, pos, ens)) = view.derive(&c.sig, true, &fns) {
+                        insts.push((ii, cj, root, !pos, ens));
+                    }
+                }
+            }
+            (procs, insts)
+        };
+        self.clock_fns = fns;
+        self.pass_through = pass_through;
+
+        for (pi, ci, root, pos, ens) in proc_rewrites {
+            let p = &mut self.m.processes[pi];
+            let ProcKind::Seq { edges } = &mut p.kind else {
+                continue;
+            };
+            edges[ci].sig = root;
+            edges[ci].posedge = pos;
+            if !ens.is_empty() {
+                wrap_with_enable(p, and_all(&ens));
+            }
+        }
+        for (ii, cj, root, inv, ens) in inst_rewrites {
+            let module = self.m.instances[ii].module.clone();
+            let port = self.m.instances[ii].conns[cj].port.clone();
+            let Some((variant, en_port)) = self.clock_variant(&module, &port, inv, !ens.is_empty())
+            else {
+                continue;
+            };
+            let inst_name = self.m.instances[ii].name.clone();
+            let mut new_conn = None;
+            if let Some(en_port) = en_port {
+                let glue = self.add_glue(&format!("{inst_name}_{en_port}"), Ty::BIT, true);
+                let pname = self.m.unique(&format!("drive_{glue}"));
+                self.m.processes.push(Process {
+                    name: pname,
+                    kind: ProcKind::Comb,
+                    locals: Vec::new(),
+                    body: vec![Stmt::Assign {
+                        lhs: Lval {
+                            base: LvBase::Sig {
+                                name: glue.clone(),
+                                ty: Ty::BIT,
+                            },
+                            sel: None,
+                        },
+                        rhs: and_all(&ens),
+                        nonblocking: false,
+                    }],
+                    merged_from: 1,
+                    line: 0,
+                });
+                new_conn = Some(hdl::Conn {
+                    port: en_port,
+                    sig: glue,
+                    elem: Vec::new(),
+                });
+            }
+            let inst = &mut self.m.instances[ii];
+            inst.module = variant;
+            inst.conns[cj].sig = root;
+            if let Some(c) = new_conn {
+                inst.conns.push(c);
+            }
+        }
+        self.export_clock_fns(module_name);
+    }
+
+    /// Records how this module's outputs derive from its input clocks, for parents. An enable
+    /// that reads more than this module's inputs is brought out on an extra output port, so a
+    /// parent can sample it.
+    fn export_clock_fns(&mut self, module_name: &str) {
+        let found: Vec<(String, ClockFn)> = {
+            let view = ClockView::new(
+                &self.m.ports,
+                &self.m.processes,
+                &self.m.instances,
+                &self.pass_through,
+            );
+            let mut out = Vec::new();
+            for port in self
+                .m
+                .ports
+                .iter()
+                .filter(|p| p.dir == Dir::Out && p.ty.w == 1)
+            {
+                let Some((root, pos, ens)) = view.derive(&port.name, true, &self.clock_fns) else {
+                    continue;
+                };
+                if !view.is_input(&root) {
+                    continue;
+                }
+                let ens: Vec<Expr> = ens.iter().map(|e| view.inline(e, 0)).collect();
+                out.push((
+                    port.name.clone(),
+                    ClockFn {
+                        clk: root,
+                        inv: !pos,
+                        ens,
+                    },
+                ));
+            }
+            out
+        };
+        let mut table = HashMap::new();
+        for (port, mut f) in found {
+            let inputs_only = f.ens.iter().all(|e| {
+                expr_sigs(e).is_some_and(|s| {
+                    s.iter().all(|x| {
+                        self.m
+                            .ports
+                            .iter()
+                            .any(|p| p.name == *x && p.dir == Dir::In)
+                    })
+                })
+            });
+            if !inputs_only {
+                // A falling edge of a gated clock is not exported (see `derive`), and a top
+                // module keeps the design's interface.
+                if f.inv || self.m.is_top {
+                    continue;
+                }
+                let en_port = self.m.unique(&format!("svcc_cge_{port}"));
+                self.m.ports.push(hdl::Port {
+                    name: en_port.clone(),
+                    dir: Dir::Out,
+                    ty: Ty::BIT,
+                    scalar: true,
+                    dims: Vec::new(),
+                });
+                self.m.sigs.insert(
+                    en_port.clone(),
+                    SigInfo {
+                        ty: Ty::BIT,
+                        scalar: true,
+                        dims: Vec::new(),
+                        is_input: false,
+                    },
+                );
+                let pname = self.m.unique(&format!("drive_{en_port}"));
+                self.m.processes.push(Process {
+                    name: pname,
+                    kind: ProcKind::Comb,
+                    locals: Vec::new(),
+                    body: vec![Stmt::Assign {
+                        lhs: Lval {
+                            base: LvBase::Sig {
+                                name: en_port.clone(),
+                                ty: Ty::BIT,
+                            },
+                            sel: None,
+                        },
+                        rhs: and_all(&f.ens),
+                        nonblocking: false,
+                    }],
+                    merged_from: 1,
+                    line: 0,
+                });
+                f.ens = vec![Expr::Sig {
+                    name: en_port,
+                    ty: Ty::BIT,
+                }];
+            }
+            table.insert(port, f);
+        }
+        self.clock_fns.insert(module_name.to_string(), table);
+    }
+
+    /// Connects the enable output ports (`svcc_cge_*`) that instances' modules bring out, so
+    /// that a gated clock from an instance can be followed in this module.
+    fn connect_enable_ports(&mut self) {
+        let mut adds = Vec::new();
+        for (ii, inst) in self.m.instances.iter().enumerate() {
+            let Some(tbl) = self.clock_fns.get(&inst.module) else {
+                continue;
+            };
+            let mut needed: Vec<String> = tbl
+                .values()
+                .flat_map(|f| f.ens.iter().filter_map(expr_sigs).flatten())
+                .filter(|p| p.starts_with("svcc_cge_"))
+                .collect();
+            needed.sort();
+            needed.dedup();
+            for p in needed {
+                if !inst.conns.iter().any(|c| c.port == p) {
+                    adds.push((ii, p));
+                }
+            }
+        }
+        for (ii, port) in adds {
+            let iname = self.m.instances[ii].name.clone();
+            let glue = self.add_glue(&format!("{iname}_{port}"), Ty::BIT, true);
+            self.m.instances[ii].conns.push(hdl::Conn {
+                port,
+                sig: glue,
+                elem: Vec::new(),
+            });
+        }
+    }
+
+    /// A copy of `module` for an instance whose clock port `port` is driven by an inverted
+    /// and/or gated clock: the registers on `port` use the other edge when `inv`, and only
+    /// update when a new 1-bit enable input is set when `gated`. Returns the copy's name and
+    /// the enable port, or `None` when `port` is also used as data (then the clock stays
+    /// derived and is rejected by the clock check).
+    fn clock_variant(
+        &mut self,
+        module: &str,
+        port: &str,
+        inv: bool,
+        gated: bool,
+    ) -> Option<(String, Option<String>)> {
+        if !inv && !gated {
+            return Some((module.to_string(), None));
+        }
+        let key = (module.to_string(), port.to_string(), inv, gated);
+        if let Some(v) = self.cg_variants.get(&key) {
+            return v.clone();
+        }
+        // Guard against cycles while the variant is built.
+        self.cg_variants.insert(key.clone(), None);
+        let result = self.build_clock_variant(module, port, inv, gated);
+        self.cg_variants.insert(key, result.clone());
+        result
+    }
+
+    fn build_clock_variant(
+        &mut self,
+        module: &str,
+        port: &str,
+        inv: bool,
+        gated: bool,
+    ) -> Option<(String, Option<String>)> {
+        let mut m = self.out.iter().find(|x| x.name == module)?.clone();
+        let alias: HashMap<String, String> =
+            ClockView::new(&m.ports, &m.processes, &m.instances, &self.pass_through)
+                .alias
+                .clone();
+        let resolve = |s: &str| {
+            let mut cur = s.to_string();
+            for _ in 0..32 {
+                match alias.get(&cur) {
+                    Some(n) => cur = n.clone(),
+                    None => break,
+                }
+            }
+            cur
+        };
+        let is_port = |s: &str| resolve(s) == port;
+        // The clock may only be used as a clock: edges, clock ports of instances, or the
+        // clock input of a gating cell or buffer whose output is only used as a clock (after
+        // this module's own rewrite it is then unused).
+        for p in &m.processes {
+            let copy = matches!(p.kind, ProcKind::Comb)
+                && single_assign(&p.body)
+                    .is_some_and(|(_, rhs)| plain_sig(rhs).is_some_and(is_port));
+            if copy {
+                continue;
+            }
+            if read_sigs(&p.body).iter().any(|s| is_port(s)) {
+                return None;
+            }
+            if let ProcKind::Seq { edges } = &p.kind {
+                for e in edges.iter().filter(|e| is_port(&e.sig)) {
+                    if e.is_async_ctrl {
+                        return None;
+                    }
+                    // The falling edge of a gated clock has no enable form.
+                    if gated && e.posedge == inv {
+                        return None;
+                    }
+                }
+            }
+        }
+        let mut child_rewrites = Vec::new();
+        for (ii, inst) in m.instances.iter().enumerate() {
+            for (cj, c) in inst.conns.iter().enumerate() {
+                if !is_port(&c.sig) {
+                    continue;
+                }
+                let is_clock = self
+                    .clock_ins
+                    .get(&inst.module)
+                    .is_some_and(|k| k.contains(&c.port));
+                let feeds_fn = self
+                    .clock_fns
+                    .get(&inst.module)
+                    .is_some_and(|t| t.values().any(|f| f.clk == c.port));
+                let unused = self.out.iter().find(|x| x.name == inst.module).is_some_and(|cm| {
+                    !cm.processes.iter().any(|p| {
+                        read_sigs(&p.body).contains(&c.port)
+                            || matches!(&p.kind, ProcKind::Seq { edges } if edges.iter().any(|e| e.sig == c.port))
+                    }) && !cm.instances.iter().any(|i| i.conns.iter().any(|x| x.sig == c.port))
+                });
+                if is_clock {
+                    child_rewrites.push((ii, cj));
+                } else if unused {
+                    // Connected but not used inside: nothing to change.
+                } else if feeds_fn {
+                    // Its derived outputs must not be read in this module.
+                    let outs: Vec<&String> = inst
+                        .conns
+                        .iter()
+                        .filter(|x| {
+                            self.clock_fns
+                                .get(&inst.module)
+                                .is_some_and(|t| t.contains_key(&x.port))
+                        })
+                        .map(|x| &x.sig)
+                        .collect();
+                    let read = m.processes.iter().any(|p| {
+                        let r = read_sigs(&p.body);
+                        outs.iter().any(|o| r.contains(*o))
+                    }) || m.instances.iter().enumerate().any(|(k, other)| {
+                        k != ii && other.conns.iter().any(|x| outs.contains(&&x.sig))
+                    });
+                    if read {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        let mut name = format!("{module}_ck");
+        let mut k = 1;
+        while self.used_module_names.contains(&name) {
+            name = format!("{module}_ck{k}");
+            k += 1;
+        }
+        self.used_module_names.insert(name.clone());
+        m.name = name.clone();
+        let en_port = if gated {
+            let taken: HashSet<String> = m
+                .ports
+                .iter()
+                .map(|p| p.name.clone())
+                .chain(m.signals.iter().map(|s| s.name.clone()))
+                .collect();
+            let mut en = format!("svcc_cg_{port}");
+            let mut n = 1;
+            while taken.contains(&en) {
+                en = format!("svcc_cg_{port}_{n}");
+                n += 1;
+            }
+            m.ports.push(hdl::Port {
+                name: en.clone(),
+                dir: Dir::In,
+                ty: Ty::BIT,
+                scalar: true,
+                dims: Vec::new(),
+            });
+            Some(en)
+        } else {
+            None
+        };
+        for p in &mut m.processes {
+            let ProcKind::Seq { edges } = &mut p.kind else {
+                continue;
+            };
+            let mut hit = false;
+            for e in edges
+                .iter_mut()
+                .filter(|e| !e.is_async_ctrl && is_port(&e.sig))
+            {
+                e.posedge ^= inv;
+                hit = true;
+            }
+            if hit {
+                if let Some(en) = &en_port {
+                    wrap_with_enable(
+                        p,
+                        Expr::Sig {
+                            name: en.clone(),
+                            ty: Ty::BIT,
+                        },
+                    );
+                }
+            }
+        }
+        for (ii, cj) in child_rewrites {
+            let child = m.instances[ii].module.clone();
+            let cport = m.instances[ii].conns[cj].port.clone();
+            let (variant, cen) = self.clock_variant(&child, &cport, inv, gated)?;
+            m.instances[ii].module = variant;
+            if let (Some(cen), Some(en)) = (cen, &en_port) {
+                m.instances[ii].conns.push(hdl::Conn {
+                    port: cen,
+                    sig: en.clone(),
+                    elem: Vec::new(),
+                });
+            }
+        }
+        for tbl in [&mut self.clock_ins, &mut self.reg_outs] {
+            if let Some(v) = tbl.get(module).cloned() {
+                tbl.insert(name.clone(), v);
+            }
+        }
+        if let Some(v) = self.comb_deps.get(module).cloned() {
+            self.comb_deps.insert(name.clone(), v);
+        }
+        if let Some(v) = self.pass_through.get(module).cloned() {
+            self.pass_through.insert(name.clone(), v);
+        }
+        self.out.push(m);
+        Some((name, en_port))
+    }
+}
+
+/// Makes an edge-triggered process act only when `en` is set at the clock edge, or when one
+/// of its asynchronous controls is asserted (so a reset still takes effect).
+fn wrap_with_enable(p: &mut Process, en: Expr) {
+    let ProcKind::Seq { edges } = &p.kind else {
+        return;
+    };
+    let mut cond = truth(en);
+    for e in edges.iter().filter(|e| e.is_async_ctrl) {
+        let level = Expr::Sig {
+            name: e.sig.clone(),
+            ty: Ty::BIT,
+        };
+        let asserted = if e.posedge { level } else { lnot(level) };
+        cond = bin(BinOp::LogOr, cond, asserted, Ty::BIT);
+    }
+    let locals = std::mem::take(&mut p.locals);
+    let body = std::mem::take(&mut p.body);
+    p.body = vec![Stmt::If {
+        cond,
+        then_s: vec![Stmt::Block { locals, body }],
+        else_s: Vec::new(),
+    }];
 }
