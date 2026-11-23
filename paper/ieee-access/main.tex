@@ -85,7 +85,7 @@ validation.
 \section{Introduction}
 \label{sec:intro}
 
-\PARstart{R}{TL} is written in SystemVerilog~\cite{ieee1800_2023}, and much of the work around it runs on
+\PARstart{R}{egister-transfer} level (RTL) designs are written in SystemVerilog~\cite{ieee1800_2023}, and much of the work around them runs on
 C++ models of the same logic. Virtual platforms boot firmware before silicon, reference models
 check RTL in simulation, and SystemC~\cite{ieee1666_2023} models run without a simulator license.
 Verilator~\cite{snyder2020verilator} turns RTL into fast C++, and with \code{-{}-sc} into a SystemC
@@ -106,7 +106,7 @@ with C's own semantics is also old: Clarke, Kroening and Yorav did it with bound
 in 2003~\cite{clarke2003cverilog}, and commercial C-to-RTL equivalence tools do it
 today~\cite{koelbl2009c2rtl}. The method in this paper is standard. What we report is what went
 wrong when we built the check the obvious way, what we built instead, and how it held up on a
-design suite, a mutation experiment and 16 open-source code bases.
+design suite, a mutation experiment and \nCodeBases{} open-source code bases.
 
 The contributions are:
 \begin{enumerate}
@@ -180,7 +180,7 @@ run on a real SystemC kernel. Two designs the check had proved were wrong
 Source (8-bit) & What the C++ did & First difference \\
 \midrule
 \code{y = (a + b) {>}{>} 1} & shifted the 64-bit sum & \code{a=b=0xff}: \code{7f} vs \code{ff} \\
-\code{lt = (a - b) < c} & compared the 64-bit difference & \code{a=3e, b=c1, c=7e} \\
+\code{lt = (a - b) < c} & compared the 64-bit difference & \code{a=3e, b=c1, c=7e}: \code{1} vs \code{0} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -257,7 +257,7 @@ checked side starts from the generated header.
 \includegraphics[width=\columnwidth]{fig-gate}
 \caption{The \code{rtl-prove} check. The top row up to the header is the translator. The reference
 (bottom left) runs no \code{svcc} code. Shaded dashed boxes are \code{svlang}, which all three
-paths use and which the check trusts.}
+paths use and which the check trusts. UB: undefined behavior.}
 \label{fig:gate}
 \end{figure}
 
@@ -418,7 +418,7 @@ and width edits in small designs. The paper does not claim more than that.
 
 We tried every module of \nCodeBases{} open-source code bases as a top with its default
 parameters: picorv32, SERV, biRISC-V, verilog-axi, SCR1, tech\_cells\_generic, common\_cells,
-PULP AXI, CVFPU, Ibex, CV32E40P, CV32E40X, CVA6, Caliptra, OpenTitan and BaseJump STL, \nModules{}
+the PULP Advanced eXtensible Interface (AXI) library, CVFPU, Ibex, CV32E40P, CV32E40X, CVA6, Caliptra, OpenTitan and BaseJump STL, \nModules{}
 modules in all. Each module passes through three stages: convert, compile the header against
 SystemC, and co-simulate against Verilator for \nSteps{} random steps, comparing every output after
 every step. Each step changes the data inputs and then toggles one clock chosen at random, so a run has
@@ -543,7 +543,7 @@ Yosys EQY~\cite{yosys_eqy} checks equivalence between two RTL or netlist version
 \emph{Translation validation and verified compilation.} Translation validation was proposed by
 Pnueli et al.~\cite{pnueli1998tv}, applied to a production compiler by Necula~\cite{necula2000tv}
 and to LLVM by Alive2~\cite{lopes2021alive2}, whose treatment of undefined behavior we follow. In
-hardware, Kundu et al.~\cite{kundu2010tvhls} validate high-level synthesis with a simulation
+hardware, Kundu et al.~\cite{kundu2010tvhls} validate high-level synthesis (HLS) with a simulation
 relation that need not be a one-to-one register map, which is more general than our name-based
 mapping. The alternative is a verified
 translator: CompCert~\cite{leroy2009compcert} for C, Vericert~\cite{herklotz2021vericert} for C to
@@ -571,7 +571,7 @@ The proof's guarantee holds under the assumptions of Section~\ref{sec:assume}. I
 the clock step. Multi-clock and X-dependent behavior, and SystemC process scheduling, are covered
 by co-simulation against Verilator on a real SystemC kernel.
 \item A bounded verdict is reported separately, exits with code 2, and is not counted as a proof.
-\item The testbench direction of \code{svcc} (UVM-SystemC, CRAVE and FC4SC) is outside this paper.
+\item The testbench direction of \code{svcc} (Universal Verification Methodology (UVM) testbenches to UVM-SystemC, CRAVE and FC4SC) is outside this paper.
 \end{itemize}
 
 %% ===========================================================================

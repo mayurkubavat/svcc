@@ -156,9 +156,11 @@ Two known Verilator deviations affect the comparison:
 - A module that instantiates itself (a recursive tree) is built without its children when it
   is the top level (Verilator 5.052 and 5.055). rtl-cosim then gives the reference a wrapper
   top, so the recursive module is an ordinary instance (`testdata/rtl/recursive_top.sv`).
+  Reported as verilator/verilator#9328.
 - A write through a computed index outside the declared range is not ignored, as IEEE
   1800-2023 11.5.1 requires; Verilator wraps the index into the range. svcc ignores the
-  write. A difference on such a design is in the reference, not in svcc.
+  write. A difference on such a design is in the reference, not in svcc. Reported as
+  verilator/verilator#9329.
 
 `benchmarks/rtl_stress/run_stress.py` runs the same three stages (convert, compile against
 SystemC, simulate against Verilator) over every module of a corpus of open-source designs
