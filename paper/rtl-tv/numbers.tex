@@ -5,15 +5,23 @@
 % --- Repository designs under the proof (scripts/rtl_prove.sh) -------------------------
 % Measured 2026-11-23 at main 00c80f0, Linux x86_64, Z3 from pip (journal entry
 % M6.1-rtl-prove-main). 24 testdata/rtl + 18 probes + 8 corpus designs 13..20.
+% Re-run 2026-11-23 in the cloud container, release binary at c778e17 (same rtl code as 00c80f0),
+% Z3 5.4.1: 45 proved for all runs, 0 bounded; paired registers 0 on 25 designs, at most 9;
+% Z3 time for the generated-C++ side 9 to 31 ms per design.
 \newcommand{\nDesigns}{50}
 \newcommand{\nProved}{45}
 \newcommand{\nNotCovered}{5}
 \newcommand{\nFailed}{0}
+\newcommand{\nBounded}{0}
+\newcommand{\nCombinational}{25}
+\newcommand{\nMaxPaired}{9}
 
 % --- Mutation check (benchmarks/formal_gate/mutate.py) ---------------------------------
-% Run of 2026-11-22 on 42 designs, macOS arm64, SystemC 3.0.3, Verilator 5.052.
+% Run of 2026-11-22 at commit 3c486e4 (journal M6-typed-formal-gates), macOS arm64,
+% SystemC 3.0.3, Verilator 5.052. 42 designs given to the script; 40 produced mutants.
 % benchmarks/results/formal_gate_mutation_*.json, docs/formal_gates.md.
-\newcommand{\nMutDesigns}{42}
+\newcommand{\nMutDesignsGiven}{42}
+\newcommand{\nMutDesigns}{40}
 \newcommand{\nMutCompiled}{281}
 \newcommand{\nMutSimDiffers}{17}
 \newcommand{\nMutProofFinds}{14}
@@ -38,7 +46,11 @@
 \newcommand{\nMatchBeforeCG}{1,127}
 \newcommand{\nClockRejBefore}{65}
 \newcommand{\nClockRejAfter}{13}
-\newcommand{\nMismatch}{\fresh{5}}
+% 5 mismatches are from M5.2 (stream_mux, fpnew_cast_multi x2, fpnew_fma_multi x2).
+% 994 = 2,184 - 1,185 - 5. The split of the 994 below is from the earlier run (M5.1)
+% and sums with the M5.2 figures to 2,183, so it stays red until regenerated.
+\newcommand{\nMismatch}{5}
+\newcommand{\nRejected}{994}
 \newcommand{\nSvlangRej}{\fresh{217}}
 \newcommand{\nSvccRej}{\fresh{763}}
 \newcommand{\nCrash}{\fresh{13}}

@@ -32,16 +32,16 @@
   xleftmargin=2pt,xrightmargin=2pt,aboveskip=4pt,belowskip=4pt}
 
 \hypersetup{
-  pdftitle={Checking the C++, Not the Translator: Translation Validation for SystemVerilog-to-SystemC RTL Conversion},
+  pdftitle={Translation Validation of SystemVerilog-to-SystemC RTL Conversion by Reading the Generated C++},
   pdfauthor={Mayur Kubavat},
-  pdfkeywords={SystemVerilog, SystemC, RTL, translation validation, equivalence checking, differential testing}
+  pdfkeywords={SystemVerilog, SystemC, RTL, translation validation, equivalence checking}
 }
 
 \pagestyle{plain}
 
 \begin{document}
 
-\title{Checking the C++, Not the Translator: Translation Validation for SystemVerilog-to-SystemC RTL Conversion\thanks{This work was done independently, on personal equipment and in a personal capacity. It is not affiliated with or endorsed by any employer.}}
+\title{Translation Validation of SystemVerilog-to-SystemC RTL Conversion by Reading the Generated C++\thanks{This work was done independently, on personal equipment and in a personal capacity. It is not affiliated with or endorsed by any employer.}}
 
 \author{\IEEEauthorblockN{Mayur Kubavat\,\orcidlink{0009-0009-1087-8558}}
 \IEEEauthorblockA{\textit{Independent Researcher, Mountain View, CA, USA}}}
@@ -50,91 +50,81 @@
 \thispagestyle{plain}
 
 \begin{abstract}
-SystemC models of register-transfer level (RTL) designs are used for virtual platforms,
-software bring-up and licence-free simulation, and they are increasingly produced by
-translators and language models rather than by hand. The errors that matter in such a model
-compile and look right: SystemVerilog sizes an 8-bit sum at 8 bits while C++ computes it in 64,
-and a register on a gated clock in SystemC runs one delta cycle late. We show that a natural way
-to validate such a translation, comparing the source with the translator's intermediate form or
-re-reading the output with the source language's rules, is blind to exactly these errors: our own
-first validation gate passed two wrong models. We then present \code{svcc}, an open-source tool
-that converts synthesizable IEEE~1800-2023 SystemVerilog to IEEE~1666 SystemC and validates each
-result by reading the generated header back with C++17 and SystemC evaluation rules, flagging
-undefined behaviour, and proving the result equal to the source by induction against an
-independent netlist of the source text. On \nDesigns{} designs the gate proves \nProved{} and
-reports the rest as outside its model; in a mutation experiment it accepted none of the
-\nMutSimDiffers{} mutants that real compiled SystemC showed to be wrong. On every module of
-\nCodeBases{} open-source code bases (\nModules{} modules, including OpenTitan, CVA6, Ibex and
-Caliptra), \nMatch{} conversions match Verilator in co-simulation. The same runs act as a
-differential test of the tools involved and found three elaboration defects in the SystemVerilog
-front end, four silent wrong-code defects in \code{svcc}, and two cases where the Verilator
-reference was the wrong side. Against the implementation released with a 2026 bidirectional
-SystemC and Verilog translator, which does not check its output, \code{svcc} is correct on
-\nProbes{} of \nProbes{} targeted probes and the other tool on none.
+SystemC models of register-transfer level (RTL) designs are used for virtual platforms, software
+bring-up and simulation without a commercial license. More of them now come from translators
+and language models. A wrong model often compiles cleanly: SystemVerilog evaluates an 8-bit sum
+in 8 bits, while C++ evaluates the same expression in 64, so a missing truncation keeps a carry
+that the RTL drops. Our first check of such translations re-read the generated C++ with
+SystemVerilog's rules and reported two wrong models as equivalent. This paper describes the
+check that replaced it in \code{svcc}, an open-source SystemVerilog-to-SystemC converter. The
+check parses the generated header with a model of C++17 and SystemC evaluation, turns undefined
+behavior into proof obligations, prints the result as SystemVerilog in which every width change
+is explicit, and proves it equivalent to a netlist of the source by induction over registers
+mapped by name. The reference netlist is built without any \code{svcc} code, but both sides use
+the same SystemVerilog front end. On \nDesigns{} designs the check proves \nProved{} and reports
+\nNotCovered{} as outside its model. In a mutation experiment it accepted none of the
+\nMutSimDiffers{} mutants that compiled SystemC showed to be wrong. On the \nModules{} modules of
+\nCodeBases{} open-source code bases, \nMatch{} conversions match Verilator in random
+co-simulation. These real-design results are from simulation only. The runs also found three
+elaboration defects in the front end, three silent wrong-code defects in \code{svcc}, and one
+case where Verilator was wrong. The proof does not model SystemC process scheduling. Its limits
+are listed in Section~\ref{sec:limits}.
 \end{abstract}
 
 \begin{IEEEkeywords}
-SystemVerilog, SystemC, RTL, translation validation, sequential equivalence checking, differential testing.
+SystemVerilog, SystemC, RTL, translation validation, equivalence checking.
 \end{IEEEkeywords}
 
 %% ===========================================================================
 \section{Introduction}
 \label{sec:intro}
 
-A chip is written in SystemVerilog~\cite{ieee1800_2023}, but much of the engineering around it
-runs on C++ models of the same logic. Virtual platforms let firmware boot before silicon,
-reference models check RTL in simulation, and SystemC~\cite{ieee1666_2023} models run without a
-simulator licence. Verilator~\cite{snyder2020verilator} turns RTL into fast C++, but its output is
-a simulation engine, not a model a person reads, edits or links into a platform. Readable models
-come from hand translation, from translators~\cite{bombieri2010hifsuite,syed2013vhdl2sc,zheng2026bidir},
-and now from language models asked to translate between C++ and hardware
+RTL is written in SystemVerilog~\cite{ieee1800_2023}, and a lot of the work around it runs on
+C++ models of the same logic. Virtual platforms boot firmware before silicon, reference models
+check RTL in simulation, and SystemC~\cite{ieee1666_2023} models run without a simulator license.
+Verilator~\cite{snyder2020verilator} turns RTL into fast C++, and with \code{--sc} into a SystemC
+wrapper, but its output is a simulation engine. Nobody reads it or edits it. Readable models come
+from hand translation, from translators~\cite{bombieri2010hifsuite,syed2013vhdl2sc,zheng2026bidir}
+and from language models asked to translate between C++ and hardware
 languages~\cite{collini2024c2hlsc,lyu2026autoc2v}.
 
-None of these sources is trusted, and the errors they make are quiet. SystemVerilog sizes
-expressions from their context; C++ promotes small integer types to \code{int} and converts
-SystemC's \code{sc\_uint<W>} to a 64-bit integer. A translation of \code{(a + b) >> 1} that does
-not truncate the sum keeps the carry, and \code{a = b = 0xff} gives \code{0xff} instead of
-\code{0x7f}. A signal write in SystemC takes effect one delta cycle later, so a register clocked
-through a clock-gating cell samples values that registers on the root clock have already
-updated. Both models compile and agree on most inputs.
+None of these sources is verified, and their errors produce no warning. SystemVerilog sizes an
+expression from its context. C++ promotes small integer types to \code{int} and converts SystemC's
+\code{sc\_uint<W>} to a 64-bit integer. A translation of \code{(a + b) >> 1} that does not truncate
+the sum keeps the carry, and \code{a = b = 0xff} gives \code{0xff} instead of \code{0x7f}. The
+two models agree on most inputs.
 
-Translation validation~\cite{pnueli1998tv,necula2000tv,lopes2021alive2} answers this kind of
-problem for compilers: instead of proving the translator correct, check each output against its
-input. The question this paper is about is \emph{what} to check. A tempting design compares
-the source with the translator's intermediate representation, or reads the output back with the
-source language's rules. Section~\ref{sec:failure} shows that such a check cannot see a C++ width
-error, because it never asks what the C++ computes. Our own first gate was built that way and
-reported two wrong models as proved equivalent.
+Translation validation~\cite{pnueli1998tv,necula2000tv,lopes2021alive2} checks each output of a
+translator against its input instead of proving the translator correct. Checking C against RTL
+with C's own semantics is also old: Clarke, Kroening and Yorav did it with bounded model checking
+in 2003~\cite{clarke2003cverilog}, and commercial C-to-RTL equivalence tools do it
+today~\cite{koelbl2009c2rtl}. The method in this paper is standard. What we report is what went
+wrong when we built the check the obvious way, what we built instead, and how it held up on a
+design suite, a mutation experiment and 16 open-source code bases.
 
-This paper makes the following contributions.
+The contributions are:
 \begin{enumerate}
-\item \textbf{A failure analysis.} We show, on two concrete designs, how a validation gate that
-reasons about the translator's intent rather than the emitted text passes wrong output, and we
-state the design rule that follows: the checked side must start from the bytes of the output and
-give them the target language's meaning, and the reference side must not pass through the
-translator (Section~\ref{sec:failure}).
-\item \textbf{A gate that reads the C++.} \code{svcc rtl-prove} parses the generated header with
-a purpose-built model of C++17 and SystemC evaluation, raises a flag on every operation C++ leaves
-undefined, writes the result as SystemVerilog in which every width change is explicit, and proves
-it equal to an independent netlist of the source by induction over paired state. Designs outside
-the model are reported as not covered rather than passed (Section~\ref{sec:gate}).
-\item \textbf{A fail-closed typed conversion} for a broad synthesizable subset, including
-parameters, generate, hierarchy, memories, wide vectors and clock-gating cells, whose emitter
-truncates wherever C++ would compute wider (Section~\ref{sec:convert}).
-\item \textbf{An evaluation} on \nDesigns{} designs under the proof, a mutation experiment that
-checks the gate against real compiled SystemC, \nModules{} modules from \nCodeBases{} open-source
-code bases in co-simulation against Verilator, the defects this exposed in four tools, and a
+\item \textbf{A failure report and two design rules.} Our first check re-read the generated C++
+with SystemVerilog's rules and reported two wrong models as equivalent. From this we state two
+rules for checking any cross-language translator (Section~\ref{sec:failure}).
+\item \textbf{The check, \code{svcc rtl-prove}.} It reads the generated header with a model of
+C++17 and SystemC evaluation, raises a flag on every operation C++ leaves undefined, and proves the
+result equivalent to a netlist of the source by register-mapped induction. Designs outside the
+model exit with code 3 (Section~\ref{sec:gate}). The converter it checks is described in
+Section~\ref{sec:convert}; a companion software paper covers the tool itself~\cite{kubavat2026svccsx}.
+\item \textbf{An evaluation} on \nDesigns{} designs, a mutation experiment judged by compiled
+SystemC, \nModules{} modules in co-simulation with Verilator, the defects these runs found, and a
 comparison with a recent translator (Section~\ref{sec:eval}).
 \end{enumerate}
-\code{svcc} is released under the Apache 2.0 licence on crates.io and PyPI, with all scripts and
+\code{svcc} is released under the Apache 2.0 license on crates.io and PyPI, with all scripts and
 results.
 
 %% ===========================================================================
 \section{Where SystemVerilog and SystemC Differ}
 \label{sec:diff}
 
-Table~\ref{tab:diff} lists the rules a translator must bridge. Each row is a place where code
-that looks the same means different things.
+Table~\ref{tab:diff} lists the rules a translator has to bridge. In each row the same expression
+can give different values in the two languages.
 
 \begin{table}[t]
 \centering
@@ -146,34 +136,36 @@ that looks the same means different things.
 \toprule
 Topic & SystemVerilog (IEEE 1800-2023) & C++17 / SystemC \\
 \midrule
-Width & Context-determined: operands extend to the widest width in the expression and the assignment target (11.6) & Integer promotion to \code{int}; \code{sc\_uint<W>} converts to \code{unsigned long long}; result width set by C++ type \\
-Signedness & Any unsigned operand makes the expression unsigned (11.8) & Usual arithmetic conversions; mixed signed and unsigned compare as unsigned only at equal rank \\
-Undefined ops & Division by zero gives X; shifts beyond width give 0 & Signed overflow, division by zero, shift $\ge$ width are undefined behaviour \\
-Assignment & Nonblocking \code{<=} updates after all processes of the time step & \code{signal.write()} takes effect in the next delta cycle \\
-Derived clocks & A gated clock rises in the same time step as its source & A clock made by logic changes one delta later than its source \\
+Width & Context-determined: operands extend to the widest width in the expression and the assignment target (11.6) & Integer promotion to \code{int}; \code{sc\_uint<W>} converts to \code{unsigned long long}; result width set by the C++ type \\
+Signedness & Any unsigned operand makes the expression unsigned (11.8) & Usual arithmetic conversions: a mixed comparison is unsigned when the unsigned type's rank is at least the signed type's, or when the signed type cannot hold all its values \\
+Undefined ops & Division by zero gives X; shifts beyond the width give 0 & Signed overflow, division by zero and shift $\ge$ width are undefined behavior \\
+Update order & Nonblocking updates wait in the NBA region until all active events of the time step, including a derived clock's change, have run & \code{sc\_signal} updates commit at the end of every delta cycle, so a process woken by a derived clock can see values already updated \\
 Values & Four states (0, 1, X, Z) & Two states in \code{sc\_uint}; four in \code{sc\_lv} \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-A translator that gets every row right still produces C++ that only a careful reader can check,
-and a reviewer who knows SystemVerilog tends to read the C++ with SystemVerilog's rules. The rest
-of the paper is about making that check mechanical without inheriting the same bias.
+A translator that gets every row right still writes C++ that takes a careful reader to check, and
+an engineer who knows SystemVerilog tends to read that C++ with SystemVerilog's rules. The first
+version of our own check made the same mistake.
 
 %% ===========================================================================
-\section{How a Validation Gate Gets Fooled}
+\section{How the First Check Failed}
 \label{sec:failure}
 
-\code{svcc} first carried RTL through a text-based path. Expressions were kept as strings in the
-intermediate representation. To validate a conversion, the gate took the emitted C++, re-read it
-\emph{as if it were SystemVerilog}, and asked a solver whether that re-read design was equal to
-the source. It reported \code{EquivalentUnsat}, i.e.\ proved, for every design in our suite.
+\code{svcc} first carried RTL through a text-based path in which expressions were kept as strings
+in the intermediate representation. To validate a conversion, the check took the emitted C++,
+re-read it as if it were SystemVerilog, and asked a solver whether the re-read design was
+equivalent to the source. It reported every design in our suite equivalent.
 
-A head-to-head comparison with another translator (Section~\ref{sec:scav}) required running the
-generated SystemC on a real SystemC kernel. Two designs that the gate had proved were wrong:
+The comparison with another translator in Section~\ref{sec:scav} needed the generated SystemC to
+run on a real SystemC kernel. Two designs the check had proved were wrong
+(Table~\ref{tab:fooled}).
 
 \begin{table}[h]
 \centering
+\caption{Two models the first check reported as equivalent.}
+\label{tab:fooled}
 \footnotesize
 \setlength{\tabcolsep}{3pt}
 \begin{tabularx}{\columnwidth}{@{}l >{\raggedright\arraybackslash}X l@{}}
@@ -186,32 +178,33 @@ Source (8-bit) & What the C++ did & First difference \\
 \end{tabularx}
 \end{table}
 
-The gate could not have found these. Read with SystemVerilog's rules, \code{(a + b) >> 1}
-assigned to an 8-bit target is evaluated at 8 bits, exactly as in the source; the 64-bit
-evaluation exists only under C++'s rules, which the gate never applied. The same blind spot
+The check could not have found these. Read with SystemVerilog's rules, \code{(a + b) >> 1}
+assigned to an 8-bit target is evaluated in 8 bits, exactly as in the source. The 64-bit
+evaluation exists only under C++'s rules, and the check never applied them. The same problem
 appears whenever the checked side is derived from the translator's own intermediate form: if the
 lowering and the emitter share a misunderstanding, both sides of the comparison inherit it.
 
-Two design rules follow, and the rest of the paper implements them.
+Two design rules follow.
 \begin{description}
-\item[R1] The checked side starts from the bytes the translator wrote and gives them the
-\emph{target} language's meaning, including the cases the target leaves undefined.
-\item[R2] The reference side is built from the source text by a path that shares nothing with the
-translator.
+\item[R1] The checked side starts from the emitted header text and gives it the \emph{target}
+language's meaning, including the cases the target leaves undefined.
+\item[R2] The reference side is built from the source text without any of the translator's code.
 \end{description}
-The same rules apply to any translator, including a language model, whose output is meant to be
-compiled by a different language's rules than the one it was written from.
+R1 and R2 apply to any cross-language translator, including a language model. Our implementation
+meets R2 only in part: the reference and the checked side both use the \code{svlang} front end,
+which the translator also uses. Section~\ref{sec:assume} treats \code{svlang} as trusted and says
+what that costs.
 
 %% ===========================================================================
-\section{Typed, Fail-Closed Conversion}
+\section{The Converter}
 \label{sec:convert}
 
 \code{svcc rtl2sc} uses \code{svlang}~\cite{kubavat2026svlang}, an open-source SystemVerilog front
-end, to parse and elaborate the design: parameters, \code{localparam}s and generate constructs are
+end, to parse and elaborate the design. Parameters, \code{localparam}s and generate constructs are
 resolved, and every expression is bound with the width and signedness rules of IEEE~1800-2023
 clauses 11.6 and 11.8, so each node carries its width and signedness and every implicit
 conversion is an explicit node. \code{svcc} lowers this to one typed module per parameter set and
-emits one \code{SC\_MODULE} each.
+emits one \code{SC\_MODULE} for each.
 
 \emph{Emitter invariant.} Each emitted C++ subexpression evaluates to exactly the value of its
 typed node. Wherever C++ would compute in a wider type, the emitter truncates explicitly, so the
@@ -220,102 +213,111 @@ typed node. Wherever C++ would compute in a wider type, the emitter truncates ex
 y.write(sc_uint<8>(sc_uint<8>(a.read() + b.read()) >> 1U));
 \end{lstlisting}
 
-\emph{Subset.} There is no standard synthesizable subset of SystemVerilog; we follow what
+\emph{Subset.} There is no standard synthesizable subset of SystemVerilog. We follow what
 synthesis tools accept~\cite{sutherland2014synth} and stay inside the IEEE~1666.1 synthesizable
-subset of SystemC~\cite{ieee1666_1_2016}. Supported: continuous assignments, \code{always\_comb},
-\code{always\_ff} and \code{always\_latch}; blocking and nonblocking assignment; \code{if},
-\code{case}, \code{casez}, \code{casex}, \code{case inside}, \code{for} and \code{while}; module
-and package functions; hierarchy with parameter overrides and \code{.*} connections; bit, part and
-indexed selects; packed structs, enums and arrays; memories; and vectors wider than 64 bits
-(\code{sc\_biguint}). Blocking assignments are read back from a local copy within the process and
-written back once. Blocks that drive different bits of one signal are merged into one process,
-because a SystemC signal has one writer.
+subset of SystemC~\cite{ieee1666_1_2016}. Supported constructs are continuous assignments,
+\code{always\_comb}, \code{always\_ff} and \code{always\_latch}; blocking and nonblocking
+assignment; \code{if}, \code{case}, \code{casez}, \code{casex}, \code{case inside}, \code{for} and
+\code{while}; module and package functions; hierarchy with parameter overrides and \code{.*}
+connections; bit, part and indexed selects; packed structs, enums and arrays; memories; and vectors
+wider than 64 bits (\code{sc\_biguint}). Blocking assignments are read from a local copy inside the
+process and written back once. Blocks that drive different bits of one signal are merged into one
+process, because a SystemC signal has one writer.
 
 \emph{Clocks.} A register may be clocked by an input, a copy of one, or a register output. A
 clock-gating cell (a latch transparent while the clock is low, ANDed with the clock) is converted
-to a clock enable on the root clock, and instances whose clock port is gated get a module variant
-with an enable input. This preserves SystemVerilog's sampling, where a literal translation would
-run the gated registers one delta cycle late. Other derived clocks, such as clock multiplexers,
-are rejected.
+to a clock enable on the root clock, and an instance whose clock port is gated gets a module variant
+with an enable input. A literal translation would run the gated registers one delta cycle late
+(Table~\ref{tab:diff}, update order). The proof does not cover these designs; the evidence for
+this conversion is co-simulation (Section~\ref{sec:stress}). Other derived clocks, such as clock
+multiplexers, are rejected.
 
-\emph{Fail-closed.} Any construct outside the subset is an error with a source location.
+\emph{Fail-closed.} A construct outside the subset is an error with a source location.
 \code{svcc} also rejects two things a two-state model would silently read as 0: a signal that is
 read but has no driver, and a constant select outside the declared range. X and Z map to 0, which
 is the model under which both the proof and the co-simulation run.
 
 %% ===========================================================================
-\section{The Gate: Reading the Generated C++}
+\section{The Check: Reading the Generated C++}
 \label{sec:gate}
 
-Fig.~\ref{fig:gate} shows the gate. Following R2, the reference side lowers the source text with
-\code{svlang}'s netlist builder and Btor2~\cite{niemetz2018btor2} writer and nothing else.
-Following R1, the checked side starts from the generated header.
+Fig.~\ref{fig:gate} shows the check. The reference side lowers the source text to a netlist with
+\code{svlang} and writes Btor2~\cite{niemetz2018btor2}; no \code{svcc} code runs on that side. The
+checked side starts from the generated header.
 
 \begin{figure}[t]
 \centering
 \resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[font=\sffamily\scriptsize,node distance=4mm and 5mm,
   box/.style={draw,rounded corners=1pt,align=center,minimum height=8mm,inner xsep=1.5mm,fill=white},
-  arr/.style={-{Stealth[length=4pt]},thick}]
+  arr/.style={-{Stealth[length=4pt]},thick},
+  sh/.style={draw,dashed,rounded corners=1pt,align=center,minimum height=8mm,inner xsep=1.5mm,fill=black!4}]
 \node[box] (src) {source\\.sv};
 \node[box,right=of src] (ir) {typed IR};
 \node[box,right=of ir] (hpp) {generated\\header};
 \node[box,right=of hpp] (rd) {C++ reader\\+ UB flags};
 \node[box,right=of rd] (ew) {explicit-\\width SV};
-\node[box,below=8mm of ir] (n1) {svlang\\netlist};
-\node[box,below=8mm of ew] (n2) {svlang\\netlist};
-\node[box,below=8mm of hpp,xshift=9mm,fill=black!6] (z3) {pair registers,\\Z3 induction};
+\node[sh,below=8mm of src] (n1) {svlang\\netlist};
+\node[sh,below=8mm of ew] (n2) {svlang\\netlist};
+\node[box,below=8mm of hpp,fill=black!10] (z3) {registers mapped\\by name, Z3 induction};
+\node[sh,above=3mm of ir,minimum height=5mm] (fe) {svlang front end};
 \draw[arr] (src) -- (ir);
 \draw[arr] (ir) -- (hpp);
 \draw[arr] (hpp) -- (rd);
 \draw[arr] (rd) -- (ew);
-\draw[arr] (src) |- (n1);
+\draw[arr] (src) -- (n1);
 \draw[arr] (ew) -- (n2);
+\draw[arr,dashed] (fe) -- (ir);
 \draw[arr] (n1) -- node[below]{Btor2} (z3);
 \draw[arr] (n2) -- node[below]{Btor2} (z3);
 \end{tikzpicture}}
-\caption{The \code{rtl-prove} gate. The top row up to the header is the translator; the reference
-(left, bottom) never passes through it, and the checked side starts from the header's bytes.}
+\caption{The \code{rtl-prove} check. The top row up to the header is the translator. The reference
+(bottom left) runs no \code{svcc} code. Shaded dashed boxes are \code{svlang}, which all three
+paths use and which the check trusts.}
 \label{fig:gate}
 \end{figure}
 
 \subsection{A model of C++ evaluation}
 
 The reader parses the subset of C++ that \code{rtl2sc} emits and gives each expression the value
-C++17 and SystemC give it: \code{bool} and 8- and 16-bit integers promote to \code{int};
-\code{sc\_uint<W>} converts to \code{unsigned long long} and \code{sc\_int<W>} to
-\code{long long} (LP64); binary operators bring both operands to a common type by the usual
-arithmetic conversions and compute in that type; a value is truncated only where the code
-constructs or assigns a narrower object; \code{sc\_biguint} arithmetic is exact. A \code{write} in
-an edge-triggered method is a nonblocking assignment. A level-sensitive method must be sensitive
-to every signal it reads, and is read as combinational logic, or a latch where it does not assign
-on every path. Behaviour the standard leaves to the implementation is fixed as C++20 defines it:
-narrowing to a signed type wraps, and \code{>>} of a negative value is arithmetic.
+C++17 and SystemC give it. \code{bool} and 8- and 16-bit integers promote to \code{int}.
+\code{sc\_uint<W>} converts to \code{unsigned long long} and \code{sc\_int<W>} to \code{long long}
+(LP64). Binary operators bring both operands to a common type by the usual arithmetic conversions
+and compute in that type. A value is truncated only where the code constructs or assigns a
+narrower object. \code{sc\_biguint} arithmetic is exact. A \code{write} in an edge-triggered method
+is a nonblocking assignment. A level-sensitive method must be sensitive to every signal it reads;
+it is read as combinational logic, or as a latch where it does not assign on every path. Behavior
+the standard leaves to the implementation is fixed as C++20 defines it: narrowing to a signed type
+wraps, and \code{>>} of a negative value is arithmetic.
 
-\emph{Undefined behaviour.} An operation whose result C++ or SystemC does not define is not given
-a value. It raises a 1-bit flag, an extra output of the lifted module that the proof must show
-stays at 0: signed overflow, division or modulo by zero, shifts by a negative amount or by the
-width or more, left shift of a negative value, and selects or indexes out of range. Guards in the
-code (\code{?:}, \code{\&\&}, \code{if}) are kept, so a guard the generator forgot shows up as a
-counterexample rather than an assumption.
+\emph{Undefined behavior.} An operation whose result C++ or SystemC does not define gets no value.
+It raises a 1-bit flag, an extra output of the lifted module that the proof must show stays at 0.
+The flagged operations are signed overflow, division or modulo by zero, a shift by a negative
+amount or by the width or more, a left shift of a negative value, and a select or index out of
+range. Guards in the code (\code{?:}, \code{\&\&}, \code{if}) are kept, so a guard the generator
+forgot produces a counterexample.
 
 \emph{Explicit-width output.} The reader writes what it computed as SystemVerilog in which every
-operator result is self-determined and every width change is a size cast, concatenation or
-\code{\$signed}. SystemVerilog's context sizing therefore cannot change what was read from the C++;
-this is the step that closes the gap of Section~\ref{sec:failure}.
+operator result is self-determined and every width change is a size cast, a concatenation or
+\code{\$signed}. SystemVerilog's context sizing therefore cannot change what was read from the C++.
+This is the step that closes the gap of Section~\ref{sec:failure}. Internally the reader builds the
+same typed design IR that the converter uses and prints it with the same printer; this sharing is
+discussed in Section~\ref{sec:assume}.
 
 \subsection{Proof and verdicts}
 
-Both texts are lowered by \code{svlang} to Btor2. Registers are paired by hierarchical name and
-width, and Z3~\cite{demoura2008z3} checks one inductive step: from any state in which the paired
-registers are equal, the outputs agree, the undefined-behaviour flag is 0, and the paired
+Both texts are lowered by \code{svlang} to Btor2. Registers are mapped by hierarchical name and
+width, one to one, and Z3~\cite{demoura2008z3} checks one inductive step: from any state in which
+the mapped registers are equal, the outputs agree, the undefined-behavior flag is 0, and the mapped
 registers are equal after a step. If that holds the verdict is \emph{proved}, for every run from
-equal start states, with no bound. Otherwise a bounded check from reset (8 steps by default) gives
-\emph{bounded} or a concrete \emph{mismatch}. A solver timeout is \emph{inconclusive} and counts
-as a failure. A design the model does not cover (more than one clock, a multi-dimensional array
-port, or C++ the reader does not model) gets \emph{not covered} and exit code 3, so a script cannot
-mistake it for a pass. The gate also checks the lowering (typed IR against source) separately,
-which localises a failure to the front end or the emitter.
+equal start states, with no bound. This is a register-mapped equivalence check; there is no
+retiming or state re-encoding. If the inductive step fails, a bounded check from reset (8 steps by
+default) gives a concrete \emph{mismatch} or, if none is found, \emph{bounded}. A bounded verdict
+exits with code 0 and is printed as \code{[PASS] ... (bounded)}; Section~\ref{sec:limits} explains
+why that is a weakness. A solver timeout is \emph{inconclusive} and counts as a failure. A design
+the model does not cover (more than one clock, a multi-dimensional array port, or C++ the reader
+does not model) gets \emph{not covered} and exit code 3. The check also proves the lowering (typed
+IR against source) separately, which tells a front-end failure apart from an emitter failure.
 
 The same machinery checks an untimed C++ reference function against pipelined RTL with
 \code{prove-sec --latency L}: from an arbitrary RTL state, with resets held inactive, the RTL output
@@ -323,62 +325,77 @@ equals the function of the inputs $L$ cycles earlier, in the style of C-to-RTL e
 checking~\cite{koelbl2009c2rtl}.
 
 \subsection{What a pass assumes}
+\label{sec:assume}
 
-A pass is a statement inside a model, and each assumption is a place where the model rather than
-the design could be wrong. (1)~Values are two-state: X and Z read as 0. (2)~\code{svlang}'s
-elaboration is taken as the meaning of SystemVerilog; a front-end bug that affects the source and
-the explicit-width text alike is invisible, which is why the explicit-width text uses only a few
-plain constructs. (3)~There is one clock, and an asynchronous reset takes effect at the clock step.
-(4)~The C++ reader is a model, not a compiler front end; it was checked against SystemC~3.0.3 with
-a probe program and against compiled SystemC by the mutation experiment of
-Section~\ref{sec:mutation}. (5)~Proved means equal from equal start states. (6)~Delta-cycle
-ordering between processes is not modelled beyond the sensitivity checks above. Co-simulation
-against Verilator covers what these assumptions leave out.
+A pass holds only under the following assumptions.
+(1)~Values are two-state: X and Z read as 0.
+(2)~\code{svlang}'s elaboration is taken as the meaning of SystemVerilog. The translator, the
+reference and the checked side all use it, so a front-end bug that changes the source's meaning is
+invisible to the proof. Three such bugs were found by co-simulation (Section~\ref{sec:defects}),
+and the proof could not have found them. The explicit-width text uses only a few plain constructs
+to limit this exposure on the checked side.
+(3)~There is one clock, and an asynchronous reset takes effect at the clock step.
+(4)~The C++ reader is the author's model of C++ typing, not a compiler front end. It was checked
+against SystemC~3.0.3 with a probe program and against compiled SystemC by the mutation experiment
+of Section~\ref{sec:mutation}. The reader and the converter also share the typed IR and its printer,
+so a printer bug could affect both checks.
+(5)~Proved means equivalent from equal start states.
+(6)~SystemC process scheduling is not modeled. In particular, a process made sensitive to the edge
+of an internal copy of a clock is treated as if it were on the root clock. Such a header runs one
+delta cycle late in a real kernel and still passes the proof. We confirmed this with a hand-edited
+header. Co-simulation is the only check of scheduling.
 
 %% ===========================================================================
 \section{Evaluation}
 \label{sec:eval}
 
-We ask five questions. \textbf{RQ1}: how much of a design suite does the gate prove?
-\textbf{RQ2}: does it reject wrong C++, judged by an independent oracle? \textbf{RQ3}: how does the
-conversion fare on real designs? \textbf{RQ4}: what does running several tools on the same
-design reveal about those tools? \textbf{RQ5}: how does \code{svcc} compare with a recent
-translator?
+We ask four questions. \textbf{RQ1}: how much of a design suite does the check prove?
+\textbf{RQ2}: does it reject wrong C++, as judged by compiled SystemC? \textbf{RQ3}: how does the
+conversion do on real designs, and what defects did those runs find? \textbf{RQ4}: how does
+\code{svcc} compare with a recent translator?
 
-\emph{Setup.} \code{svcc}~0.1.0 and later commits on \code{main}, \code{svlang}~0.5.1, Z3,
-Verilator~5.052 and SystemC~3.0.3 (Accellera \code{development} branch, C++17). Proofs were run on
-Linux x86\_64 and macOS arm64; co-simulation and the stress run on Linux x86\_64 and macOS arm64.
-Every command and result is recorded in the repository's experiment log.
+\emph{Setup.} \code{svlang}~0.5.1, Z3~5.4.1, Verilator~5.052 and SystemC~3.0.3 (Accellera
+\code{development} branch, C++17). RQ1 was run at \code{svcc} commit \code{00c80f0} on Linux x86\_64
+and repeated on the same RTL code in a second Linux container. The mutation experiment (RQ2) was
+run at commit \code{3c486e4} on macOS arm64. The stress run (RQ3) was run at commit \code{16a53ca} on
+Linux x86\_64. Every command and result is recorded in the repository's experiment log.
 
 \subsection{RQ1: Proof coverage on the design suite}
 
 The suite has \nDesigns{} designs: 24 construct-group designs in \code{testdata/rtl}, the
 \nProbes{} probes of Section~\ref{sec:scav}, and \nCorpusRtl{} pipelined datapaths with C++ golden
-models. The gate proves \nProved{} by induction, for both the lowering and the generated C++, and
-reports \nNotCovered{} as not covered: four have more than one clock in the proof model and one has
-a multi-dimensional array port.
-None fails. Small designs prove in about 12~ms of solver time per side. All \nGolden{} golden models
-prove against their RTL with \code{prove-sec}; one of them, written for an earlier version of the
-paper, contained undefined behaviour (\code{uint16\_t * uint16\_t}, which multiplies in \code{int}
-and overflows) that the proof found and that testing on one compiler had not.
+models. All are author-written. The check proves \nProved{} by induction, for both the lowering
+and the generated C++, and none of these passes is bounded-only. It reports \nNotCovered{} as not
+covered: three have more than one clock or a computed clock (\code{clock\_gating},
+\code{clock\_vector}, \code{edges\_misc}), one has a multi-dimensional array port
+(\code{array\_ports}), and in one the reader does not model a local array copy
+(\code{array\_elems}). None fails.
 
-\subsection{RQ2: Does the gate reject wrong C++?}
+The designs are small. \nCombinational{} of the \nProved{} have no registers to map, so for them
+the induction reduces to a combinational equivalence check; the largest has \nMaxPaired{} mapped
+registers. Z3 takes 9 to 31~ms per design for the generated-C++ side. All \nGolden{} golden models
+prove against their RTL with \code{prove-sec}. One of them, written for an earlier version of this
+work, contained undefined behavior (\code{uint16\_t * uint16\_t}, which multiplies in \code{int} and
+overflows) that the proof found and that testing with one compiler had not.
+
+\subsection{RQ2: Does the check reject wrong C++?}
 \label{sec:mutation}
 
 \emph{Negative tests.} The two designs of Section~\ref{sec:failure} are regression tests that must
-fail the gate, together with a dropped sign conversion, an unguarded division, a missing
-sensitivity entry, a wrong latency, a datapath bug in RTL, a golden model with promoted-multiply
-overflow, and C++ outside the subset. All fail.
+fail, together with a dropped sign conversion, an unguarded division, a missing sensitivity entry,
+a wrong latency, a datapath bug in RTL, a golden model with promoted-multiply overflow, and C++
+outside the subset. All fail.
 
-\emph{Mutation experiment.} Negative tests chosen by the author can share the author's blind spots,
-so we compared the gate with an oracle that shares no code with it: real compiled SystemC simulated
-against Verilator for 5,000 steps. A script edits the generated header of \nMutDesigns{} designs one
-place at a time with edits that change the width or signedness at which C++ evaluates an
-expression, and gives each mutant to both judges (Table~\ref{tab:mut}).
+\emph{Mutation experiment.} Negative tests chosen by the author can share the author's blind
+spots, so we compared the proof with an oracle that shares no code with it: compiled SystemC
+simulated against Verilator for 5,000 random steps. A script edited the generated header of
+\nMutDesignsGiven{} designs one place at a time, changing the width or signedness at which C++
+evaluates an expression. \nMutDesigns{} designs produced mutants. Each mutant went to both judges
+(Table~\ref{tab:mut}).
 
 \begin{table}[t]
 \centering
-\caption{Mutation experiment: proof versus compiled SystemC co-simulated with Verilator. Edits: (a)~\code{sc\_uint<8>(e)} to \code{(e)}; (b)~to \code{sc\_uint<9>(e)}; (c)~to \code{sc\_int<8>(e)}; (d)~\code{uint64\_t(e)} to \code{(e)}.}
+\caption{Mutation experiment: proof against compiled SystemC co-simulated with Verilator, on mutants of \nMutDesigns{} designs. Edits: (a)~\code{sc\_uint<8>(e)} to \code{(e)}; (b)~to \code{sc\_uint<9>(e)}; (c)~to \code{sc\_int<8>(e)}; (d)~\code{uint64\_t(e)} to \code{(e)}. ``Proof accepts'' counts exit code 0.}
 \label{tab:mut}
 \footnotesize
 \setlength{\tabcolsep}{2.5pt}
@@ -399,13 +416,18 @@ Total & \nMutCompiled{} & \nMutSimDiffers{} & \nMutProofFinds{} & \nMutReaderRej
 No mutant that the simulation showed to be wrong was accepted: \nMutProofFinds{} produced a
 counterexample and \nMutReaderRejects{} were refused by the reader. Of the \nMutSimEqual{} mutants
 that simulate equal, the proof accepted \nMutEqualAccepted{} and the reader refused
-\nMutEqualRefused{}; the proof never reported a difference that the simulation did not see. Most
+\nMutEqualRefused{}. The proof never reported a difference that the simulation did not see. Most
 edits are harmless because an outer construction truncates again, so only \nMutSimDiffers{}
-mutants change behaviour. This is a small sample on small designs with four kinds of edit; it is
-evidence that the C++ model agrees with real SystemC where it was exercised, not a validation of
-the model. A further \nMutNoCompile{} mutants did not compile; the reader accepted
-\nMutNoCompileRead{} of them, because it is not a type checker, which is why co-simulation also
-checks that each header compiles.
+mutants change behavior, in 10 designs. The experiment does not tell bounded from inductive passes
+apart, and it was run at an earlier commit than RQ1.
+
+The experiment has clear limits. All four edits touch casts, the class of error R1 was built for.
+There are no mutations of sensitivity lists, edge kinds, process sensitivity on internal signals,
+operators, constants or indices; assumption (6) says at least one of these would be accepted. A
+further \nMutNoCompile{} mutants did not compile, and the reader accepted \nMutNoCompileRead{} of
+them, because it is not a type checker. \code{rtl-prove} does not compile the header itself;
+co-simulation does. The result is evidence that the C++ model agrees with real SystemC on cast
+and width edits in small designs. The paper does not claim more than that.
 
 \subsection{RQ3: Real designs}
 \label{sec:stress}
@@ -413,74 +435,88 @@ checks that each header compiles.
 We tried every module of \nCodeBases{} open-source code bases as a top with its default
 parameters: picorv32, SERV, biRISC-V, verilog-axi, SCR1, tech\_cells\_generic, common\_cells,
 PULP AXI, CVFPU, Ibex, CV32E40P, CV32E40X, CVA6, Caliptra, OpenTitan and BaseJump STL, \nModules{}
-modules in all. Each passes through three stages: convert, compile the header against SystemC, and
-co-simulate against Verilator for \nSteps{} random steps, comparing every output after every step.
-Both models run two-state, inputs that reach an edge sensitivity are driven as clocks one at a
-time, and Verilator is built without the \code{VERILATOR} macro so that both models come from the
-same text.
+modules in all. Each module passes through three stages: convert, compile the header against
+SystemC, and co-simulate against Verilator for \nSteps{} random steps, comparing every output after
+every step. Clocks and data change in separate steps, so a run is between 750 and 1,500 clock
+cycles depending on the number of clocks. Both models run two-state, inputs that reach an edge
+sensitivity are driven as clocks one at a time, synchronous resets are ordinary random inputs, and
+Verilator is built without the \code{VERILATOR} macro so that both models come from the same text.
+No coverage was measured.
 
-\nMatch{} modules convert, compile and match Verilator. \nSvlangRej{} are rejected by the front end
-before lowering, \nSvccRej{} are rejected by \code{svcc} with a located error, \nCrash{} exceed
-2~GB or 120~s, and \nMismatch{} differ. Many rejections are not real gaps: a module tried alone
-with placeholder defaults (\code{parameter type T = logic}, a width of 0 or $-1$, an unconnected
-interface port) is not a valid top, and the census that owns this corpus counts \nPlaceholder{}
-such modules. The largest genuine subset gaps are unpacked structs and struct-typed ports through
-type parameters, interfaces, hierarchical references, and array ports connected to anything but a
-whole array.
+\nMatch{} modules convert, compile and match Verilator, and \nMismatch{} differ. The other
+\nRejected{} are rejected by the front end or by \code{svcc} with a located error, or exceed 2~GB or
+120~s. Many rejections are not real gaps: a module tried alone with placeholder defaults
+(\code{parameter type T = logic}, a width of 0 or $-1$, an unconnected interface port) is not a valid
+top, and the \code{svlang} front-end test corpus classifies \nPlaceholder{} such modules. The
+largest genuine gaps are unpacked structs and struct-typed ports through type parameters,
+interfaces, hierarchical references, and array ports connected to anything but a whole array.
+Coverage is uneven across code bases: most of CVA6 and PULP AXI is rejected, and most matching
+modules are leaf cells or blocks, not whole cores.
 
 Converting clock-gating cells to enables (Section~\ref{sec:convert}) moved the result from
 \nMatchBeforeCG{} to \nMatch{} matching modules and cut clock-related rejections from
 \nClockRejBefore{} to \nClockRejAfter{}, with no module going from match to mismatch. Of the
-remaining differences, one is a Verilator deviation (below), two are fixed by an unreleased
-\code{svlang} change, and two, in CVFPU's fused multiply-add, are not yet explained.
+\nMismatch{} remaining differences, one is a Verilator behavior on an out-of-range write in a
+module with a placeholder parameter, two are fixed by an unreleased \code{svlang} change
+(commit \code{af574c9}), and two, in CVFPU's fused multiply-add, have not been root-caused. They may
+be a further \code{svcc} defect.
 
-The modules of this corpus have simulation evidence only. \code{rtl-prove} takes one file, and the
-corpus is multi-file; extending the proof to it is the most important open experiment.
+These modules have simulation evidence only. \code{rtl-prove} currently takes a single file and
+the corpus is multi-file. Running the proof on the \nMatch{} matching modules is the most important
+open experiment.
 
-\subsection{RQ4: The pipeline as a differential test}
-
+\emph{Defects found.}
+\label{sec:defects}
 Running one design through \code{svlang}, \code{svcc}, a SystemC kernel and Verilator and comparing
-the outcomes tests all four tools, in the spirit of differential testing of
-compilers~\cite{yang2011csmith} and synthesis tools~\cite{herklotz2020verismith}. Each defect below
-produced a wrong result with no diagnostic.
+the results is a differential test of those tools, as done for C
+compilers~\cite{yang2011csmith} and synthesis tools~\cite{herklotz2020verismith}. Each defect
+below gave a wrong result with no diagnostic.
 
-\emph{svcc.} (1)~A process holding a local copy of an array wrote every element back, including
-elements driven by other processes, losing updates or triggering a multiple-driver abort.
-(2)~A wildcard \code{.*} connection bound only its first port; this alone accounted for 57
-mismatching Caliptra modules. (3)~A register clocked by a plain copy of the clock
-(\code{assign gclk = clk}) ran one delta cycle late. (4)~Registers behind clock-gating cells did the
-same, which led to the conversion of Section~\ref{sec:convert}. Each now has a regression design.
+\code{svcc}: (1)~A process holding a local copy of an array wrote every element back, including
+elements driven by other processes, which lost updates or caused a multiple-driver abort. (2)~A
+wildcard \code{.*} connection bound only its first port; this alone accounted for 57 mismatching
+Caliptra modules. (3)~A register clocked by a plain copy of the clock (\code{assign gclk = clk}) ran
+one delta cycle late. Registers behind clock-gating cells did the same; that was already a known
+limit and led to the conversion of Section~\ref{sec:convert}. Each case now has a regression design.
+The proof as it stands would not catch defect (3); see assumption (6).
 
-\emph{svlang.} Three elaboration defects, confirmed against IEEE~1800-2023 and fixed in
-\code{svlang}~0.5.1: a generate \code{if} on a reduction of a parameter elaborated neither branch;
-a fill literal \code{'1} as a sized parameter default evaluated to 1; and a select on a struct
-member with its own range was bound against the wrong range. They change the netlist that every
-consumer of that front end sees, not only \code{svcc}'s output.
+\code{svlang}: three elaboration defects, confirmed against IEEE~1800-2023 and fixed in
+\code{svlang}~0.5.1. A generate \code{if} on a reduction of a parameter elaborated neither branch;
+a fill literal \code{'1} as a sized parameter default evaluated to 1; and a select on a struct member
+with its own range was bound against the wrong range. They change the netlist that every user of
+that front end sees.
 
-\emph{Verilator.} A module that instantiates itself is built without its children when it is the
-top level (5.052 and 5.055), so the reference, not \code{svcc}, was wrong; \code{rtl-cosim} now
-wraps such a top. A write through a computed index outside the declared range is not ignored, as
-IEEE~1800-2023 11.5.1 requires, but wrapped into the range. % TODO: link upstream issues once filed.
+Verilator: a module that instantiates itself is built without its children when it is the top
+level (5.052 and 5.055). Here the reference was wrong and \code{svcc} was right; \code{rtl-cosim}
+now wraps such a top. This has not yet been reported upstream.
 
-\subsection{RQ5: Comparison with a recent translator}
+\subsection{RQ4: Comparison with a recent translator}
 \label{sec:scav}
 
 Zheng et al.~\cite{zheng2026bidir} present a bidirectional translator between SystemC and Verilog.
-We compare with the implementation released by its authors, SCAV. % CHECK: confirm against the article that SCAV is its implementation, and summarise the article's own evaluation here.
-Its Verilog-to-SystemC direction rewrites a text dump of a Verilog-2005 parse tree with regular
-expressions, and its SystemC-to-Verilog direction recognises the method names its own forward
-direction generates. It does not check its output.
+We compare with SCAV, a public implementation of that translator (commit \code{2ef2e6b}). Its
+Verilog-to-SystemC direction rewrites a text dump of a Verilog-2005 parse tree with regular
+expressions, and its SystemC-to-Verilog direction recognizes the method names its own forward
+direction generates. It does not check its output. We have not reproduced the article's own
+evaluation.
 
-We used two inputs: the \nCorpusRtl{} pipelined datapaths of RQ1, and \nProbes{} probes, each
-targeting one construct (blocking assignments in combinational and sequential blocks, signed
-arithmetic, parameters, wide vectors, memories, loops, \code{casez}, functions, generate, part
-selects, a state machine, hierarchy, counters, the width rule, wrap-around, and latch ordering).
-A result counts as correct if the output compiles against SystemC and matches the source in
-co-simulation. SCAV's output compiled for 0 of the \nCorpusRtl{} datapaths and was correct for 0 of
-the \nProbes{} probes; of the 9 examples shipped with SCAV, 3 compiled and 1 of those simulated
-wrongly. \code{svcc} is correct on all \nCorpusRtl{} datapaths and all \nProbes{} probes, and the
-gate proves them. The same probes, run against \code{svcc}'s earlier text-based path, gave 3 of
-\nProbes{}: the comparison is what exposed the failure of Section~\ref{sec:failure}.
+We used two inputs: the \nCorpusRtl{} pipelined datapaths of RQ1, and \nProbes{} probes written
+for this study, each targeting one construct (blocking assignments in combinational and sequential
+blocks, signed arithmetic, parameters, wide vectors, memories, loops, \code{casez}, functions,
+generate, part selects, a state machine, hierarchy, counters, the width rule, wrap-around, and
+latch ordering). A result counts as correct if the output compiles against SystemC and matches the
+source in co-simulation. SCAV's translator stopped with an internal error on 3 of the
+\nCorpusRtl{} datapaths and 9 of the \nProbes{} probes. Its output compiled for 0 of the datapaths
+and 2 of the probes, and was correct for none. Of the 9 examples shipped with SCAV, 3 compiled and 1
+of those simulated wrongly. SCAV was judged against Icarus Verilog with SystemC 2.3.4.
+
+\code{svcc} is correct on all \nCorpusRtl{} datapaths and all \nProbes{} probes, judged with
+\code{rtl-cosim} against Verilator with SystemC 3.0.3, and the check proves them. The two tools were
+therefore run under different harnesses. The probes are also part of \code{svcc}'s own suite and
+were used during its development: the same probes run against \code{svcc}'s earlier text-based path
+gave 3 of \nProbes{}, and that result is what exposed the failure of Section~\ref{sec:failure}. The
+comparison shows that SCAV does not handle these constructs. It is not a benchmark on neutral
+ground.
 
 %% ===========================================================================
 \section{Related Work}
@@ -489,79 +525,93 @@ gate proves them. The same probes, run against \code{svcc}'s earlier text-based 
 \emph{HDL-to-SystemC translation.} HIFSuite~\cite{bombieri2010hifsuite} converts VHDL and Verilog
 to SystemC and back through a common intermediate format, and Syed et al.~\cite{syed2013vhdl2sc}
 translate RTL VHDL to SystemC with attention to process and delta-cycle mapping. Bombieri et
-al.~\cite{bombieri2011rtl2tlm} abstract RTL into equivalent transaction-level models. v2c~\cite{mukherjee2016v2c}
-translates synthesizable Verilog to C so that software verifiers can check RTL, and documents the
-bit-precise details such a translation must reproduce. Zheng et al.~\cite{zheng2026bidir} translate
-in both directions between SystemC and Verilog. None of these checks each output against its source
-under the target language's rules.
+al.~\cite{bombieri2011rtl2tlm} abstract RTL into equivalent transaction-level models.
+v2c~\cite{mukherjee2016v2c} translates synthesizable Verilog to C so that software verifiers can
+check RTL. Zheng et al.~\cite{zheng2026bidir} translate in both directions between SystemC and
+Verilog. Verilator~\cite{snyder2020verilator} produces SystemC for simulation.
 
-\emph{SystemC to RTL.} SCCL~\cite{wu2023sccl} and the Intel SystemC compiler~\cite{moiseev2019icsc}
-translate synthesizable SystemC to RTL, the opposite direction, and high-level synthesis
-tools~\cite{nane2016survey} compile untimed C++ to RTL.
+\emph{C and RTL consistency.} Clarke, Kroening and Yorav check a C program against Verilog by
+unrolling both under their own semantics~\cite{clarke2003cverilog}, the approach behind
+hw-cbmc and later C-to-RTL tools; CBMC~\cite{clarke2004cbmc,kroening2023cbmc} gives the
+bit-precise C semantics. Word-level sequential equivalence between C/C++ models and
+RTL~\cite{koelbl2009c2rtl} is supported by commercial tools. R1 is the premise of all of this
+work. \code{rtl-prove} applies it to the output of a translator, with a C++ model limited to the
+code that translator emits, and \code{prove-sec} is a small open version of C-to-RTL checking.
+Yosys EQY~\cite{yosys_eqy} checks equivalence between two RTL or netlist versions.
+EquivFusion~\cite{zhu2026equivfusion} unifies equivalence checking from algorithms to netlists.
 
 \emph{Translation validation and verified compilation.} Translation validation was proposed by
 Pnueli et al.~\cite{pnueli1998tv}, applied to a production compiler by Necula~\cite{necula2000tv}
-and to LLVM by Alive2~\cite{lopes2021alive2}. In hardware, Kundu et al.~\cite{kundu2010tvhls}
-validate high-level synthesis by bisimulation, and Karfa et al.~\cite{karfa2008equiv} check HLS
-scheduling. The alternative is a verified translator: CompCert~\cite{leroy2009compcert} for C,
-Vericert~\cite{herklotz2021vericert} for C to Verilog, and Lutsig~\cite{loow2021lutsig} for a
-Verilog subset to netlists. Verified translators give stronger guarantees but, as Lutsig shows,
-over much smaller subsets. Our contribution is not the method but where to apply it: across a
-language boundary, the checked side must use the target's semantics (R1), which an IR-level
-comparison does not.
+and to LLVM by Alive2~\cite{lopes2021alive2}, whose treatment of undefined behavior we follow. In
+hardware, Kundu et al.~\cite{kundu2010tvhls} validate high-level synthesis with a simulation
+relation that need not be a one-to-one register map, which is more general than our name-based
+mapping, and Karfa et al.~\cite{karfa2008equiv} check HLS scheduling. The alternative is a verified
+translator: CompCert~\cite{leroy2009compcert} for C, Vericert~\cite{herklotz2021vericert} for C to
+Verilog, and Lutsig~\cite{loow2021lutsig} for a Verilog subset to netlists. These give stronger
+guarantees over smaller subsets.
 
-\emph{C-to-RTL equivalence.} Word-level sequential equivalence between C/C++ models and
-RTL~\cite{koelbl2009c2rtl} is supported by commercial tools; \code{prove-sec} is an open,
-small-scale version tied to the translator. EquivFusion~\cite{zhu2026equivfusion} unifies
-equivalence checking from algorithms to netlists, and CBMC~\cite{kroening2023cbmc} gives
-bit-precise semantics for C.
-
-\emph{Semantics of Verilog.} Lööw~\cite{loow2025simsem} gives a simulation semantics for the
-synthesizable fragment, and earlier work formalised Verilog in K~\cite{meredith2010kverilog} and
-discussed why its semantics is hard~\cite{gordon1995semantic}. Mills and
-Cummings~\cite{mills1999mismatch} catalogue coding styles where simulation and synthesis disagree,
-the same kind of silent divergence this paper is about.
+\emph{Semantics.} Müller et al.~\cite{mueller2001scsem} give a formal simulation semantics of
+SystemC, and Herber et al.~\cite{herber2008scta} model check SystemC designs, including the
+scheduler, with timed automata; our proof does not model the scheduler at all. Lööw~\cite{loow2025simsem}
+gives a simulation semantics for synthesizable Verilog, earlier work formalized Verilog in
+K~\cite{meredith2010kverilog}, and Gordon~\cite{gordon1995semantic} discussed why its semantics is
+hard. Mills and Cummings~\cite{mills1999mismatch} catalogue coding styles where simulation and
+synthesis disagree.
 
 \emph{Language models.} Language models generate Verilog~\cite{liu2023verilogeval,thakur2024verigen},
 translate C++ to HLS-ready code or Verilog~\cite{collini2024c2hlsc,lyu2026autoc2v}, and recover
-high-level models from RTL~\cite{tang2026rtlrex}. Their outputs are mostly judged by tests. A gate
-that reads the generated code with the target's semantics can check such outputs too, as long as
-they stay in the subset the reader models.
+high-level models from RTL~\cite{tang2026rtlrex}. Their outputs are mostly judged by tests. A check
+that reads generated code with the target's semantics can judge such outputs too, provided they
+stay inside the subset the reader models. We have not evaluated this.
 
 %% ===========================================================================
 \section{Limitations}
 \label{sec:limits}
 
-The proof model has one clock and treats asynchronous reset as synchronous, so multi-clock designs
-and reset timing rely on simulation. Values are two-state; designs that depend on X are outside the
-model. The C++ reader models the subset \code{svcc} emits, not arbitrary C++. The proof has been run
-on \nDesigns{} designs, and the real-design corpus has simulation evidence only. \code{svlang}'s
-elaboration is trusted on both sides. The suite of \nDesigns{} designs is author-written; the stress corpus is
-third-party code. \code{svcc} also translates UVM testbench components, constraints, covergroups
-and assertions to UVM-SystemC, CRAVE and FC4SC; those checks still compare through \code{svcc}'s
-own representation and have not been rebuilt to rule R1, so we make no claim about them here.
+\begin{itemize}
+\item A bounded verdict (an inductive step that fails, followed by 8 clean steps from reset) exits
+with code 0. With a one-to-one register map, a failed inductive step usually means the next-state
+functions differ. A hand-edited counter with a bug at count 200 passes this way. None of the
+\nProved{} proved designs in RQ1 is bounded, but a user script cannot rely on exit code 0 alone.
+\item SystemC scheduling is not modeled. A header with the delta-late clock copy of defect (3)
+passes the proof.
+\item The proof model has one clock and treats asynchronous reset as synchronous. Clock-gating
+designs, multi-clock designs and reset timing rely on simulation.
+\item Values are two-state. Designs that depend on X are outside the model.
+\item \code{svlang} is trusted on both sides and is also the translator's front end. The reader is
+the author's model of C++ and shares the typed IR and printer with the converter. The author also
+wrote the emitter, \code{svlang} and the mutation script.
+\item The proof has been run on \nDesigns{} small author-written designs. The \nModules{}-module
+corpus has random simulation evidence only, with no coverage figure.
+\item Two CVFPU mismatches have not been root-caused.
+\item The SCAV comparison uses different harnesses for the two tools and probes that were part of
+\code{svcc}'s development.
+\item \code{svcc} also translates UVM testbench components, constraints, covergroups and
+assertions to UVM-SystemC, CRAVE and FC4SC. Those checks still compare through \code{svcc}'s own
+representation and have not been rebuilt to rule R1. This paper makes no claim about them.
+\end{itemize}
 
 %% ===========================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 
-A validation gate for a cross-language translator is only as good as the semantics it gives the
-output. Ours first used the source language's semantics and passed wrong models; reading the
-generated C++ with C++'s rules, flagging undefined behaviour and proving against an independent
-netlist of the source closed that gap, and a mutation experiment against compiled SystemC found no
-case where the new gate accepts a model that simulation shows to be wrong. On real code the same
-pipeline converts \nMatch{} modules that match Verilator and doubles as a differential test that
-found defects in four tools. Next steps are proofs across clock domains, proofs on the multi-file
-real-design corpus, and the same treatment for the testbench direction.
+Our first check for a SystemVerilog-to-SystemC translator used SystemVerilog's semantics on the
+C++ output and passed wrong models. Reading the generated C++ with C++'s rules, flagging undefined
+behavior and proving against a netlist of the source closed that gap on the designs we tried, and a
+mutation experiment against compiled SystemC found no cast or width error the check accepted. The
+check does not cover scheduling, and its bounded verdict should not count as a pass. On real code
+the converter produces \nMatch{} modules that match Verilator, and the same runs found defects in
+three tools. Next steps are a failing exit code for bounded results, a scheduling check for
+processes on internal clocks, the proof on the multi-file real-design corpus, and the same
+treatment for the testbench direction.
 
 \textbf{Artifacts.} \code{svcc} (Rust, \nRustLines{} lines, Python bindings), the design suite,
 probes, mutation and stress scripts, and all results: \url{https://github.com/mayurkubavat/svcc}.
-% TODO: cite the Zenodo DOI of the release used.
 
 \textbf{Use of AI.} AI coding and writing assistants helped write parts of the implementation, the
-benchmark scripts and this manuscript, under the author's direction and review. The author ran and
-checked every measurement, proof and reference reported here and takes full responsibility for the
-work.
+benchmark scripts and this manuscript, under the author's direction and review. The author made
+the design decisions, ran and checked every measurement, proof and reference reported here, and
+takes full responsibility for the work.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
