@@ -57,6 +57,24 @@
 \newcommand{\nPlaceholder}{557}
 \newcommand{\nSteps}{3,000}
 
+% --- Proof of the modules that match Verilator (run_stress.py --prove-from) -------------
+% Journal entry M6.3, 2026-11-23, linux device, svcc commit 1db5bb2 (branch ieee-proof),
+% Z3 from pip, on the merged M5.2 co-simulation results. One record per module and code base.
+% Fail split: 27 Z3 unknown, 9 construct rejected (8 clock-gating latches written with a
+% nonblocking assignment, mbox_csr), 6 no outputs, 3 false differences from the start-state
+% constraint on integer loop variables inferred as latches (svcc-equiv pair.rs).
+\newcommand{\nProofRecords}{1,188}
+\newcommand{\nCorpusProved}{600}
+\newcommand{\nCorpusBounded}{129}
+\newcommand{\nCorpusFail}{45}
+\newcommand{\nCorpusNotCovered}{414}
+\newcommand{\nCorpusUnknown}{27}
+\newcommand{\nCorpusUnsupported}{9}
+\newcommand{\nCorpusNoOutputs}{6}
+\newcommand{\nCorpusFalseDiff}{3}
+\newcommand{\nCorpusComb}{314}
+\newcommand{\nCorpusMaxRegs}{1,026}
+
 % --- Comparison with SCAV (benchmarks/scav_compare) --------------------------------------
 \newcommand{\nProbes}{18}
 \newcommand{\nCorpusRtl}{8}

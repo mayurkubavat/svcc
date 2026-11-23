@@ -68,8 +68,8 @@ netlist is built without any svcc code, but both sides use the same SystemVerilo
 \nDesigns{} designs the check proves \nProved{} and reports \nNotCovered{} as outside its model. In
 a mutation experiment it accepted none of the \nMutSimDiffers{} mutants that compiled SystemC showed
 to be wrong. On \nModules{} modules from \nCodeBases{} open-source code bases, \nMatch{} conversions
-match Verilator in random co-simulation. The runs also found defects in the front end, in svcc and
-in Verilator. The proof does not model SystemC process scheduling.
+match Verilator in random co-simulation, and the check proves \nCorpusProved{} of them equivalent. The runs also found defects in the front end, in svcc and in
+Verilator. The proof does not model SystemC process scheduling.
 \end{abstract}
 
 \begin{keywords}
@@ -118,7 +118,8 @@ result equivalent to a netlist of the source by register-mapped induction. Desig
 model exit with code 3 (Section~\ref{sec:gate}). The converter it checks is described in
 Section~\ref{sec:convert}; a companion software paper covers the tool itself~\cite{kubavat2026svccsx}.
 \item \textbf{An evaluation} on \nDesigns{} designs, a mutation experiment judged by compiled
-SystemC, \nModules{} modules in co-simulation with Verilator, the defects these runs found, and a
+SystemC, \nModules{} modules in co-simulation with Verilator, the proof on the \nMatch{} that
+match, the defects these runs found, and a
 comparison with a recent translator (Section~\ref{sec:eval}).
 \end{enumerate}
 \code{svcc} is released under the Apache 2.0 license on crates.io and PyPI, with all scripts and
@@ -295,8 +296,8 @@ registers are equal after a step. If that holds the verdict is \emph{proved}, fo
 equal start states, with no bound. This is a register-mapped equivalence check; there is no
 retiming or state re-encoding. If the inductive step fails, a bounded check from reset (8 steps by
 default) gives a concrete \emph{mismatch} or, if none is found, \emph{bounded}. A bounded verdict
-exits with code 0 and is printed as \code{[PASS] ... (bounded)}; Section~\ref{sec:limits} explains
-why that is a weakness. A solver timeout is \emph{inconclusive} and counts as a failure. A design
+is printed as \code{[BND]} and exits with code 2 unless \code{-{}-accept-bounded} is given;
+Section~\ref{sec:limits} explains why it is not a pass. A solver timeout is \emph{inconclusive} and counts as a failure. A design
 the model does not cover (more than one clock, a multi-dimensional array port, or C++ the reader
 does not model) gets \emph{not covered} and exit code 3. The check also proves the lowering (typed
 IR against source) separately, which tells a front-end failure apart from an emitter failure.
@@ -339,8 +340,8 @@ conversion do on real designs, and what defects did those runs find? \textbf{RQ4
 \emph{Setup.} \code{svlang}~0.5.1, Z3~5.4.1, Verilator~5.052 and SystemC~3.0.3 (Accellera
 \code{development} branch, C++17). RQ1 was run at \code{svcc} commit \code{00c80f0} on Linux x86\_64
 and repeated on the same RTL code in a second Linux container. The mutation experiment (RQ2) was
-run at commit \code{3c486e4} on macOS arm64. The stress run (RQ3) was run at commit \code{16a53ca} on
-Linux x86\_64. Every command and result is recorded in the repository's experiment log.
+run at commit \code{3c486e4} on macOS arm64. The stress run (RQ3) was run at commit \code{16a53ca} and
+its proof stage at commit \code{1db5bb2}, both on Linux x86\_64. Every command and result is recorded in the repository's experiment log.
 
 \subsection{RQ1: Proof coverage on the design suite}
 
@@ -439,15 +440,26 @@ Converting clock-gating cells to enables (Section~\ref{sec:convert}) moved the r
 \nMatchBeforeCG{} to \nMatch{} matching modules and cut clock-related rejections from
 \nClockRejBefore{} to \nClockRejAfter{}, with no module going from match to mismatch. Of the
 \nMismatch{} remaining differences, none is an \code{svcc} defect. One is a Verilator defect: in
-a module with a placeholder parameter, an out-of-range write lands on an in-range bit. Two are
-fixed by an unreleased \code{svlang} change (commit \code{af574c9}). The last two, in CVFPU's
-fused multiply-add, come from random format codes that name no format. The module then reads its
-per-format arrays out of range, so the result is x under clause~11.5.1 of IEEE~1800-2023. With
-the format inputs limited to valid codes, the two models agree for 200,000 steps.
+a module with a placeholder parameter, an out-of-range write lands on an in-range bit. The two in
+CVFPU's cast unit, and the first difference in its fused multiply-add, come from a front-end width
+error on \code{**} in a sized parameter, fixed by an unreleased \code{svlang} change (commit
+\code{af574c9}). With that fix, the fused multiply-add differs only when the random format code
+names no format. The module then reads its per-format arrays out of range, so the result is x
+under clause~11.5.1 of IEEE~1800-2023. With the format inputs limited to valid codes, the two
+models agree for 200,000 steps.
 
-These modules have simulation evidence only. \code{rtl-prove} currently takes a single file and
-the corpus is multi-file. Running the proof on the \nMatch{} matching modules is the most important
-open experiment.
+\emph{Proof on the matching modules.} \code{rtl-prove} accepts multi-file designs, so the check was
+run on every module that matched Verilator, \nProofRecords{} records counting a module once per
+code base. It proved \nCorpusProved{}, gave a bounded-only result for \nCorpusBounded{}, failed on
+\nCorpusFail{} and reported \nCorpusNotCovered{} as outside its model, with no tool errors. Of the
+proved modules, \nCorpusComb{} have no registers; the largest has \nCorpusMaxRegs{} mapped
+registers, and Z3 took a median of 28~ms and at most 44~s per module. None of the failures is a
+functional difference. In \nCorpusUnknown{} Z3 returned no answer, \nCorpusUnsupported{} use a
+construct the reader rejects (eight are clock-gating latches written with a nonblocking
+assignment), \nCorpusNoOutputs{} have no outputs to compare, and \nCorpusFalseDiff{} are false
+differences caused by the check's start-state constraint on \code{integer} loop variables that the
+front end infers as latches. Most modules outside the model have more than one clock or use
+assertions with \code{\$isunknown}. Bounded-only results are not counted as proofs.
 
 \emph{Defects found.}
 \label{sec:defects}
@@ -552,10 +564,11 @@ stay inside the subset the reader models. We have not evaluated this.
 \label{sec:limits}
 
 \begin{itemize}
-\item A bounded verdict (an inductive step that fails, followed by 8 clean steps from reset) exits
-with code 0. With a one-to-one register map, a failed inductive step usually means the next-state
-functions differ. A hand-edited counter with a bug at count 200 passes this way. None of the
-\nProved{} proved designs in RQ1 is bounded, but a user script cannot rely on exit code 0 alone.
+\item A bounded verdict (an inductive step that fails, followed by 8 clean steps from reset) is
+not a proof. With a one-to-one register map, a failed inductive step usually means the next-state
+functions differ; a hand-edited counter with a bug at count 200 gets this verdict. It exits with
+code 2, and \code{-{}-accept-bounded} restores the earlier exit code 0. \nCorpusBounded{} corpus
+modules end here.
 \item SystemC scheduling is not modeled. A header with the delta-late clock copy of defect (3)
 passes the proof.
 \item The proof model has one clock and treats asynchronous reset as synchronous. Clock-gating
@@ -564,9 +577,10 @@ designs, multi-clock designs and reset timing rely on simulation.
 \item \code{svlang} is trusted on both sides and is also the translator's front end. The reader is
 the author's model of C++ and shares the typed IR and printer with the converter. The author also
 wrote the emitter, \code{svlang} and the mutation script.
-\item The proof has been run on \nDesigns{} small author-written designs. The \nModules{}-module
-corpus has random simulation evidence only, with no coverage figure.
-\item Two CVFPU mismatches have not been root-caused.
+\item The corpus proof covers \nCorpusProved{} of the \nMatch{} matching modules; the rest have
+bounded, inconclusive or simulation-only evidence, and the simulation has no coverage figure.
+\item The proof treats a Z3 timeout or unknown as a failure, and its start-state constraint gives
+false differences on \code{integer} loop variables inferred as latches.
 \item The SCAV comparison uses different harnesses for the two tools and probes that were part of
 \code{svcc}'s development.
 \item \code{svcc} also translates UVM testbench components, constraints, covergroups and
@@ -582,11 +596,11 @@ Our first check for a SystemVerilog-to-SystemC translator used SystemVerilog's s
 C++ output and passed wrong models. Reading the generated C++ with C++'s rules, flagging undefined
 behavior and proving against a netlist of the source closed that gap on the designs we tried, and a
 mutation experiment against compiled SystemC found no cast or width error the check accepted. The
-check does not cover scheduling, and its bounded verdict should not count as a pass. On real code
-the converter produces \nMatch{} modules that match Verilator, and the same runs found defects in
-three tools. Next steps are a failing exit code for bounded results, a scheduling check for
-processes on internal clocks, the proof on the multi-file real-design corpus, and the same
-treatment for the testbench direction.
+check does not cover scheduling, and its bounded verdict is not a pass. On real code the converter
+produces \nMatch{} modules that match Verilator, \nCorpusProved{} of which the check proves
+equivalent, and the same runs found defects in three tools. Next steps are a scheduling check for
+processes on internal clocks, multi-clock designs, a separate verdict for solver unknowns, and the
+same treatment for the testbench direction.
 
 %% ===========================================================================
 \section*{Data and Code Availability}
@@ -599,8 +613,10 @@ its command, commit, machine and tool versions in the repository's experiment lo
 
 \section*{Acknowledgment}
 
-The author thanks the maintainers of Verilator, SystemC and Z3. An AI writing assistant was used
-to help prepare parts of the implementation, the benchmark scripts and this manuscript. The author
+The author thanks the maintainers of Verilator, SystemC and Z3. The author used Google Antigravity
+IDE to help develop the \code{svcc} implementation and to refine this manuscript, and other AI coding
+and writing assistants to help prepare parts of the benchmark scripts, the evaluation runs and the
+manuscript text. The author
 reviewed all of it, ran and checked every measurement, proof and reference reported here, and takes
 full responsibility for the content.
 
@@ -608,9 +624,14 @@ full responsibility for the content.
 \bibliography{refs}
 
 \begin{IEEEbiographynophoto}{Mayur Kubavat}
-is an independent researcher in Mountain View, CA, USA. He has worked in ASIC and SoC design
-verification for more than ten years. His interests are hardware verification, SystemVerilog,
-SystemC, formal methods and open-source EDA tools.
+received the M.E. degree in VLSI and Embedded Systems Design from Gujarat Technological
+University, Ahmedabad, India, in 2015.
+
+He has worked in ASIC and SoC Design Verification since 2016, including at Google, in Bangalore,
+India, and in Mountain View and Sunnyvale, CA, USA, from 2019 to 2026, on processor and accelerator
+designs. He is currently a Design Verification Engineer in industry. His research interests
+include Hardware Verification, SystemVerilog, SystemC, Formal Methods, and open-source Electronic
+Design Automation (EDA) tools.
 \end{IEEEbiographynophoto}
 
 \EOD
