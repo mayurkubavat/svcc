@@ -1,4 +1,4 @@
-%% SoftwareX Original Software Publication: svcc 0.1.1
+%% SoftwareX Original Software Publication: svcc 0.1.2
 %% Layout follows the SoftwareX article template Version 6 (March 2026):
 %% metadata table C1-C8, sections 1-5.
 \documentclass[preprint,12pt]{elsarticle}
@@ -42,7 +42,7 @@ A second command checks the generated model formally. It reads the generated C++
 SystemC evaluation rules, treats undefined behavior as a failure, and proves the result equivalent
 to the SystemVerilog source by induction over registers mapped by name. A design outside the proof
 model is reported as not covered. A third command simulates the generated SystemC against
-Verilator on random stimulus. Version 0.1.1 is released under the Apache 2.0 license.
+Verilator on random stimulus. Version 0.1.2 is released under the Apache 2.0 license.
 \end{abstract}
 
 \begin{keyword}
@@ -60,13 +60,13 @@ SystemVerilog \sep SystemC \sep RTL \sep translation validation \sep equivalence
 \toprule
 Nr & Code metadata description & Metadata \\
 \midrule
-C1 & Current code version & v0.1.1 \\
-C2 & Permanent link to code/repository used for this code version & \url{https://github.com/mayurkubavat/svcc/tree/v0.1.1} (archived at \url{https://doi.org/10.5281/zenodo.24455890}) \\
+C1 & Current code version & v0.1.2 \\
+C2 & Permanent link to code/repository used for this code version & \url{https://github.com/mayurkubavat/svcc/tree/v0.1.2} (archived at \url{https://doi.org/10.5281/zenodo.24455889}) \\
 C3 & Legal code license & Apache License 2.0 \\
 C4 & Code versioning system used & git \\
 C5 & Software code languages, tools and services used & Rust, Python (PyO3 bindings), C++17; Z3; svlang \\
 C6 & Compilation requirements, operating environments and dependencies & Rust 1.82 or later; Linux or macOS. Python 3.9 or later for the Python package (wheels for Linux x86\_64 and macOS arm64, other platforms build from source). Proofs need the \code{z3} executable (tested with 5.4.1). Co-simulation needs a C++17 compiler, Verilator 5 (tested with 5.052) and SystemC (tested with 3.0.3, \code{SYSTEMC\_HOME}). \\
-C7 & If available, link to developer documentation/manual & \url{https://github.com/mayurkubavat/svcc/tree/v0.1.1/docs} \\
+C7 & If available, link to developer documentation/manual & \url{https://github.com/mayurkubavat/svcc/tree/v0.1.2/docs} \\
 C8 & Support email for questions & mkubavat01@gmail.com \\
 \bottomrule
 \end{tabularx}
@@ -158,7 +158,7 @@ crate that declares \code{svlang} as a dependency. It re-exports the elaborated 
 \draw[arr] (esv) -- (ir);
 \draw[arr] (eq) -- (z3);
 \end{tikzpicture}}
-\caption{Main crates of \code{svcc} 0.1.1 and the external tools they call. Arrows point from a
+\caption{Main crates of \code{svcc} 0.1.2 and the external tools they call. Arrows point from a
 crate to a crate or tool it uses. Minor dependencies are not drawn, except that \code{svcc-equiv}
 also uses \code{svcc-svlang} to lower both sides of a proof. \code{rtl2sc} runs the SystemVerilog front end and the SystemC emitter;
 \code{rtl-prove} adds the C++ reader, the SystemVerilog printer and \code{svcc-equiv}.}
@@ -204,7 +204,7 @@ run.
 
 \begin{table}[t]
 \centering\small
-\caption{Main \code{svcc} commands in version 0.1.1.}
+\caption{Main \code{svcc} commands in version 0.1.2.}
 \label{tab:cli}
 \begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X@{}}
 \toprule
@@ -227,7 +227,7 @@ them as a library.
 
 A proof verdict is one of \emph{proved} (by induction, for every run from equal starting states),
 \emph{bounded}, \emph{mismatch} (with a concrete input sequence), \emph{inconclusive}, or \emph{not
-covered}. Users should know three things about these verdicts in 0.1.1:
+covered}. Users should know three things about these verdicts in 0.1.2:
 \begin{itemize}
 \item \emph{Bounded} means the inductive step failed and a run of 8 steps (set with
 \code{-{}-bound}) from the initial state found no difference. It exits with 0 and prints \code{[PASS]} with the word \code{bounded}. A script that
@@ -309,9 +309,10 @@ benchmark golden models. A 16-bit product computed in a 32-bit \code{int} overfl
 exceeds $2^{31}-1$, for example when both operands exceed 46,340; C++ leaves the result undefined, so a test can pass on one compiler and fail on
 another.
 
-\emph{Adoption.} Version 0.1.0 was published to crates.io and PyPI on 22 November 2026, and
-version 0.1.1, which adds the clock-gating conversion, was archived on Zenodo on 23 November 2026~\cite{kubavat2026svcczenodo}. It is too
-early to report outside users.
+\emph{Adoption.} Version 0.1.0 was published to crates.io and PyPI on 22 November 2026. Version
+0.1.1 added the clock-gating conversion. Version 0.1.2, described here, changes only documentation,
+package metadata and a help message. Every release is archived on Zenodo~\cite{kubavat2026svcczenodo}.
+It is too early to report outside users.
 
 %% ---------------------------------------------------------------------------
 \section{Conclusions}
