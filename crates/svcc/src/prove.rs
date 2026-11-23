@@ -103,8 +103,37 @@ pub fn prove_rtl(
 ) -> Result<RtlProveReport, SvccError> {
     let tops: Vec<String> = opts.top.iter().cloned().collect();
     let (code, design) = crate::sv_rtl_to_sc(filename, sv_source, &tops)?;
+    prove_rtl_design(&design, code, opts, |def| {
+        svcc_equiv::sec::sv_to_btor2(sv_source, filename, def)
+    })
+}
+
+/// As [`prove_rtl`], for a multi-file design given as command-line style arguments (source
+/// files, `-f`, `+incdir+`, `+define+`, `-G name=value`). The reference netlist is built from
+/// the same arguments by `svlang` alone.
+pub fn prove_rtl_args(
+    args: &[String],
+    opts: &RtlProveOptions,
+) -> Result<RtlProveReport, SvccError> {
+    let mut a = args.to_vec();
+    if let Some(t) = &opts.top {
+        a.push("-top".into());
+        a.push(t.clone());
+    }
+    let (code, design) = crate::sv_rtl_args_to_sc(&a)?;
+    prove_rtl_design(&design, code, opts, |def| {
+        svcc_equiv::sec::sv_args_to_btor2(args, def)
+    })
+}
+
+fn prove_rtl_design(
+    design: &Design,
+    code: String,
+    opts: &RtlProveOptions,
+    reference: impl Fn(&str) -> Result<Btor2Design, SvccError>,
+) -> Result<RtlProveReport, SvccError> {
     let code = opts.header.clone().unwrap_or(code);
-    let top = single_top(&design)?;
+    let top = single_top(design)?;
     // An array port is one output per element, named as the netlist names them.
     let mut outputs: Vec<String> = Vec::new();
     for p in top.ports.iter().filter(|p| p.dir == Dir::Out) {
@@ -119,14 +148,14 @@ pub fn prove_rtl(
             }
         }
     }
-    let spec = svcc_equiv::sec::sv_to_btor2(sv_source, filename, &top.definition)?;
+    let spec = reference(&top.definition)?;
     let popts = PairOptions {
         bound: opts.bound,
         timeout_ms: opts.timeout_ms,
         ..Default::default()
     };
 
-    let ir = design_to_btor2(&design, &top.name, "svcc_ir__")?;
+    let ir = design_to_btor2(design, &top.name, "svcc_ir__")?;
     let spec_side = PairSide {
         btor2: &spec.btor2,
         top: &top.definition,
@@ -376,6 +405,38 @@ pub fn prove_rtl_file(
             Ok(r) => out.push(RtlFileItem::Proved(Box::new(r))),
             // The netlist or the Btor2 model does not take the design: a limit of the
             // proof model, not a difference.
+            Err(e) if is_model_limit(&e) => out.push(RtlFileItem::NotCovered {
+                top: m.definition.clone(),
+                reason: e.to_string(),
+            }),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(out)
+}
+
+/// Runs [`prove_rtl_args`] on every top module of a multi-file design.
+pub fn prove_rtl_args_all(
+    args: &[String],
+    opts: &RtlProveOptions,
+) -> Result<Vec<RtlFileItem>, SvccError> {
+    let design = svcc_front_sv::hdl_lower::lower_hdl_from_args(args)?;
+    let mut out = Vec::new();
+    for t in &design.tops {
+        let Some(m) = design.module(t) else { continue };
+        if !m.ports.iter().any(|p| p.dir == Dir::Out) {
+            out.push(RtlFileItem::Skipped {
+                top: m.definition.clone(),
+                reason: "the module has no outputs to compare".to_string(),
+            });
+            continue;
+        }
+        let o = RtlProveOptions {
+            top: Some(m.definition.clone()),
+            ..opts.clone()
+        };
+        match prove_rtl_args(args, &o) {
+            Ok(r) => out.push(RtlFileItem::Proved(Box::new(r))),
             Err(e) if is_model_limit(&e) => out.push(RtlFileItem::NotCovered {
                 top: m.definition.clone(),
                 reason: e.to_string(),

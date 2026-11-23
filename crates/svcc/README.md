@@ -52,8 +52,8 @@ let (header, _design) = svcc::sv_rtl_to_sc("counter.sv", &src, &["counter".to_st
   notes.
 - **Proof.** For a design in the proof model, the generated SystemC is proved equal to the
   source for all runs from equal start states (by induction), or for a bounded number of
-  cycles when induction does not close. A bounded result also exits 0 and prints
-  `[PASS] ... (bounded)`; a script that needs a full proof must check for that word.
+  cycles when induction does not close. A bounded result is not a proof: it exits 2 and
+  prints `[BND ] ... (bounded)` (`--accept-bounded` makes it exit 0).
   Designs outside the model are reported as NOT COVERED (exit code 3), never as passing.
 - **Real designs.** Every module of 16 open-source code bases (2,184 modules, among them ibex,
   cv32e40p, cva6, OpenTitan, Caliptra, common_cells) was tried as a top. In the latest run,

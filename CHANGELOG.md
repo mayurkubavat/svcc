@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (0.1.3)
+
+- `rtl-prove` and `prove-sec` exit with code 2 when a check is only bounded (induction did not
+  close and the bounded check from reset found no difference), and print `[BND ]` instead of
+  `[PASS]`. Before, such a result exited 0. `--accept-bounded` restores the old exit code.
+- `rtl-prove` takes a multi-file design with the arguments of `rtl2sc` (more source files,
+  `-f`, `+incdir+`, `+define+`, `-G name=value`). The reference netlist is built from the same
+  arguments by `svlang`, without svcc code.
+- `scripts/rtl_prove.sh` counts a bounded-only design as a failure.
+
 ## 0.1.2 (2026-11-23)
 
 Documentation and packaging only; conversion and checks behave as in 0.1.1.

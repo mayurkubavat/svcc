@@ -36,6 +36,11 @@ fn main() -> ExitCode {
             eprintln!("not covered: {}", e.message);
             ExitCode::from(3)
         }
+        // No difference within the bound, but induction did not close: not a proof.
+        Err(e) if e.stage == BOUNDED => {
+            eprintln!("bounded only: {}", e.message);
+            ExitCode::from(2)
+        }
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
@@ -46,6 +51,11 @@ fn main() -> ExitCode {
 /// Error stage (and exit code 3) of `rtl-prove` when nothing failed but some module could not
 /// be put to the proof.
 const NOT_COVERED: &str = "rtl-prove/not-covered";
+
+/// Error stage (and exit code 2) of `rtl-prove` and `prove-sec` when nothing failed but some
+/// check only reached a bounded result (induction did not close). `--accept-bounded` turns
+/// it into exit code 0, as before version 0.1.3.
+const BOUNDED: &str = "prove/bounded";
 
 fn run_cli() -> Result<(), SvccError> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -194,7 +204,7 @@ fn run_cli() -> Result<(), SvccError> {
             if pos.len() < 2 {
                 return Err(SvccError::new(
                     "cli",
-                    "usage: svcc prove-sec <spec.{sv,hpp}> <imp.sv> [--latency L] [--top <module>] [--hold name=value] [--bound K]",
+                    "usage: svcc prove-sec <spec.{sv,hpp}> <imp.sv> [--latency L] [--top <module>] [--hold name=value] [--bound K] [--accept-bounded]",
                 ));
             }
             let mut opts = svcc::prove::SecOptions {
@@ -218,44 +228,67 @@ fn run_cli() -> Result<(), SvccError> {
                     }
                 }
             }
-            cmd_prove_sec(&pos[0], &pos[1], &opts)
+            accept_bounded(&args[1..], cmd_prove_sec(&pos[0], &pos[1], &opts))
         }
         "rtl-prove" => {
-            let pos = positional_args(&args[1..]);
-            let input = pos.first().ok_or_else(|| {
+            let json = args[1..].iter().any(|a| a == "--json");
+            let rest: Vec<String> = args[1..]
+                .iter()
+                .filter(|a| *a != "--json" && *a != "--accept-bounded")
+                .cloned()
+                .collect();
+            let (design_args, own) = split_design_args(&rest, &["--top", "--header", "--bound"]);
+            let input = design_args.first().ok_or_else(|| {
                 SvccError::new(
                     "cli",
-                    "usage: svcc rtl-prove <in.sv> [--top <module>] [--header <generated.hpp>] [--bound K] [--json]",
+                    "usage: svcc rtl-prove <in.sv> [more.sv ...] [-f <list>] [+incdir+<dir>] [+define+<d>] [-G <p>=<v>] [--top <module>] [--header <generated.hpp>] [--bound K] [--accept-bounded] [--json]",
                 )
             })?;
-            let src = fs::read_to_string(input)
-                .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
             let mut opts = svcc::prove::RtlProveOptions {
-                top: parse_opt_flag(&args[1..], "--top"),
+                top: parse_opt_flag(&own, "--top"),
                 ..Default::default()
             };
-            if let Some(h) = parse_opt_flag(&args[1..], "--header") {
+            if let Some(h) = parse_opt_flag(&own, "--header") {
                 opts.header = Some(
                     fs::read_to_string(&h)
                         .map_err(|e| SvccError::new("io", format!("cannot read {h}: {e}")))?,
                 );
             }
-            if let Some(b) = parse_opt_flag(&args[1..], "--bound").and_then(|s| s.parse().ok()) {
+            if let Some(b) = parse_opt_flag(&own, "--bound").and_then(|s| s.parse().ok()) {
                 opts.bound = b;
             }
+            // One plain source file, or a multi-file design (more files, -f, +incdir+, -G ...).
+            let single = design_args.len() == 1;
+            let src = if single {
+                fs::read_to_string(input)
+                    .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?
+            } else {
+                String::new()
+            };
             if opts.top.is_none() && opts.header.is_none() {
-                // Every top module of the file.
-                let items = svcc::prove::prove_rtl_file(input, &src, &opts)?;
-                if args[1..].iter().any(|a| a == "--json") {
+                // Every top module of the design.
+                let items = if single {
+                    svcc::prove::prove_rtl_file(input, &src, &opts)?
+                } else {
+                    svcc::prove::prove_rtl_args_all(&design_args, &opts)?
+                };
+                if json {
                     println!("{}", serde_json::to_string_pretty(&items).unwrap());
                 }
-                return report_rtl_items(&items);
+                return accept_bounded(&args[1..], report_rtl_items(&items));
             }
-            let rep = svcc::prove::prove_rtl(input, &src, &opts)?;
-            if args[1..].iter().any(|a| a == "--json") {
+            let rep = if single {
+                svcc::prove::prove_rtl(input, &src, &opts)?
+            } else {
+                svcc::prove::prove_rtl_args(&design_args, &opts)?
+            };
+            if json {
                 println!("{}", serde_json::to_string_pretty(&rep).unwrap());
             }
-            report_rtl_items(&[svcc::prove::RtlFileItem::Proved(Box::new(rep))])
+            accept_bounded(
+                &args[1..],
+                report_rtl_items(&[svcc::prove::RtlFileItem::Proved(Box::new(rep))]),
+            )
         }
         "sv2btor2" => {
             let pos = positional_args(&args[1..]);
@@ -293,7 +326,7 @@ fn print_pair(stage: &str, top: &str, r: &svcc_equiv::pair::PairReport) {
             "proved for all runs from equal start states".to_string(),
         ),
         V::BoundedNoDifference => (
-            "PASS",
+            "BND ",
             format!(
                 "no difference in {} steps from reset state (bounded)",
                 r.bound_steps
@@ -325,7 +358,7 @@ fn print_usage() {
          \x20 svcc roundtrip-check <in.sv> [--shims <dir>]          SV -> C++17 (clang++) -> SV (svlang) + Z3 CRV/SVA/SEC\n\
          \x20 svcc prove-equiv <lhs> <rhs>                          Prove Z3 QF_BV CRV/Enum/Dist & UCIS equivalence\n\
          \x20 svcc prove-sec <spec.sv|hpp> <imp.sv> [--latency L]   Prove Btor2 + Z3 Sequential Equivalence (SEC/C2RTL)\n\
-         \x20 svcc rtl-prove <in.sv> [--top M] [--header <h.hpp>]  Prove generated (or given) SystemC equal to its RTL source (z3)\n\
+         \x20 svcc rtl-prove <in.sv> [more.sv ...] [--top M]        Prove generated (or given, --header) SystemC equal to its RTL source (z3)\n\
          \x20 svcc bench <in.sv> [--iters 50]                       Emit JSON latency & formal equivalence telemetry",
         env!("CARGO_PKG_VERSION")
     );
@@ -550,7 +583,9 @@ fn cmd_roundtrip_check(
     if !m_sv.module_names.is_empty() {
         let items = svcc::prove::prove_rtl_file(input_path, &src, &Default::default())?;
         match report_rtl_items(&items) {
-            Err(e) if e.stage == NOT_COVERED => println!("         {}", e.message),
+            Err(e) if e.stage == NOT_COVERED || e.stage == BOUNDED => {
+                println!("         {}", e.message)
+            }
             other => other?,
         }
     }
@@ -563,6 +598,7 @@ fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError>
     use svcc::prove::RtlFileItem;
     use svcc_equiv::pair::PairVerdict as V;
     let mut not_covered = Vec::new();
+    let mut bounded = Vec::new();
     for it in items {
         match it {
             RtlFileItem::Skipped { top, reason } => {
@@ -575,6 +611,7 @@ fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError>
             RtlFileItem::Proved(rep) => {
                 print_pair("lowering     ", &rep.top, &rep.lowering);
                 let bad = matches!(rep.lowering.verdict, V::Mismatch | V::Inconclusive);
+                let mut only_bounded = rep.lowering.verdict == V::BoundedNoDifference;
                 match (&rep.generated_cpp, &rep.cpp_unchecked) {
                     (Some(r), _) => {
                         print_pair("generated C++", &rep.top, r);
@@ -586,6 +623,10 @@ fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError>
                                     rep.top
                                 ),
                             ));
+                        }
+                        only_bounded |= r.verdict == V::BoundedNoDifference;
+                        if only_bounded {
+                            bounded.push(rep.top.clone());
                         }
                     }
                     (None, why) => {
@@ -606,6 +647,16 @@ fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError>
             }
         }
     }
+    if !bounded.is_empty() {
+        let mut msg = format!(
+            "{} not proved: no difference within the bound, but induction did not close",
+            bounded.join(", ")
+        );
+        if !not_covered.is_empty() {
+            msg.push_str(&format!("; not covered: {}", not_covered.join(", ")));
+        }
+        return Err(SvccError::new(BOUNDED, msg));
+    }
     if not_covered.is_empty() {
         Ok(())
     } else {
@@ -616,6 +667,23 @@ fn report_rtl_items(items: &[svcc::prove::RtlFileItem]) -> Result<(), SvccError>
                 not_covered.join(", ")
             ),
         ))
+    }
+}
+
+/// With `--accept-bounded`, a bounded-only result succeeds (exit code 0, the behavior before
+/// version 0.1.3). A design that is also not covered still exits 3.
+fn accept_bounded(args: &[String], r: Result<(), SvccError>) -> Result<(), SvccError> {
+    match r {
+        Err(e) if e.stage == BOUNDED && args.iter().any(|a| a == "--accept-bounded") => {
+            match e.message.split_once("; not covered: ") {
+                Some((_, nc)) => Err(SvccError::new(
+                    NOT_COVERED,
+                    format!("no proof for {nc} (simulation is the only evidence for them)"),
+                )),
+                None => Ok(()),
+            }
+        }
+        other => other,
     }
 }
 
@@ -694,7 +762,14 @@ fn cmd_prove_sec(
     println!("{}", serde_json::to_string_pretty(&rep).unwrap());
     use svcc_equiv::pair::PairVerdict as V;
     match rep.verdict {
-        V::ProvedInductive | V::BoundedNoDifference => Ok(()),
+        V::ProvedInductive => Ok(()),
+        V::BoundedNoDifference => Err(SvccError::new(
+            BOUNDED,
+            format!(
+                "'{}' and '{}': no difference within the bound, but induction did not close",
+                rep.spec_top, rep.imp_top
+            ),
+        )),
         V::Mismatch => Err(SvccError::new(
             "sec",
             format!(

@@ -50,16 +50,18 @@ for item in json.loads(svcc.rtl_prove_json("counter.sv", src)):
     print(item)                                            # Proved / Skipped / NotCovered
 ```
 
-Exit codes of `rtl-prove`: 0 when every module is proved or bounded, 1 on a mismatch or when
-the solver gives no answer, 3 when a module is outside the proof model. The other commands
-exit with 0 or 1, so they can gate a regression run.
+Exit codes of `rtl-prove` and `prove-sec`: 0 when every module is proved, 1 on a mismatch or when
+the solver gives no answer, 2 when a check is only bounded, 3 when a module is outside the
+proof model (`--accept-bounded` turns 2 into 0, the behavior before 0.1.3). The other commands
+exit with 0 or 1, so they can gate a regression run. `rtl-prove` takes a multi-file design the
+same way as `rtl2sc`: more source files, `-f <list>`, `+incdir+`, `+define+` and `-G name=value`.
 
 ## What a result means
 
 - **Proved**: equal for every run from equal start states, by induction over registers
   mapped by name.
 - **Bounded**: induction did not close and 8 steps (`--bound K`) from the initial state found
-  no difference. It exits 0 and prints `[PASS] ... (bounded)`.
+  no difference. It is not a proof: it exits 2 and prints `[BND ] ... (bounded)`.
 - **Mismatch**: with a concrete input sequence that shows the difference.
 - **NOT COVERED** (exit 3): the design is outside the proof model, for example more than one
   clock. Use `rtl-cosim` for these designs.

@@ -291,3 +291,17 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `z3`: `5.4.1`
 - **Notes**: Changes since v0.1.1 are documentation, package metadata, version 0.1.2 and the rtl-prove help text. Step 8 (rtl-cosim against Verilator) stopped with 'verilator not on PATH'; re-run it on the linux device before publishing.
 
+## [2026-11-23T07:14:46+00:00] `M6.2-bounded-exit-multifile-prove` — rtl-prove: bounded-only results exit 2; multi-file designs
+- **Commit**: `61da7d7` (`Linux-x86_64`, `rustc 1.97.0 (2d8144b78 2026-07-07)`)
+- **Command**: `SVCC_SKIP_COSIM=1 ./scripts/check.sh; svcc rtl-prove testdata/rtl_multi/top.sv testdata/rtl_multi/acc.sv --top top -G W=12`
+- **Measured Metrics**:
+  - `bounded_exit_code`: `2`
+  - `bounded_test`: `counter header wrapping at 200: BoundedNoDifference, exit 2; --accept-bounded exit 0`
+  - `cargo_tests_passed`: `38`
+  - `cosim_step`: `skipped (no Verilator in the cloud container)`
+  - `host`: `Linux-x86_64 cloud container`
+  - `multi_file_test`: `two files with -G W=12: lowering and generated C++ proved by induction, 2 paired states`
+  - `rtl_prove`: `45 proved for all runs, 0 bounded only, 5 not covered, 0 failed`
+  - `z3`: `5.4.1`
+- **Notes**: Co-simulation step 8 of check.sh was skipped here and must be run on the linux device before merging to main. Next: run rtl-prove on the 1,185 stress-corpus modules that match Verilator.
+

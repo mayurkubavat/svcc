@@ -245,3 +245,37 @@ fn a_design_on_two_clocks_is_outside_the_proof_model() {
         [svcc::prove::RtlFileItem::NotCovered { .. }]
     ));
 }
+
+const COUNTER: &str = "module cnt (input logic clk, input logic rst, output logic [7:0] q);\n  always_ff @(posedge clk) if (rst) q <= 8'd0; else q <= q + 8'd1;\nendmodule\n";
+
+#[test]
+fn a_difference_beyond_the_bound_is_only_bounded_not_proved() {
+    // The edited header wraps at 200, which 8 steps from reset never reach: induction finds
+    // the difference, the bounded check does not. The CLI exits 2 for this verdict.
+    let r = prove_edited(COUNTER, |h| {
+        h.replace(
+            "q.write(sc_dt::sc_uint<8>(q.read() + 1U));",
+            "q.write(q.read() == 200U ? sc_dt::sc_uint<8>(0U) : sc_dt::sc_uint<8>(q.read() + 1U));",
+        )
+    });
+    assert_eq!(cpp_verdict(&r), PairVerdict::BoundedNoDifference);
+}
+
+#[test]
+fn a_multi_file_design_with_a_parameter_override_is_proved() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata/rtl_multi");
+    let args: Vec<String> = vec![
+        format!("{dir}/top.sv"),
+        format!("{dir}/acc.sv"),
+        "-G".into(),
+        "W=12".into(),
+    ];
+    let opts = RtlProveOptions {
+        top: Some("top".into()),
+        ..Default::default()
+    };
+    let r = svcc::prove::prove_rtl_args(&args, &opts).expect("prove_rtl_args");
+    assert_eq!(r.lowering.verdict, PairVerdict::ProvedInductive);
+    assert_eq!(cpp_verdict(&r), PairVerdict::ProvedInductive);
+    assert!(r.generated_cpp.unwrap().states_paired >= 2);
+}

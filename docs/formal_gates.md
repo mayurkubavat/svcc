@@ -93,10 +93,10 @@ large operands. The golden model now reads `uint32_t(a) * b`.
 | Verdict | Meaning |
 | :--- | :--- |
 | `ProvedInductive` | Both sides have the same registers (paired by name, same width). From any state in which the paired registers are equal, the outputs agree and the paired registers are equal again after a step. So the two designs agree in every step of every run that starts from equal states. No bound. For C2RTL the same verdict means: from an arbitrary state of the RTL, its output equals the golden function of the inputs `L` cycles earlier. |
-| `BoundedNoDifference` | No difference within `K` steps (default 8) from the initial state, where a register without a start value starts at 0. Not a full proof; the output says "(bounded)". |
+| `BoundedNoDifference` | No difference within `K` steps (default 8) from the initial state, where a register without a start value starts at 0. Not a full proof: the output says "(bounded)" and `rtl-prove` and `prove-sec` exit with code 2 (`--accept-bounded` makes it 0). |
 | `Mismatch` | A concrete input sequence is printed for which the outputs differ or the undefined-behaviour flag is 1. |
 | `Inconclusive` | The solver gave no answer. Counts as a failure. |
-| NOT COVERED | The design, or its generated header, is outside what the proof models: more than one clock or a computed clock the Btor2 model rejects, a multi-dimensional array port, a C++ form the reader does not model. Neither proved nor refuted; `rtl-prove` exits with code 3 (0 proved, 1 failed) and simulation is the only evidence. `scripts/rtl_prove.sh` lists the designs of the repository expected to be in this state and fails if another one joins them. |
+| NOT COVERED | The design, or its generated header, is outside what the proof models: more than one clock or a computed clock the Btor2 model rejects, a multi-dimensional array port, a C++ form the reader does not model. Neither proved nor refuted; `rtl-prove` exits with code 3 (0 proved, 1 failed, 2 bounded only) and simulation is the only evidence. `scripts/rtl_prove.sh` lists the designs of the repository expected to be in this state and fails if another one joins them. |
 
 ## What the proof assumes
 
@@ -202,8 +202,10 @@ How the reader treats each new form:
 | per-bit loop for a dynamic range write, shift-based out-of-range read | proved |
 | module class name with a trailing `_` | proved |
 
-The designs of the stress corpus itself live outside this repository and were not put to
-the proof; `rtl-prove` takes one source file, not the multi-file arguments of `rtl2sc`.
+The designs of the stress corpus itself live outside this repository and have not yet been
+put to the proof. Since 0.1.3 `rtl-prove` takes the same multi-file arguments as `rtl2sc`
+(more files, `-f`, `+incdir+`, `+define+`, `-G`); the reference netlist is built from those
+arguments by `svlang` alone.
 
 ## What is still only simulation evidence
 

@@ -167,10 +167,31 @@ pub fn lower_sv_to_btor2_design(
     filename: &str,
     top: &str,
 ) -> Result<Btor2Design, Btor2Error> {
+    let tree = svlang::syntax::parse_source(sv_source, filename, Default::default());
+    lower_trees_to_btor2_design(&[tree], top, &[])
+}
+
+/// As [`lower_sv_to_btor2_design`], for a multi-file design given as command-line style
+/// arguments (source files, `-f`, `+incdir+`, `+define+`, `-G name=value`). Any `-top` in
+/// `args` is ignored; `top` names the module to lower.
+pub fn lower_sv_args_to_btor2_design(
+    args: &[String],
+    top: &str,
+) -> Result<Btor2Design, Btor2Error> {
+    let comp = svlang::Compilation::from_args(args)
+        .map_err(|e| Btor2Error::Netlist(vec![e.to_string()]))?;
+    lower_trees_to_btor2_design(comp.trees(), top, comp.params())
+}
+
+fn lower_trees_to_btor2_design(
+    trees: &[svlang::syntax::Tree],
+    top: &str,
+    params: &[(String, String)],
+) -> Result<Btor2Design, Btor2Error> {
     use svlang::netlist::{lower_trees, LowerConfig, LowerOutcome, TraceSignal, ValueKind};
 
-    let tree = svlang::syntax::parse_source(sv_source, filename, Default::default());
-    let mut netlist = match lower_trees(&[tree], &[top.to_string()], &[], &LowerConfig::default()) {
+    let mut netlist = match lower_trees(trees, &[top.to_string()], params, &LowerConfig::default())
+    {
         LowerOutcome::Lowered(nl) => nl,
         LowerOutcome::Unsupported(ds) | LowerOutcome::Error(ds) => {
             return Err(Btor2Error::Netlist(

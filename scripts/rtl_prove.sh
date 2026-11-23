@@ -3,8 +3,9 @@
 # read back with C++ evaluation rules and proved against the SystemVerilog source
 # (`svcc rtl-prove`). Needs z3 on PATH; needs neither SystemC nor Verilator.
 #
-# Three outcomes per design: proved, FAILED (a difference, or no answer), and NOT COVERED
-# (the design is outside what the proof models; simulation is the only evidence for it).
+# Four outcomes per design: proved, BOUNDED (no difference within the bound but induction did
+# not close; exit code 2, counted as a failure here), FAILED (a difference, or no answer), and
+# NOT COVERED (the design is outside what the proof models; simulation is the only evidence).
 # Without arguments the script runs the repository's designs and fails if a design is not
 # covered that is not listed in EXPECT_NOT_COVERED below, so coverage cannot shrink silently.
 # Usage: scripts/rtl_prove.sh [design.sv ...]
@@ -34,7 +35,9 @@ for f in "${FILES[@]}"; do
   fi
   if [[ $rc -eq 0 ]]; then
     pass=$((pass + 1))
-    if grep -q "(bounded)" <<<"$out"; then bounded=$((bounded + 1)); echo "$out"; fi
+  elif [[ $rc -eq 2 ]]; then
+    bounded=$((bounded + 1)); failed+=("$n")
+    echo "[BND ] $n"; echo "$out" | sed 's/^/    /' | head -"${SVCC_PROVE_LINES:-16}"
   elif [[ $rc -eq 3 ]]; then
     uncovered=$((uncovered + 1)); notcov+=("$n")
     echo "[----] $n"; grep "NOT COVERED" <<<"$out" | cut -c1-240 | sed 's/^/    /'
@@ -43,9 +46,9 @@ for f in "${FILES[@]}"; do
     echo "[FAIL] $n"; echo "$out" | sed 's/^/    /' | head -"${SVCC_PROVE_LINES:-16}"; fail=$((fail + 1)); failed+=("$n")
   fi
 done
-echo "rtl-prove: $pass proved ($((pass - bounded)) for all runs, $bounded bounded only), $uncovered not covered${notcov:+ (${notcov[*]})}, $fail failed${failed:+ (${failed[*]})}"
+echo "rtl-prove: $pass proved for all runs, $bounded bounded only, $uncovered not covered${notcov:+ (${notcov[*]})}, $fail failed${failed:+ (${failed[*]})}"
 if [[ ${#surprise[@]} -gt 0 ]]; then
   echo "rtl-prove: not covered but expected to be proved: ${surprise[*]}" >&2
   exit 1
 fi
-[[ $fail -eq 0 ]]
+[[ $fail -eq 0 && $bounded -eq 0 ]]
