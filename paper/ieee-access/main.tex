@@ -506,43 +506,37 @@ ground.
 
 \emph{HDL-to-SystemC translation.} HIFSuite~\cite{bombieri2010hifsuite} converts VHDL and Verilog
 to SystemC and back through a common intermediate format, and Syed et al.~\cite{syed2013vhdl2sc}
-translate RTL VHDL to SystemC with attention to process and delta-cycle mapping. Bombieri et
-al.~\cite{bombieri2011rtl2tlm} abstract RTL into equivalent transaction-level models.
+translate RTL VHDL to SystemC with attention to process and delta-cycle mapping.
 v2c~\cite{mukherjee2016v2c} translates synthesizable Verilog to C so that software verifiers can
 check RTL. Zheng et al.~\cite{zheng2026bidir} translate in both directions between SystemC and
 Verilog. Verilator~\cite{snyder2020verilator} produces SystemC for simulation.
 
 \emph{C and RTL consistency.} Clarke, Kroening and Yorav check a C program against Verilog by
 unrolling both under their own semantics~\cite{clarke2003cverilog}, the approach behind
-hw-cbmc and later C-to-RTL tools; CBMC~\cite{clarke2004cbmc,kroening2023cbmc} gives the
+hw-cbmc and later C-to-RTL tools; CBMC~\cite{clarke2004cbmc} gives the
 bit-precise C semantics. Word-level sequential equivalence between C/C++ models and
 RTL~\cite{koelbl2009c2rtl} is supported by commercial tools. R1 is the premise of all of this
 work. \code{rtl-prove} applies it to the output of a translator, with a C++ model limited to the
 code that translator emits, and \code{prove-sec} is a small open version of C-to-RTL checking.
 Yosys EQY~\cite{yosys_eqy} checks equivalence between two RTL or netlist versions.
-EquivFusion~\cite{zhu2026equivfusion} unifies equivalence checking from algorithms to netlists.
 
 \emph{Translation validation and verified compilation.} Translation validation was proposed by
 Pnueli et al.~\cite{pnueli1998tv}, applied to a production compiler by Necula~\cite{necula2000tv}
 and to LLVM by Alive2~\cite{lopes2021alive2}, whose treatment of undefined behavior we follow. In
 hardware, Kundu et al.~\cite{kundu2010tvhls} validate high-level synthesis with a simulation
 relation that need not be a one-to-one register map, which is more general than our name-based
-mapping, and Karfa et al.~\cite{karfa2008equiv} check HLS scheduling. The alternative is a verified
+mapping. The alternative is a verified
 translator: CompCert~\cite{leroy2009compcert} for C, Vericert~\cite{herklotz2021vericert} for C to
 Verilog, and Lutsig~\cite{loow2021lutsig} for a Verilog subset to netlists. These give stronger
 guarantees over smaller subsets.
 
 \emph{Semantics.} Müller et al.~\cite{mueller2001scsem} give a formal simulation semantics of
 SystemC, and Herber et al.~\cite{herber2008scta} model check SystemC designs, including the
-scheduler, with timed automata; our proof does not model the scheduler at all. Lööw~\cite{loow2025simsem}
-gives a simulation semantics for synthesizable Verilog, earlier work formalized Verilog in
-K~\cite{meredith2010kverilog}, and Gordon~\cite{gordon1995semantic} discussed why its semantics is
-hard. Mills and Cummings~\cite{mills1999mismatch} catalogue coding styles where simulation and
-synthesis disagree.
+scheduler, with timed automata; our proof does not model the scheduler at all.
 
-\emph{Language models.} Language models generate Verilog~\cite{liu2023verilogeval,thakur2024verigen},
-translate C++ to HLS-ready code or Verilog~\cite{collini2024c2hlsc,lyu2026autoc2v}, and recover
-high-level models from RTL~\cite{tang2026rtlrex}. Their outputs are mostly judged by tests. A check
+\emph{Language models.} Language models generate Verilog~\cite{liu2023verilogeval} and
+translate C++ to HLS-ready code or Verilog~\cite{collini2024c2hlsc,lyu2026autoc2v}. Their outputs
+are mostly judged by tests. A check
 that reads generated code with the target's semantics can judge such outputs too, provided they
 stay inside the subset the reader models. We have not evaluated this.
 
@@ -592,8 +586,7 @@ treatment for the testbench direction.
 
 \code{svcc} (Rust, \nRustLines{} lines, with Python bindings), the design suite, the probes, the
 mutation and stress scripts, and all results are at \url{https://github.com/mayurkubavat/svcc}
-under the Apache 2.0 license. Every release is archived on Zenodo
-(\url{https://doi.org/10.5281/zenodo.24455889}). Each measurement in this paper is recorded with
+under the Apache 2.0 license. Every release is archived on Zenodo~\cite{kubavat2026svcczenodo}. Each measurement in this paper is recorded with
 its command, commit, machine and tool versions in the repository's experiment log
 (\code{results/experiment\_log.jsonl}).
 
