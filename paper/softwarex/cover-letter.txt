@@ -2,7 +2,7 @@ Dear Editor,
 
 Please consider the enclosed manuscript, "svcc: SystemVerilog-to-SystemC Conversion with a Formal Check of the Generated C++", for publication in SoftwareX as an Original Software Publication.
 
-svcc is an open-source Rust tool, with a Python package, that converts synthesizable SystemVerilog RTL into readable SystemC and then checks the generated model formally. The check reads the generated C++ with C++17 and SystemC evaluation rules and proves it equivalent to the SystemVerilog source with the Z3 solver. A second command simulates the generated SystemC against Verilator. Version 0.1.0 is released under the Apache 2.0 license on crates.io and PyPI, and the repository holds every script and result the manuscript refers to.
+svcc is an open-source Rust tool, with a Python package, that converts synthesizable SystemVerilog RTL into readable SystemC and then checks the generated model formally. The check reads the generated C++ with C++17 and SystemC evaluation rules and proves it equivalent to the SystemVerilog source with the Z3 solver. A second command simulates the generated SystemC against Verilator. Version 0.1.1 is archived on Zenodo (https://doi.org/10.5281/zenodo.24455890) under the Apache 2.0 license, the packages are on crates.io and PyPI, and the repository holds every script and result the manuscript refers to.
 
 Hardware design and verification teams keep SystemC models of their RTL for virtual platforms, reference models and simulation without a commercial license. These models are mostly written by hand, and a wrong model often compiles and passes review. I am not aware of another open-source SystemVerilog-to-SystemC converter that checks its output against the source.
 

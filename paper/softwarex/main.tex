@@ -1,4 +1,4 @@
-%% SoftwareX Original Software Publication: svcc 0.1.0
+%% SoftwareX Original Software Publication: svcc 0.1.1
 %% Structure follows the SoftwareX OSP layout (code metadata table C1-C9, sections 1-5).
 %% Check against the current SoftwareX template before submission: the guide for
 %% authors could not be read from the build machine (ScienceDirect refused the fetch).
@@ -45,8 +45,8 @@ result equivalent to the SystemVerilog source by induction over registers mapped
 design outside the proof model is reported as not covered, with its own exit code. A second
 command simulates the generated SystemC against Verilator on random stimulus, which covers
 designs and behavior the proof does not. \code{svcc} also carries an earlier, less tested path
-for UVM testbench components. Version 0.1.0 is released on crates.io and PyPI under the Apache
-2.0 license.
+for UVM testbench components. Version 0.1.1 is archived on Zenodo, and the packages are on
+crates.io and PyPI, under the Apache 2.0 license.
 \end{abstract}
 
 \begin{keyword}
@@ -64,8 +64,8 @@ SystemVerilog \sep SystemC \sep RTL \sep translation validation \sep equivalence
 \toprule
 Nr. & Code metadata description & Metadata \\
 \midrule
-C1 & Current code version & 0.1.0 \\
-C2 & Permanent link to code/repository used for this code version & \url{https://github.com/mayurkubavat/svcc} \\
+C1 & Current code version & 0.1.1 \\
+C2 & Permanent link to code/repository used for this code version & \url{https://doi.org/10.5281/zenodo.24455890} (repository: \url{https://github.com/mayurkubavat/svcc}) \\
 C3 & Permanent link to Reproducible Capsule & None \\
 C4 & Legal Code License & Apache License 2.0 \\
 C5 & Code versioning system used & git \\
@@ -162,7 +162,7 @@ on \code{svlang}, so a change in the front end touches one adapter crate.
 \draw[arr] (ir) -- (esv);
 \draw[arr] (eq) -- (z3);
 \end{tikzpicture}}
-\caption{Crates of \code{svcc} 0.1.0 and the external tools they call. Arrows point from a user to
+\caption{Crates of \code{svcc} 0.1.1 and the external tools they call. Arrows point from a user to
 what it uses. \code{rtl2sc} runs the SystemVerilog front end and the SystemC emitter;
 \code{rtl-prove} adds the C++ reader, the SystemVerilog printer and \code{svcc-equiv}.}
 \label{fig:arch}
@@ -201,7 +201,7 @@ design is outside the proof model, so they can be used in scripts and regression
 
 \begin{table}[t]
 \centering\small
-\caption{Main \code{svcc} commands in version 0.1.0.}
+\caption{Main \code{svcc} commands in version 0.1.1.}
 \label{tab:cli}
 \begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X@{}}
 \toprule
@@ -223,7 +223,7 @@ them as a library.
 
 A proof verdict is one of \emph{proved} (by induction, for every run from equal starting states),
 \emph{bounded}, \emph{mismatch} (with a concrete input sequence), \emph{inconclusive}, or \emph{not
-covered}. Users should know three things about these verdicts in 0.1.0:
+covered}. Users should know three things about these verdicts in 0.1.1:
 \begin{itemize}
 \item \emph{Bounded} means the inductive step failed and a run of 8 steps from reset found no
 difference. It exits with 0 and prints \code{[PASS]} with the word \code{bounded}. A script that
@@ -304,7 +304,8 @@ this way are fixed in \code{svlang}~0.5.1.
 benchmark golden models (a 16-bit product computed in \code{int}), an error that passes testing on
 a given compiler.
 
-\emph{Adoption.} Version 0.1.0 was published to crates.io and PyPI on 22 November 2026. It is too
+\emph{Adoption.} Version 0.1.0 was published to crates.io and PyPI on 22 November 2026, and
+version 0.1.1, which adds the clock-gating conversion, was archived on Zenodo on 23 November 2026. It is too
 early to report outside users.
 
 %% ---------------------------------------------------------------------------
