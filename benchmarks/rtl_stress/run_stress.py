@@ -7,6 +7,9 @@ Every module of every corpus design is tried as a top. Three stages, each record
                                      located error) | crash | timeout
   compile  g++ -fsyntax-only      -> ok | error      (generated C++ against real SystemC)
   cosim    svcc rtl-cosim         -> pass | mismatch | build   (SystemC vs Verilator)
+  prove    svcc rtl-prove         -> proved | bounded | fail | notcovered | error | timeout
+           (only for modules that pass cosim; --prove-from takes the cosim results of an
+           earlier run and proves only the modules that passed there)
 
 The corpus is the one the svlang front-end census uses: pinned open-source repositories
 fetched outside this repo, with the census tool's scan working out the files and include
@@ -15,7 +18,8 @@ only read by svcc, g++ (generated code only) and Verilator.
 
 Usage:
   run_stress.py --census-tool <svlang>/tools/quality --corpus <dir> [--only ibex ...]
-                [--stage convert|compile|cosim] [--jobs N] [--out results.jsonl]
+                [--stage convert|compile|cosim|prove] [--jobs N] [--out results.jsonl]
+  run_stress.py --census-tool ... --corpus ... --prove-from earlier.jsonl --out proofs.jsonl
   run_stress.py --report results.jsonl [--md out.md]
 """
 import argparse
@@ -66,12 +70,11 @@ def construct(msg):
 
 
 def measure(design, module, path, plan, opts):
-    files, incdirs = plan
-    dargs = [f"+incdir+{d}" for d in incdirs + [os.path.join(design.dir, x) for x in design.entry.get("incdirs", [])]]
-    dargs += [f"+define+{x}" for x in design.entry.get("defines", [])]
-    params = design.entry.get("params", {}).get(module, [])
-    dargs += [x for p in params for x in ("-G", p)]
+    files, dargs = design_args(design, module, plan)
     rec = {"design": design.name, "module": module, "file": design.rel(path), "files": len(files)}
+    if opts.passed is not None:
+        # Proof only, for a module that passed co-simulation in an earlier run.
+        return prove(rec, files, dargs, module, opts)
     work = os.path.join(opts.work, design.name, module)
     os.makedirs(work, exist_ok=True)
     hpp = os.path.join(work, "dut.hpp")
@@ -134,6 +137,8 @@ def measure(design, module, path, plan, opts):
         if m:
             rec["outputs"], rec["comparisons"] = int(m.group(1)), int(m.group(3))
         shutil.rmtree(work, ignore_errors=True)
+        if opts.stage == "prove":
+            prove(rec, files, dargs, module, opts)
     else:
         text = err + out
         if code is None:
@@ -148,13 +153,53 @@ def measure(design, module, path, plan, opts):
     return rec
 
 
+def prove(rec, files, dargs, module, opts):
+    """Puts one module to `svcc rtl-prove` and records the verdict of each side."""
+    code, out, err, secs = run(
+        [opts.svcc, "rtl-prove", *files, *dargs, "--top", module, "--json"],
+        opts.prove_timeout, mem_gb=opts.mem)
+    rec["prove_s"] = round(secs, 2)
+    rec["prove"] = {None: "timeout", 0: "proved", 1: "fail", 2: "bounded", 3: "notcovered"}.get(code, "error")
+    start = out.find("{")
+    try:
+        js = json.loads(out[start:out.rfind("}") + 1]) if start >= 0 else {}
+    except ValueError:
+        js = {}
+    if "lowering" in js:
+        rec["prove_lowering"] = js["lowering"]["verdict"]
+        cpp = js.get("generated_cpp")
+        if cpp:
+            rec["prove_cpp"] = cpp["verdict"]
+            rec["prove_paired"] = cpp.get("states_paired")
+            rec["prove_z3_us"] = cpp.get("solver_time_us")
+        else:
+            rec["prove_cpp"] = "unchecked"
+            rec["prove_reason"] = (js.get("cpp_unchecked") or "")[:240]
+    elif "NotCovered" in js:
+        rec["prove_reason"] = js["NotCovered"].get("reason", "")[:240]
+    if rec["prove"] in ("fail", "error", "timeout"):
+        rec["prove_messages"] = [l.strip()[:240] for l in (err + out).splitlines() if l.strip() and not l.startswith(("{", "}", " "))][:8]
+    return rec
+
+
+def design_args(design, module, plan):
+    files, incdirs = plan
+    dargs = [f"+incdir+{d}" for d in incdirs + [os.path.join(design.dir, x) for x in design.entry.get("incdirs", [])]]
+    dargs += [f"+define+{x}" for x in design.entry.get("defines", [])]
+    params = design.entry.get("params", {}).get(module, [])
+    dargs += [x for p in params for x in ("-G", p)]
+    return files, dargs
+
+
 def do_run(opts):
     sys.path.insert(0, opts.census_tool)
     import census  # noqa: E402  (the svlang front-end census tool)
     os.makedirs(opts.work, exist_ok=True)
     with open(opts.out, "w") as out:
         rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        out.write(json.dumps({"meta": {"svcc": rev, "stage": opts.stage, "steps": opts.steps, "timeout": opts.timeout}}) + "\n")
+        stage = "prove-from" if opts.passed is not None else opts.stage
+        out.write(json.dumps({"meta": {"svcc": rev, "stage": stage, "steps": opts.steps, "timeout": opts.timeout,
+                                       "prove_from": opts.prove_from}}) + "\n")
         for entry in census.load_corpus():
             if opts.only and entry["name"] not in opts.only:
                 continue
@@ -166,13 +211,18 @@ def do_run(opts):
             units = [(n, p, design.closure(p)) for n, p in design.units()]
             if opts.module:
                 units = [u for u in units if u[0] in opts.module]
+            if opts.passed is not None:
+                units = [u for u in units if (design.name, u[0]) in opts.passed]
             if opts.limit:
                 units = units[: opts.limit]
             tally = collections.Counter()
             with concurrent.futures.ThreadPoolExecutor(opts.jobs) as pool:
                 for rec in pool.map(lambda u: measure(design, u[0], u[1], u[2], opts), units):
                     rec["license"] = entry.get("license", "")
-                    key = rec.get("cosim") and "cosim:" + rec["cosim"] or rec.get("compile") and "compile:" + rec["compile"] or "convert:" + rec["convert"]
+                    key = (rec.get("prove") and "prove:" + rec["prove"]
+                           or rec.get("cosim") and "cosim:" + rec["cosim"]
+                           or rec.get("compile") and "compile:" + rec["compile"]
+                           or "convert:" + rec["convert"])
                     tally[key] += 1
                     out.write(json.dumps(rec, sort_keys=True) + "\n")
             out.flush()
@@ -194,6 +244,14 @@ def do_report(path, md_path):
     w(f"svcc `{meta.get('svcc', '?')}`, stage `{meta.get('stage')}`, {meta.get('steps')} cosim steps. "
       "Every module of each design is tried as a top with its default parameters.\n")
     designs = sorted({r["design"] for r in recs})
+    if meta.get("stage") == "prove-from":
+        prove_report(w, recs, designs, meta)
+        text = "\n".join(out) + "\n"
+        if md_path:
+            open(md_path, "w").write(text)
+        else:
+            sys.stdout.write(text)
+        return
     w("| Design | Modules | svlang rejects | svcc rejects (subset) | Crash / timeout | Converted | C++ compiles | Matches Verilator | Mismatch | Cosim not built |")
     w("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     tot = collections.Counter()
@@ -244,11 +302,59 @@ def do_report(path, md_path):
             for r in rs[:40]:
                 msg = next((m for m in r.get("messages", []) if "MISMATCH" in m or "rror" in m), (r.get("messages") or [""])[0])
                 w(f"- `{r['design']}/{r['module']}`: {msg[:200]}")
+    if any("prove" in r for r in recs):
+        prove_report(w, [r for r in recs if "prove" in r], designs, meta)
     text = "\n".join(out) + "\n"
     if md_path:
         open(md_path, "w").write(text)
     else:
         sys.stdout.write(text)
+
+
+def prove_report(w, recs, designs, meta):
+    """Proof results for modules that matched Verilator in co-simulation."""
+    w("\n## Proof of the generated C++ (`svcc rtl-prove`) on modules that match Verilator\n")
+    if meta.get("prove_from"):
+        w(f"Modules taken from the co-simulation results in `{os.path.basename(meta['prove_from'])}`.\n")
+    kinds = ["proved", "bounded", "fail", "notcovered", "error", "timeout"]
+    w("| Design | Modules | Proved (induction) | Bounded only | Fail | Not covered | Error | Timeout |")
+    w("| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for name, rs in [(d, [r for r in recs if r["design"] == d]) for d in designs] + [("**Total**", recs)]:
+        if not rs:
+            continue
+        c = collections.Counter(r["prove"] for r in rs)
+        w(f"| {name} | {len(rs)} | " + " | ".join(str(c[k]) for k in kinds) + " |")
+    proved = [r for r in recs if r["prove"] == "proved"]
+    if proved:
+        paired = sorted(r.get("prove_paired") or 0 for r in proved)
+        z3 = sorted((r.get("prove_z3_us") or 0) / 1000 for r in proved)
+        comb = sum(1 for p in paired if p == 0)
+        w(f"\nOf {len(proved)} proved modules, {comb} have no registers to pair; the largest has {paired[-1]} paired "
+          f"registers. Median Z3 time for the generated-C++ side {z3[len(z3) // 2]:.0f} ms, maximum {z3[-1]:.0f} ms.\n")
+    cnt, ex = collections.Counter(), {}
+    for r in recs:
+        if r["prove"] != "notcovered":
+            continue
+        reason = re.sub(r"^\[[^\]]*\] ", "", r.get("prove_reason", "") or "(no reason)")
+        reason = re.sub(r"\(([\w.$\[\]]+, )+[\w.$\[\]]+\)", "(...)", reason)
+        reason = re.sub(r"'[\w$]+'", "'X'", reason)[:160]
+        cnt[reason] += 1
+        ex.setdefault(reason, f"{r['design']}/{r['module']}")
+    if cnt:
+        w("\n### Not covered by the proof\n")
+        w("| Modules | Reason | Example |")
+        w("| ---: | :--- | :--- |")
+        for c, k in cnt.most_common(25):
+            w(f"| {k} | {c.replace('|', chr(92) + '|')} | {ex[c]} |")
+    for kind, title in (("fail", "Proof failed (difference or no answer)"), ("bounded", "Bounded only"),
+                        ("error", "Errors"), ("timeout", "Proof timeout")):
+        rs = [r for r in recs if r["prove"] == kind]
+        if rs:
+            w(f"\n### {title} ({len(rs)})\n")
+            for r in rs[:60]:
+                msg = (r.get("prove_messages") or [r.get("prove_reason", "")])[0]
+                w(f"- `{r['design']}/{r['module']}`: lowering {r.get('prove_lowering', '?')}, "
+                  f"generated C++ {r.get('prove_cpp', '?')}. {msg[:200]}")
 
 
 def main():
@@ -257,7 +363,9 @@ def main():
     ap.add_argument("--corpus")
     ap.add_argument("--only", nargs="*", default=[])
     ap.add_argument("--module", nargs="*", default=[], help="only these modules")
-    ap.add_argument("--stage", choices=["convert", "compile", "cosim"], default="cosim")
+    ap.add_argument("--stage", choices=["convert", "compile", "cosim", "prove"], default="cosim")
+    ap.add_argument("--prove-from", help="results of an earlier cosim run: prove only the modules that passed there")
+    ap.add_argument("--prove-timeout", type=int, default=600, help="seconds for one rtl-prove run")
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--steps", type=int, default=5000)
     ap.add_argument("--timeout", type=int, default=120)
@@ -275,6 +383,15 @@ def main():
     else:
         if not (opts.census_tool and opts.corpus):
             ap.error("--census-tool and --corpus are required to run")
+        opts.passed = None
+        if opts.prove_from:
+            opts.passed = set()
+            with open(opts.prove_from) as f:
+                for line in f:
+                    r = json.loads(line)
+                    if r.get("cosim") == "pass":
+                        opts.passed.add((r["design"], r["module"]))
+            print(f"proving {len(opts.passed)} modules that passed cosim in {opts.prove_from}", file=sys.stderr)
         do_run(opts)
 
 

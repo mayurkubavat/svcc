@@ -277,18 +277,28 @@ fn run_cli() -> Result<(), SvccError> {
                 }
                 return accept_bounded(&args[1..], report_rtl_items(&items));
             }
-            let rep = if single {
-                svcc::prove::prove_rtl(input, &src, &opts)?
+            let res = if single {
+                svcc::prove::prove_rtl(input, &src, &opts)
             } else {
-                svcc::prove::prove_rtl_args(&design_args, &opts)?
+                svcc::prove::prove_rtl_args(&design_args, &opts)
+            };
+            let item = match res {
+                Ok(rep) => svcc::prove::RtlFileItem::Proved(Box::new(rep)),
+                Err(e) if svcc::prove::is_model_limit(&e) => svcc::prove::RtlFileItem::NotCovered {
+                    top: opts.top.clone().unwrap_or_default(),
+                    reason: e.to_string(),
+                },
+                Err(e) => return Err(e),
             };
             if json {
-                println!("{}", serde_json::to_string_pretty(&rep).unwrap());
+                match &item {
+                    svcc::prove::RtlFileItem::Proved(rep) => {
+                        println!("{}", serde_json::to_string_pretty(rep).unwrap())
+                    }
+                    other => println!("{}", serde_json::to_string_pretty(other).unwrap()),
+                }
             }
-            accept_bounded(
-                &args[1..],
-                report_rtl_items(&[svcc::prove::RtlFileItem::Proved(Box::new(rep))]),
-            )
+            accept_bounded(&args[1..], report_rtl_items(&[item]))
         }
         "sv2btor2" => {
             let pos = positional_args(&args[1..]);

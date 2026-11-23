@@ -447,7 +447,9 @@ pub fn prove_rtl_args_all(
     Ok(out)
 }
 
-fn is_model_limit(e: &SvccError) -> bool {
+/// The netlist, the Btor2 model or the proof model does not take the design: a limit of the
+/// proof, not a difference.
+pub fn is_model_limit(e: &SvccError) -> bool {
     matches!(
         e.stage,
         "svcc-equiv/btor2" | "svcc-equiv/netlist" | "svcc/prove-model"
