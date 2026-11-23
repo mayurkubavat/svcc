@@ -438,10 +438,12 @@ modules are leaf cells or blocks, not whole cores.
 Converting clock-gating cells to enables (Section~\ref{sec:convert}) moved the result from
 \nMatchBeforeCG{} to \nMatch{} matching modules and cut clock-related rejections from
 \nClockRejBefore{} to \nClockRejAfter{}, with no module going from match to mismatch. Of the
-\nMismatch{} remaining differences, one is a Verilator behavior on an out-of-range write in a
-module with a placeholder parameter, two are fixed by an unreleased \code{svlang} change
-(commit \code{af574c9}), and two, in CVFPU's fused multiply-add, have not been root-caused. They may
-be a further \code{svcc} defect.
+\nMismatch{} remaining differences, none is an \code{svcc} defect. One is a Verilator defect: in
+a module with a placeholder parameter, an out-of-range write lands on an in-range bit. Two are
+fixed by an unreleased \code{svlang} change (commit \code{af574c9}). The last two, in CVFPU's
+fused multiply-add, come from random format codes that name no format. The module then reads its
+per-format arrays out of range, so the result is x under clause~11.5.1 of IEEE~1800-2023. With
+the format inputs limited to valid codes, the two models agree for 200,000 steps.
 
 These modules have simulation evidence only. \code{rtl-prove} currently takes a single file and
 the corpus is multi-file. Running the proof on the \nMatch{} matching modules is the most important
@@ -468,9 +470,14 @@ a fill literal \code{'1} as a sized parameter default evaluated to 1; and a sele
 with its own range was bound against the wrong range. They change the netlist that every user of
 that front end sees.
 
-Verilator: a module that instantiates itself is built without its children when it is the top
-level (5.052 and 5.055). Here the reference was wrong and \code{svcc} was right; \code{rtl-cosim}
-now wraps such a top. This has not yet been reported upstream.
+Verilator: (1)~a module that instantiates itself is built without its children when it is
+selected with \code{-{}-top-module}, and its output stays 0. Here the reference was wrong and
+\code{svcc} was right; \code{rtl-cosim} now wraps such a top. (2)~An out-of-range write through a
+variable select changes an in-range bit when the vector has a negative bound, as in
+\code{[-1:0]}, or when the index selects past a packed two-dimensional array whose size is not a
+power of two. Clause~11.5.1 says such a write has no effect. Both are present in 5.020 and in the
+development version (5.055, commit \code{a53cbcd}), and Icarus Verilog~12 gives the expected
+result. They are reported as Verilator issues 9328 and 9329~\cite{verilator9328,verilator9329}.
 
 \subsection{RQ4: Comparison with a recent translator}
 \label{sec:scav}
