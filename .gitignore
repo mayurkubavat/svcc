@@ -10,6 +10,12 @@ __pycache__/
 /paper/*.blg
 /paper/*.log
 /paper/*.out
+/paper/*/*.aux
+/paper/*/*.blg
+/paper/*/*.log
+/paper/*/*.out
+/paper/*/*.spl
+/paper/*/*.bbl
 
 # Related-work PDFs (downloaded by scripts/refs.py fetch; never committed)
 /references/pdfs/

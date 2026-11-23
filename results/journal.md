@@ -265,3 +265,15 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `verilator`: `5.052`
 - **Notes**: Remaining clock-check rejections are clock muxes, dividers whose output depends on an input clock, clocks from inputs through logic, VeeR BHT bank clocks (bits of a packed vector), and a testbench. Remaining mismatches: stream_mux (Verilator wraps out-of-range writes), fpnew_cast_multi x2 (fixed by unreleased svlang af574c9), fpnew_fma_multi x2 (differs in the special-result path even with af574c9; not root-caused).
 
+## [2026-11-23T05:16:59+00:00] `M6.1-rtl-prove-main` — rtl-prove over the repository designs at main
+- **Commit**: `00c80f0` (`Linux-x86_64`, `rustc 1.97.0 (2d8144b78 2026-07-07)`)
+- **Command**: `cargo build --release -p svcc && ./scripts/rtl_prove.sh (release binary, z3 from pip)`
+- **Measured Metrics**:
+  - `bounded_only`: `0`
+  - `designs`: `50`
+  - `failed`: `0`
+  - `not_covered`: `5`
+  - `not_covered_designs`: `array_elems array_ports clock_gating clock_vector edges_misc`
+  - `proved_inductive`: `45`
+- **Notes**: Run in a Linux x86_64 cloud container for the paper drafts (paper/rtl-tv, paper/softwarex). No SystemC or Verilator there, so no co-simulation in this run.
+

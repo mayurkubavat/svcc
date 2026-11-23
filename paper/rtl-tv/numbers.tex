@@ -1,0 +1,54 @@
+% Every number quoted in the paper, with where it was measured.
+% \fresh{...} marks a number that must be regenerated from a committed result before
+% submission; it prints in red in draft mode (\drafttrue in main.tex).
+
+% --- Repository designs under the proof (scripts/rtl_prove.sh) -------------------------
+% Measured 2026-11-23 at main 00c80f0, Linux x86_64, Z3 from pip (journal entry
+% M6.1-rtl-prove-main). 24 testdata/rtl + 18 probes + 8 corpus designs 13..20.
+\newcommand{\nDesigns}{50}
+\newcommand{\nProved}{45}
+\newcommand{\nNotCovered}{5}
+\newcommand{\nFailed}{0}
+
+% --- Mutation check (benchmarks/formal_gate/mutate.py) ---------------------------------
+% Run of 2026-11-22 on 42 designs, macOS arm64, SystemC 3.0.3, Verilator 5.052.
+% benchmarks/results/formal_gate_mutation_*.json, docs/formal_gates.md.
+\newcommand{\nMutDesigns}{42}
+\newcommand{\nMutCompiled}{281}
+\newcommand{\nMutSimDiffers}{17}
+\newcommand{\nMutProofFinds}{14}
+\newcommand{\nMutReaderRejects}{3}
+\newcommand{\nMutAccepted}{0}
+\newcommand{\nMutSimEqual}{264}
+\newcommand{\nMutEqualAccepted}{255}
+\newcommand{\nMutEqualRefused}{9}
+\newcommand{\nMutNoCompile}{70}
+\newcommand{\nMutNoCompileRead}{56}
+
+% --- C2RTL golden models (prove-sec) -----------------------------------------------------
+\newcommand{\nGolden}{8}
+
+% --- Stress run on open-source designs (benchmarks/rtl_stress) ---------------------------
+% Latest run: journal entry M5.2-clock-gating, 2026-11-23, Linux x86_64, svlang 0.5.1,
+% Verilator 5.052, 3,000 steps. The per-design table in benchmarks/results/rtl_stress.md is
+% from the earlier run (svlang git 478a0d1) and must be regenerated from the latest run.
+\newcommand{\nCodeBases}{16}
+\newcommand{\nModules}{2,184}
+\newcommand{\nMatch}{1,185}
+\newcommand{\nMatchBeforeCG}{1,127}
+\newcommand{\nClockRejBefore}{65}
+\newcommand{\nClockRejAfter}{13}
+\newcommand{\nMismatch}{\fresh{5}}
+\newcommand{\nSvlangRej}{\fresh{217}}
+\newcommand{\nSvccRej}{\fresh{763}}
+\newcommand{\nCrash}{\fresh{13}}
+\newcommand{\nPlaceholder}{557}
+\newcommand{\nSteps}{3,000}
+
+% --- Comparison with SCAV (benchmarks/scav_compare) --------------------------------------
+\newcommand{\nProbes}{18}
+\newcommand{\nCorpusRtl}{8}
+
+% --- Size -----------------------------------------------------------------------------
+% find crates bindings -name '*.rs' | xargs cat | wc -l at 00c80f0
+\newcommand{\nRustLines}{25,700}
