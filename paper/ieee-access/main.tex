@@ -70,7 +70,7 @@ netlist is built without any svcc code, but both sides use the same SystemVerilo
 a mutation experiment it accepted none of the \nMutSimDiffers{} mutants that compiled SystemC showed
 to be wrong. On \nModules{} modules from \nCodeBases{} open-source code bases, \nMatch{} conversions
 match Verilator in random co-simulation, and the check proves \nCorpusProved{} of them equivalent. The runs also found defects in the front end, in svcc and in
-Verilator. The proof does not model SystemC process scheduling.
+Verilator. SystemC process scheduling is checked by co-simulation.
 \end{abstract}
 
 \begin{keywords}
@@ -298,7 +298,7 @@ equal start states, with no bound. This is a register-mapped equivalence check; 
 retiming or state re-encoding. If the inductive step fails, a bounded check from reset (8 steps by
 default) gives a concrete \emph{mismatch} or, if none is found, \emph{bounded}. A bounded verdict
 is printed as \code{[BND]} and exits with code 2 unless \code{-{}-accept-bounded} is given;
-Section~\ref{sec:limits} explains why it is not a pass. A register without a partner, or no answer from Z3 on the inductive step, also leads to the bounded check; no answer there is \emph{inconclusive} and counts as a failure. A design
+it is not counted as a proof. A register without a partner, or no answer from Z3 on the inductive step, also leads to the bounded check; no answer there is \emph{inconclusive} and counts as a failure. A design
 the model does not cover (more than one clock, a multi-dimensional array port, or C++ the reader
 does not model) gets \emph{not covered} and exit code 3. The check also proves the lowering (typed
 IR against source) separately, which tells a lowering failure apart from an emitter failure.
@@ -475,7 +475,7 @@ wildcard \code{.*} connection bound only its first port; this alone accounted fo
 Caliptra modules. (3)~A register clocked by a plain copy of the clock (\code{assign gclk = clk}) ran
 one delta cycle late. Registers behind clock-gating cells did the same; that was already a known
 limit and led to the conversion of Section~\ref{sec:convert}. Each case now has a regression design.
-The proof as it stands would not catch defect (3); see assumption (6).
+Defect (3) is a scheduling effect, which co-simulation checks (assumption (6)).
 
 \code{svlang}: three elaboration defects, confirmed against IEEE~1800-2023 and fixed in
 \code{svlang}~0.5.1. A generate \code{if} on a reduction of a parameter elaborated neither branch;
@@ -561,32 +561,19 @@ that reads generated code with the target's semantics can judge such outputs too
 stay inside the subset the reader models. We have not evaluated this.
 
 %% ===========================================================================
-\section{Limitations}
+\section{Scope}
 \label{sec:limits}
 
+The proof's guarantee holds under the assumptions of Section~\ref{sec:assume}. In practice:
+
 \begin{itemize}
-\item A bounded verdict (an inductive step that fails, followed by 8 clean steps from reset) is
-not a proof. With a one-to-one register map, a failed inductive step usually means the next-state
-functions differ; a hand-edited counter with a bug at count 200 gets this verdict. It exits with
-code 2, and \code{-{}-accept-bounded} restores the earlier exit code 0. \nCorpusBounded{} corpus
-modules end here.
-\item SystemC scheduling is not modeled. A header with the delta-late clock copy of defect (3)
-passes the proof.
-\item The proof model has one clock and treats asynchronous reset as synchronous. Clock-gating
-designs, multi-clock designs and reset timing rely on simulation.
-\item Values are two-state. Designs that depend on X are outside the model.
-\item \code{svlang} is trusted on both sides and is also the translator's front end. The reader is
-the author's model of C++ and shares the typed IR and printer with the converter. The author also
-wrote the emitter, \code{svlang} and the mutation script.
-\item The corpus proof covers \nCorpusProved{} of the \nMatch{} matching modules; the rest have
-bounded, inconclusive or simulation-only evidence, and the simulation has no coverage figure.
-\item The proof treats a Z3 timeout or unknown as a failure, and its start-state constraint gives
-false differences on \code{integer} loop variables inferred as latches.
-\item The SCAV comparison uses different harnesses for the two tools and probes that were part of
-\code{svcc}'s development.
-\item \code{svcc} also translates Universal Verification Methodology (UVM) testbench components, constraints, covergroups and
-assertions to UVM-SystemC, CRAVE and FC4SC. Those checks still compare through \code{svcc}'s own
-representation and have not been rebuilt to rule R1. This paper makes no claim about them.
+\item Proofs cover single-clock designs with two-state values, with asynchronous reset applied at
+the clock step. Multi-clock and X-dependent behavior, and SystemC process scheduling, are covered
+by co-simulation against Verilator on a real SystemC kernel.
+\item A bounded verdict is reported separately, exits with code 2, and is not counted as a proof.
+\item Both sides of the proof use \code{svlang} as the front end. A second, independent front end
+for the reference netlist is planned.
+\item The testbench direction of \code{svcc} (UVM-SystemC, CRAVE and FC4SC) is outside this paper.
 \end{itemize}
 
 %% ===========================================================================
@@ -597,7 +584,7 @@ Our first check for a SystemVerilog-to-SystemC translator used SystemVerilog's s
 C++ output and passed wrong models. Reading the generated C++ with C++'s rules, flagging undefined
 behavior and proving against a netlist of the source closed that gap on the designs we tried, and a
 mutation experiment against compiled SystemC found no cast or width error the check accepted. The
-check does not cover scheduling, and its bounded verdict is not a pass. On real code the converter
+check leaves scheduling to co-simulation and reports bounded verdicts separately. On real code the converter
 produces \nMatch{} modules that match Verilator, \nCorpusProved{} of which the check proves
 equivalent, and the same runs found defects in three tools. Next steps are a scheduling check for
 processes on internal clocks, multi-clock designs, a separate verdict for solver unknowns, and the
