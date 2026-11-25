@@ -115,6 +115,15 @@ If you use svcc in published work, please cite the software archive
 (DOI [10.5281/zenodo.24455889](https://doi.org/10.5281/zenodo.24455889), all versions) and
 the paper in `paper/softwarex/`. `CITATION.cff` has the details.
 
+The check method (reading the generated C++ and proving it against the source by
+induction) is described in the preprint:
+
+M. Kubavat, "Translation Validation of SystemVerilog-to-SystemC RTL Conversion by
+Reading the Generated C++," arXiv:2611.31674, 2026.
+[arXiv:2611.31674](https://arxiv.org/abs/2611.31674),
+DOI [10.48550/arXiv.2611.31674](https://doi.org/10.48550/arXiv.2611.31674).
+Source in `paper/rtl-tv/`.
+
 ## Support
 
 Questions and bug reports: open a GitHub issue, or write to mkubavat01@gmail.com.

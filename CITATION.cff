@@ -21,3 +21,18 @@ keywords:
   - translation validation
   - equivalence checking
   - hardware verification
+references:
+  - type: article
+    title: "Translation Validation of SystemVerilog-to-SystemC RTL Conversion by Reading the Generated C++"
+    authors:
+      - family-names: Kubavat
+        given-names: Mayur
+        orcid: "https://orcid.org/0009-0009-1087-8558"
+    year: 2026
+    journal: "arXiv preprint"
+    url: "https://arxiv.org/abs/2611.31674"
+    identifiers:
+      - type: doi
+        value: 10.48550/arXiv.2611.31674
+      - type: other
+        value: "arXiv:2611.31674"
