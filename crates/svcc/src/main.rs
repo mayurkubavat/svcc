@@ -91,30 +91,37 @@ fn run_cli() -> Result<(), SvccError> {
             )
         }
         "rtl2sc" => {
-            let (design_args, own) = split_design_args(&args[1..], &["-o", "--top"]);
+            let (design_args, own) = split_design_args(&args[1..], &["-o", "--top", "--upf"]);
             let input = design_args.first().ok_or_else(|| {
                 SvccError::new(
                     "cli",
-                    "usage: svcc rtl2sc <in.sv> [more.sv ...] [-f <list>] [+incdir+<dir>] [+define+<d>] [-G <p>=<v>] [--top <module>] [-o <out.hpp>]",
+                    "usage: svcc rtl2sc <in.sv> [more.sv ...] [-f <list>] [+incdir+<dir>] [+define+<d>] [-G <p>=<v>] [--top <module>] [--upf <intent.upf>] [-o <out.hpp>]",
                 )
             })?;
             let top = parse_opt_flag(&own, "--top");
-            let (code, design) = if design_args.len() == 1 {
+            let code = if let Some(upf_p) = parse_opt_flag(&own, "--upf") {
                 let src = fs::read_to_string(input)
                     .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
-                let tops: Vec<String> = top.into_iter().collect();
-                svcc::sv_rtl_to_sc(input, &src, &tops)?
+                svcc::upf::emit_upf_sc_file(input, &src, Path::new(&upf_p), top)?
             } else {
-                let mut a = design_args.clone();
-                if let Some(t) = top {
-                    a.push("-top".into());
-                    a.push(t);
+                let (code, design) = if design_args.len() == 1 {
+                    let src = fs::read_to_string(input)
+                        .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+                    let tops: Vec<String> = top.into_iter().collect();
+                    svcc::sv_rtl_to_sc(input, &src, &tops)?
+                } else {
+                    let mut a = design_args.clone();
+                    if let Some(t) = top {
+                        a.push("-top".into());
+                        a.push(t);
+                    }
+                    svcc::sv_rtl_args_to_sc(&a)?
+                };
+                for n in &design.notes {
+                    eprintln!("note: {n}");
                 }
-                svcc::sv_rtl_args_to_sc(&a)?
+                code
             };
-            for n in &design.notes {
-                eprintln!("note: {n}");
-            }
             match parse_opt_flag(&own, "-o") {
                 Some(p) => fs::write(&p, code)
                     .map_err(|e| SvccError::new("io", format!("cannot write {p}: {e}")))?,
@@ -168,10 +175,161 @@ fn run_cli() -> Result<(), SvccError> {
         }
         "sc2sv" | "c2rtl" => {
             let input = args.get(1).ok_or_else(|| {
-                SvccError::new("cli", "usage: svcc sc2sv|c2rtl <in.hpp> [-o <out.sv>]")
+                SvccError::new(
+                    "cli",
+                    "usage: svcc sc2sv|c2rtl <in.hpp> [--upf <intent.upf>] [--top <module>] [--no-sva] [-o <out.sv>]",
+                )
             })?;
             let out_path = parse_opt_flag(&args[2..], "-o");
-            cmd_transpile(&reg, "sc-uvm", "sv-uvm", input, out_path.as_deref())
+            if let Some(upf_p) = parse_opt_flag(&args[2..], "--upf") {
+                let top = parse_opt_flag(&args[2..], "--top");
+                let emit_sva = !args[2..].iter().any(|a| a == "--no-sva");
+                let src = fs::read_to_string(input)
+                    .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+                let emitted =
+                    svcc::upf::emit_upf_sv_file(input, &src, Path::new(&upf_p), top, emit_sva)?;
+                if let Some(p) = out_path {
+                    fs::write(&p, emitted)
+                        .map_err(|e| SvccError::new("io", format!("cannot write {p}: {e}")))?;
+                } else {
+                    print!("{emitted}");
+                }
+                Ok(())
+            } else {
+                cmd_transpile(&reg, "sc-uvm", "sv-uvm", input, out_path.as_deref())
+            }
+        }
+        "prove-upf" => {
+            let json = args[1..].iter().any(|a| a == "--json");
+            let req_proto = args[1..].iter().any(|a| a == "--require-protocol");
+            let filtered: Vec<String> = args[1..]
+                .iter()
+                .filter(|a| *a != "--json" && *a != "--require-protocol")
+                .cloned()
+                .collect();
+            let pos = positional_args(&filtered);
+            let input = pos.first().ok_or_else(|| {
+                SvccError::new(
+                    "cli",
+                    "usage: svcc prove-upf <in.{sv,hpp,h}> --upf <intent.upf> [--top <module>] [--bound K] [--hold name=val] [--require-protocol] [--json]",
+                )
+            })?;
+            let upf_path = parse_opt_flag(&filtered, "--upf")
+                .ok_or_else(|| SvccError::new("cli", "prove-upf requires --upf <intent.upf>"))?;
+            let mut opts = svcc::upf::UpfProveOptions {
+                top: parse_opt_flag(&filtered, "--top"),
+                bound: parse_opt_flag(&filtered, "--bound")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(6),
+                require_protocol_bmc: req_proto,
+                ..Default::default()
+            };
+            let mut it = filtered.iter();
+            while let Some(a) = it.next() {
+                if a == "--hold" {
+                    let kv = it
+                        .next()
+                        .and_then(|kv| kv.split_once('='))
+                        .and_then(|(k, v)| v.parse::<u64>().ok().map(|v| (k.to_string(), v)));
+                    match kv {
+                        Some(kv) => opts.hold.push(kv),
+                        None => return Err(SvccError::new("cli", "--hold takes name=value")),
+                    }
+                }
+            }
+            let src = fs::read_to_string(input)
+                .map_err(|e| SvccError::new("io", format!("cannot read {input}: {e}")))?;
+            let rep = svcc::upf::prove_upf_file(input, &src, Path::new(&upf_path), &opts)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&rep).unwrap());
+            } else {
+                println!(
+                    "[{}] upf-static '{}': {} finding(s)",
+                    if rep.has_static_errors() {
+                        "FAIL"
+                    } else {
+                        "PASS"
+                    },
+                    rep.top,
+                    rep.static_findings.len()
+                );
+                for f in &rep.static_findings {
+                    println!("         [{:?}] {}: {}", f.severity, f.code, f.message);
+                }
+                if let Some(ub) = &rep.cpp_ub_bmc {
+                    println!(
+                        "[{}] cpp-ub     '{}': {:?} ({} steps, z3 {} us)",
+                        if ub.verdict == svcc_equiv::upf_miter::UpfCheckVerdict::ProvedUnsat {
+                            "PASS"
+                        } else {
+                            "FAIL"
+                        },
+                        rep.top,
+                        ub.verdict,
+                        ub.bound_steps,
+                        ub.solver_time_us
+                    );
+                }
+                for iso in &rep.isolation_non_interference {
+                    println!(
+                        "[{}] iso-2copy  '{}': {:?} ({} outputs checked, z3 {} us)",
+                        if iso.verdict == svcc_equiv::upf_miter::UpfCheckVerdict::ProvedUnsat {
+                            "PASS"
+                        } else {
+                            "FAIL"
+                        },
+                        iso.domain,
+                        iso.verdict,
+                        iso.outputs_checked,
+                        iso.solver_time_us
+                    );
+                    for w in &iso.witness {
+                        println!("         {w}");
+                    }
+                }
+                for ret in &rep.retention_roundtrips {
+                    println!(
+                        "[{}] retention  '{}.{}' ({}): {:?} (z3 {} us)",
+                        if ret.verdict == svcc_equiv::upf_miter::UpfCheckVerdict::ProvedUnsat {
+                            "PASS"
+                        } else {
+                            "FAIL"
+                        },
+                        ret.instance,
+                        ret.reg_name,
+                        ret.strategy,
+                        ret.verdict,
+                        ret.solver_time_us
+                    );
+                    for w in &ret.witness {
+                        println!("         {w}");
+                    }
+                }
+                println!(
+                    "[{}] proto-bmc  '{}': {:?} ({} steps, z3 {} us)",
+                    if rep.protocol_bmc.verdict
+                        == svcc_equiv::upf_miter::UpfCheckVerdict::ProvedUnsat
+                    {
+                        "PASS"
+                    } else if opts.require_protocol_bmc {
+                        "FAIL"
+                    } else {
+                        "INFO"
+                    },
+                    rep.top,
+                    rep.protocol_bmc.verdict,
+                    rep.protocol_bmc.bound_steps,
+                    rep.protocol_bmc.solver_time_us
+                );
+            }
+            if rep.all_passed(opts.require_protocol_bmc) {
+                Ok(())
+            } else {
+                Err(SvccError::new(
+                    "prove-upf",
+                    format!("UPF formal verification failed for '{}'", rep.top),
+                ))
+            }
         }
         "transpile" => {
             let from = parse_opt_flag(&args[1..], "--from").unwrap_or_else(|| "sv-uvm".into());
@@ -363,11 +521,12 @@ fn print_usage() {
          \x20 svcc sv2sc <in.sv> [-o <out.hpp>]                     Transpile SV (RTL/UVM) -> C++17 SystemC\n\
          \x20 svcc rtl2sc <in.sv> [--top M] [-o <out.hpp>]            Convert synthesizable SV RTL -> SystemC (typed, elaborated)\n\
          \x20 svcc rtl-cosim <in.sv> [--top M] [--steps N]            Simulate generated SystemC against Verilator\n\
-         \x20 svcc sc2sv <in.hpp> [-o <out.sv>]                     Transpile C++17 SystemC -> IEEE 1800-2023 SV\n\
+         \x20 svcc sc2sv <in.hpp> [--upf <u.upf>] [-o <out.sv>]      Transpile C++17 SystemC -> IEEE 1800-2023 SV (+ UPF SVA)\n\
          \x20 svcc c2rtl <golden.hpp> [-o <spec.sv>]                Compile untimed C++17 golden model -> SSA SV RTL\n\
          \x20 svcc roundtrip-check <in.sv> [--shims <dir>]          SV -> C++17 (clang++) -> SV (svlang) + Z3 CRV/SVA/SEC\n\
          \x20 svcc prove-equiv <lhs> <rhs>                          Prove Z3 QF_BV CRV/Enum/Dist & UCIS equivalence\n\
          \x20 svcc prove-sec <spec.sv|hpp> <imp.sv> [--latency L]   Prove Btor2 + Z3 Sequential Equivalence (SEC/C2RTL)\n\
+         \x20 svcc prove-upf <in.sv|hpp> --upf <u.upf>              Prove IEEE 1801 UPF 2-copy isolation & symbolic retention\n\
          \x20 svcc rtl-prove <in.sv> [more.sv ...] [--top M]        Prove generated (or given, --header) SystemC equal to its RTL source (z3)\n\
          \x20 svcc bench <in.sv> [--iters 50]                       Emit JSON latency & formal equivalence telemetry",
         env!("CARGO_PKG_VERSION")

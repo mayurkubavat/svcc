@@ -342,3 +342,21 @@ Chronological log of verified compiler builds, Z3 equivalence proofs, and latenc
   - `verilator_deviation`: `stream_mux out-of-range bit-select write not ignored (IEEE 1800 11.5.1)`
   - `with_af574c9`: `fpnew_cast_multi 2/2 match; fpnew_fma_multi still differs only on x-valued outputs`
 - **Notes**: Root-causes the open fpnew_fma_multi item of M5.2. Harness follow-up: drive enum-typed ports with enumerated values only, or count a difference on an output Icarus reports as x as unspecified, not a mismatch. Exact IEEE wording for the out-of-range bit-select write should be checked against the published 1800-2023 text; Icarus ignores the write.
+## [2026-11-25T07:19:47+00:00] `M7-upf-formal-lowering` — IEEE 1801 UPF sidecar lowering (svcc --upf), 2-copy Z3 isolation miter, symbolic retention round-trip & InFormal SVA verification
+- **Commit**: `56a0547` (`Darwin-arm64`, `rustc 1.100.0 (0ef1bc386 2026-11-09) (Homebrew)`)
+- **Command**: `./scripts/check.sh && cargo run --quiet -p svcc -- prove-upf testdata/upf/apb_pmu_timer_subsys.h --upf testdata/upf/apb_subsys.upf`
+- **Measured Metrics**:
+  - `cpp_ub_6step_z3_us`: `63149`
+  - `informal_fw_assume_newly_proven`: `4`
+  - `informal_upf_covers_hit`: `5`
+  - `informal_upf_sva_proven`: `6`
+  - `iso_2copy_outputs_checked`: `4`
+  - `iso_2copy_z3_us`: `13427`
+  - `ret_cfg_q_z3_us`: `9951`
+  - `ret_load_q_z3_us`: `10588`
+  - `rtl_cosim_passed`: `24`
+  - `rtl_prove_inductive`: `45`
+  - `upf_formal_tests_failed`: `0`
+  - `upf_formal_tests_passed`: `5`
+- **Notes**: Zero-svlang IEEE 1801 UPF parser/IR in svcc-ir::upf, Strict Flow A SC_MODULE extensions in svcc-front-sc, structural UPF lowering in svcc-passes::upf_lower, Btor2 2-copy non-interference & universal retention miters in svcc-equiv::upf_miter, and InFormal load_upf/check_lp/prove/proposal_validate sign-off.
+

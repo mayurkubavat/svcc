@@ -1,0 +1,56 @@
+# IEEE Std 1801 UPF Power Intent for apb_pmu_timer_subsys (Strict Flow A)
+upf_version 3.1
+set_design_top dut
+
+create_supply_port VDD_AON -direction in
+create_supply_port VSS     -direction in
+
+add_port_state VDD_AON -state {ON_0V9 0.90} -state {LV_0V75 0.75}
+add_port_state VSS     -state {GND 0.0}
+
+create_supply_net VDD_AON
+create_supply_net VDD_TIM
+create_supply_net VSS
+
+connect_supply_net VDD_AON -ports {VDD_AON}
+connect_supply_net VSS     -ports {VSS}
+
+create_supply_set SS_AON -function {power VDD_AON} -function {ground VSS}
+create_supply_set SS_TIM -function {power VDD_TIM} -function {ground VSS}
+
+create_power_domain PD_AON -include_scope -supply {primary SS_AON}
+create_power_domain PD_TIM -elements {u_timer} -supply {primary SS_TIM}
+
+create_power_switch SW_TIM \
+    -domain PD_TIM \
+    -input_supply_port  {vin  VDD_AON} \
+    -output_supply_port {vout VDD_TIM} \
+    -control_port       {en   u_pmu/tim_pwr_en_q} \
+    -ack_port           {ack  tim_pwr_ack} \
+    -on_state           {ON   vin {en}} \
+    -off_state          {OFF  {!en}}
+
+add_port_state SW_TIM/vout -state {ON_0V9 0.90} -state {LV_0V75 0.75} -state {OFF off}
+
+create_pst SUBSYS_PST -supplies {VDD_AON SW_TIM/vout}
+add_pst_state ALL_ON_NOM      -pst SUBSYS_PST -state {ON_0V9  ON_0V9}
+add_pst_state DVFS_LOW_VOLT   -pst SUBSYS_PST -state {LV_0V75 LV_0V75}
+add_pst_state TIM_POWER_GATED -pst SUBSYS_PST -state {ON_0V9  OFF}
+
+set_isolation ISO_TIM -domain PD_TIM \
+    -isolation_supply_set SS_AON \
+    -clamp_value 0 \
+    -elements {tim_irq tim_rdata}
+set_isolation_control ISO_TIM -domain PD_TIM \
+    -isolation_signal u_pmu/tim_iso_en_q \
+    -isolation_sense high
+
+set_retention RET_TIM -domain PD_TIM \
+    -retention_supply_set SS_AON \
+    -elements {u_timer/cfg_q u_timer/load_q}
+set_retention_control RET_TIM -domain PD_TIM \
+    -save_signal    {u_pmu/tim_ret_save_q posedge} \
+    -restore_signal {u_pmu/tim_ret_restore_q posedge}
+
+set_level_shifter LS_TIM -domain PD_TIM \
+    -rule both -threshold 0.20

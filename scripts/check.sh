@@ -25,6 +25,7 @@ cargo run --quiet -p svcc -- roundtrip-check testdata/sv/uart_ral_sva.sv --shims
 cargo run --quiet -p svcc -- roundtrip-check testdata/sv/alu_pipe_rtl.sv --shims testdata/cpp_shims
 cargo run --quiet -p svcc -- prove-sec testdata/sc/alu_golden_c2rtl.hpp testdata/sv/alu_pipe_rtl.sv --latency 2 >/dev/null
 cargo run --quiet -p svcc -- prove-equiv testdata/sv/apb_timer_item.sv testdata/sc/apb_timer_item.hpp >/dev/null
+cargo run --quiet -p svcc -- prove-upf testdata/upf/apb_pmu_timer_subsys.h --upf testdata/upf/apb_subsys.upf >/dev/null
 
 echo "==> [5/8] Zero-svlang decoupling check for InFormal embedding (--no-default-features)"
 cargo clippy --no-default-features -p svcc-ir -p svcc-front-sc -p svcc-passes -p svcc-emit-sv -p svcc-equiv -- -D warnings

@@ -1313,12 +1313,13 @@ impl<'a> Body<'a> {
         }
         let v = self.expr(obj)?;
         match (name, args) {
-            ("to_uint64" | "to_int64", []) => {
-                let s = name == "to_int64";
+            ("to_uint64" | "to_int64" | "to_uint" | "to_int", []) => {
+                let s = matches!(name, "to_int64" | "to_int");
+                let w = if name.ends_with("64") { 64 } else { 32 };
                 match v.ct {
-                    CT::Sc { .. } | CT::Big { .. } | CT::BigVal { .. } | CT::BigSub { .. } => Ok(
-                        Self::val(conv(v.e, Ty::new(64, s)), CT::Int { w: 64, s }, v.ub),
-                    ),
+                    CT::Sc { .. } | CT::Big { .. } | CT::BigVal { .. } | CT::BigSub { .. } => {
+                        Ok(Self::val(conv(v.e, Ty::new(w, s)), CT::Int { w, s }, v.ub))
+                    }
                     _ => err(format!(".{name}() on a built-in value")),
                 }
             }

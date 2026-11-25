@@ -1,5 +1,7 @@
 //! Middle-end normalization and SV <-> C++17 capability legalization passes for `svcc-ir`.
 
+pub mod upf_lower;
+
 use std::collections::HashMap;
 use std::time::Instant;
 use svcc_ir::{

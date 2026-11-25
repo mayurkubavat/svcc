@@ -12,4 +12,5 @@ readme = "README.md"
 description = "Middle-end normalization and target-capability legalization passes for svcc-ir"
 
 [dependencies]
+serde.workspace = true
 svcc-ir.workspace = true

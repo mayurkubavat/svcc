@@ -67,6 +67,23 @@ fn prove_sec_json(
     serde_json::to_string(&rep).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+#[pyfunction]
+#[pyo3(signature = (input_filename, source, upf_source, bound=6))]
+fn prove_upf_json(
+    input_filename: &str,
+    source: &str,
+    upf_source: &str,
+    bound: u32,
+) -> PyResult<String> {
+    let opts = ::svcc::upf::UpfProveOptions {
+        bound,
+        ..Default::default()
+    };
+    let rep = ::svcc::upf::prove_upf_str(input_filename, source, upf_source, None, &opts)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    serde_json::to_string(&rep).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 #[pymodule]
 fn svcc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -76,5 +93,6 @@ fn svcc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sc_to_sv, m)?)?;
     m.add_function(wrap_pyfunction!(prove_equivalent_json, m)?)?;
     m.add_function(wrap_pyfunction!(prove_sec_json, m)?)?;
+    m.add_function(wrap_pyfunction!(prove_upf_json, m)?)?;
     Ok(())
 }

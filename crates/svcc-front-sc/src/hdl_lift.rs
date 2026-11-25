@@ -47,6 +47,10 @@ enum CtorItem {
     Method(String),
     Sens(Vec<Sens>),
     DontInit,
+    InitWrite {
+        sig: String,
+        val: Ast,
+    },
     Bind {
         inst: String,
         port: String,
@@ -96,8 +100,10 @@ fn parse_module(p: &mut Parser) -> Result<ModSrc, SvccError> {
     };
     let value_type = |p: &mut Parser| -> Result<CTy, SvccError> {
         match p.try_type()? {
-            Some(t @ (CTy::Bool | CTy::Sc { .. } | CTy::Big { .. })) => Ok(t),
-            _ => p.fail("signal value type (bool, sc_uint, sc_int, sc_biguint or sc_bigint)"),
+            Some(t @ (CTy::Bool | CTy::Int { .. } | CTy::Sc { .. } | CTy::Big { .. })) => Ok(t),
+            _ => p.fail(
+                "signal value type (bool, fixed-width int, sc_uint, sc_int, sc_biguint or sc_bigint)",
+            ),
         }
     };
     loop {
@@ -130,7 +136,8 @@ fn parse_module(p: &mut Parser) -> Result<ModSrc, SvccError> {
             _ => return p.fail("module member"),
         };
         match kind.as_str() {
-            "sc_core::sc_in" | "sc_core::sc_out" | "sc_core::sc_signal" => {
+            "sc_core::sc_in" | "sc_core::sc_out" | "sc_core::sc_signal" | "sc_in" | "sc_out"
+            | "sc_signal" => {
                 p.i += 1;
                 p.expect_p("<")?;
                 let ty = value_type(p)?;
@@ -142,8 +149,8 @@ fn parse_module(p: &mut Parser) -> Result<ModSrc, SvccError> {
                 p.expect_p("}")?;
                 p.expect_p(";")?;
                 let dir = match kind.as_str() {
-                    "sc_core::sc_in" => Some(Dir::In),
-                    "sc_core::sc_out" => Some(Dir::Out),
+                    "sc_core::sc_in" | "sc_in" => Some(Dir::In),
+                    "sc_core::sc_out" | "sc_out" => Some(Dir::Out),
                     _ => None,
                 };
                 if dir.is_some() && init.is_some() {
@@ -158,15 +165,15 @@ fn parse_module(p: &mut Parser) -> Result<ModSrc, SvccError> {
                     init,
                 });
             }
-            "sc_core::sc_vector" => {
+            "sc_core::sc_vector" | "sc_vector" => {
                 p.i += 1;
                 p.expect_p("<")?;
                 // A vector of signals is an unpacked array; a vector of ports an array port.
-                let vdir = if p.eat_id("sc_core::sc_signal") {
+                let vdir = if p.eat_id("sc_core::sc_signal") || p.eat_id("sc_signal") {
                     None
-                } else if p.eat_id("sc_core::sc_in") {
+                } else if p.eat_id("sc_core::sc_in") || p.eat_id("sc_in") {
                     Some(Dir::In)
-                } else if p.eat_id("sc_core::sc_out") {
+                } else if p.eat_id("sc_core::sc_out") || p.eat_id("sc_out") {
                     Some(Dir::Out)
                 } else {
                     return p.fail("sc_vector of sc_signal, sc_in or sc_out");
@@ -303,22 +310,29 @@ fn parse_ctor(p: &mut Parser) -> Result<Vec<CtorItem>, SvccError> {
             p.expect_p(".")?;
             let port = p.ident()?;
             p.expect_p("(")?;
-            let sig = p.ident()?;
-            let elem = if p.eat_p("[") {
-                let i = p.number()?;
-                p.expect_p("]")?;
-                Some(i)
+            if port == "write" {
+                let val = p.expr()?;
+                p.expect_p(")")?;
+                p.expect_p(";")?;
+                out.push(CtorItem::InitWrite { sig: inst, val });
             } else {
-                None
-            };
-            p.expect_p(")")?;
-            p.expect_p(";")?;
-            out.push(CtorItem::Bind {
-                inst,
-                port,
-                sig,
-                elem,
-            });
+                let sig = p.ident()?;
+                let elem = if p.eat_p("[") {
+                    let i = p.number()?;
+                    p.expect_p("]")?;
+                    Some(i)
+                } else {
+                    None
+                };
+                p.expect_p(")")?;
+                p.expect_p(";")?;
+                out.push(CtorItem::Bind {
+                    inst,
+                    port,
+                    sig,
+                    elem,
+                });
+            }
         }
     }
 }
@@ -578,7 +592,11 @@ fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module,
                 dims: s.dim.into_iter().collect(),
             }),
             None => {
-                let init = match &s.init {
+                let ctor_init = src.ctor.iter().rev().find_map(|it| match it {
+                    CtorItem::InitWrite { sig, val } if *sig == s.c => Some(val),
+                    _ => None,
+                });
+                let init = match ctor_init.or(s.init.as_ref()) {
                     None => None,
                     Some(a) => {
                         let mut b = Body::new(&sigs, &funcs, false, None);
@@ -604,6 +622,19 @@ fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module,
                     dims: s.dim.into_iter().collect(),
                     init,
                 });
+            }
+        }
+    }
+    for item in &src.ctor {
+        if let CtorItem::InitWrite { sig, .. } = item {
+            match src.sigs.iter().find(|s| s.c == *sig) {
+                Some(s) if s.dir.is_none() && s.dim.is_none() => {}
+                _ => {
+                    return Err(ctx(SvccError::new(
+                        "",
+                        format!("constructor .write() on '{sig}', which is not a scalar sc_signal"),
+                    )))
+                }
             }
         }
     }
@@ -735,12 +766,8 @@ fn lift_module(src: &ModSrc, known: &HashMap<String, PortMap>) -> Result<Module,
             return Err(perr("mixes edge and level sensitivity".into()));
         }
         let seq = !edges.is_empty();
-        if seq != dont_init {
-            return Err(perr(if seq {
-                "edge-triggered method without dont_initialize()".into()
-            } else {
-                "level-sensitive method with dont_initialize()".into()
-            }));
+        if !seq && dont_init {
+            return Err(perr("level-sensitive method with dont_initialize()".into()));
         }
 
         let (aliases, inner) = split_copies(body, &sigs).map_err(|e| perr(e.to_string()))?;

@@ -19,6 +19,7 @@
 //!    with cycle-accurate C++17 bitmask pipeline observer lowering.
 
 pub mod hdl;
+pub mod upf;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

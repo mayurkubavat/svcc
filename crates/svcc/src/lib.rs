@@ -10,6 +10,7 @@ pub use svcc_passes as passes;
 
 pub mod cosim;
 pub mod prove;
+pub mod upf;
 
 use svcc_emit_sc::ScEmitter;
 use svcc_emit_sv::SvEmitter;

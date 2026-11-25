@@ -450,7 +450,8 @@ impl Parser {
                     s,
                 }
             }
-            "sc_dt::sc_uint" | "sc_dt::sc_int" | "sc_dt::sc_biguint" | "sc_dt::sc_bigint" => {
+            "sc_dt::sc_uint" | "sc_dt::sc_int" | "sc_dt::sc_biguint" | "sc_dt::sc_bigint"
+            | "sc_uint" | "sc_int" | "sc_biguint" | "sc_bigint" => {
                 self.i += 1;
                 self.expect_p("<")?;
                 let w = self.number()? as u32;
@@ -459,18 +460,18 @@ impl Parser {
                     return self.fail("zero-width vector");
                 }
                 match id.as_str() {
-                    "sc_dt::sc_uint" | "sc_dt::sc_int" => {
+                    "sc_dt::sc_uint" | "sc_dt::sc_int" | "sc_uint" | "sc_int" => {
                         if w > 64 {
                             return self.fail("sc_uint/sc_int wider than 64 bits");
                         }
                         CTy::Sc {
                             w,
-                            s: id == "sc_dt::sc_int",
+                            s: id.ends_with("sc_int"),
                         }
                     }
                     _ => CTy::Big {
                         w,
-                        s: id == "sc_dt::sc_bigint",
+                        s: id.ends_with("sc_bigint"),
                     },
                 }
             }
@@ -567,6 +568,17 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Result<Ast, SvccError> {
+        if self.eat_id("static_cast") {
+            self.expect_p("<")?;
+            let Some(ty) = self.try_type()? else {
+                return self.fail("static_cast target type");
+            };
+            self.expect_gt()?;
+            self.expect_p("(")?;
+            let a = self.expr()?;
+            self.expect_p(")")?;
+            return Ok(Ast::Cast(ty, Box::new(a)));
+        }
         if let Some(ty) = self.try_type()? {
             self.expect_p("(")?;
             let a = self.paren_body()?;

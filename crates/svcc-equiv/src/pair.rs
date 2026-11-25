@@ -98,19 +98,19 @@ impl Default for PairOptions {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Sort {
+pub(crate) enum Sort {
     Bv(u32),
     Arr(u32, u32),
 }
 
 impl Sort {
-    fn smt(self) -> String {
+    pub(crate) fn smt(self) -> String {
         match self {
             Sort::Bv(w) => format!("(_ BitVec {w})"),
             Sort::Arr(i, e) => format!("(Array (_ BitVec {i}) (_ BitVec {e}))"),
         }
     }
-    fn zero(self) -> String {
+    pub(crate) fn zero(self) -> String {
         match self {
             Sort::Bv(w) => format!("(_ bv0 {w})"),
             Sort::Arr(i, e) => {
@@ -121,7 +121,7 @@ impl Sort {
 }
 
 #[derive(Clone, Debug)]
-enum Node {
+pub(crate) enum Node {
     Input {
         name: String,
     },
@@ -145,16 +145,16 @@ pub struct PairSide<'a> {
     pub outputs: &'a [(String, String)],
 }
 
-struct Model {
-    top: String,
-    port_symbols: BTreeMap<String, String>,
-    sorts: BTreeMap<u32, Sort>,
-    nodes: BTreeMap<u32, (Sort, Node)>,
-    init: BTreeMap<u32, i64>,
-    next: BTreeMap<u32, i64>,
-    outputs: BTreeMap<String, i64>,
-    constraints: Vec<i64>,
-    has_arrays: bool,
+pub(crate) struct Model {
+    pub(crate) top: String,
+    pub(crate) port_symbols: BTreeMap<String, String>,
+    pub(crate) sorts: BTreeMap<u32, Sort>,
+    pub(crate) nodes: BTreeMap<u32, (Sort, Node)>,
+    pub(crate) init: BTreeMap<u32, i64>,
+    pub(crate) next: BTreeMap<u32, i64>,
+    pub(crate) outputs: BTreeMap<String, i64>,
+    pub(crate) constraints: Vec<i64>,
+    pub(crate) has_arrays: bool,
 }
 
 fn bad_line(line: &str, why: &str) -> SvccError {
@@ -194,7 +194,7 @@ fn bv_literal(digits: &str, radix: u32, w: u32) -> Option<String> {
     Some(if neg { format!("(bvneg {lit})") } else { lit })
 }
 
-fn parse(side: &PairSide) -> Result<Model, SvccError> {
+pub(crate) fn parse(side: &PairSide) -> Result<Model, SvccError> {
     let (btor2, top) = (side.btor2, side.top);
     let mut m = Model {
         top: top.to_string(),
@@ -335,14 +335,14 @@ fn parse(side: &PairSide) -> Result<Model, SvccError> {
 }
 
 impl Model {
-    fn sort(&self, r: i64) -> Result<Sort, SvccError> {
+    pub(crate) fn sort(&self, r: i64) -> Result<Sort, SvccError> {
         self.nodes
             .get(&(r.unsigned_abs() as u32))
             .map(|n| n.0)
             .ok_or_else(|| SvccError::new(STAGE, format!("btor2 reference to unknown node {r}")))
     }
 
-    fn width(&self, r: i64) -> Result<u32, SvccError> {
+    pub(crate) fn width(&self, r: i64) -> Result<u32, SvccError> {
         match self.sort(r)? {
             Sort::Bv(w) => Ok(w),
             Sort::Arr(..) => Err(SvccError::new(
@@ -353,7 +353,7 @@ impl Model {
     }
 
     /// Port name of a top-level symbol (`<top>.<port>`), if it is one.
-    fn port<'a>(&self, name: &'a str) -> Option<&'a str> {
+    pub(crate) fn port<'a>(&self, name: &'a str) -> Option<&'a str> {
         let rest = name.strip_prefix(self.top.as_str())?.strip_prefix('.')?;
         if rest.contains('.') {
             None
@@ -363,7 +363,7 @@ impl Model {
     }
 
     /// Name of a state without the top prefix: the key states are paired by.
-    fn state_key(&self, name: &str) -> String {
+    pub(crate) fn state_key(&self, name: &str) -> String {
         match name
             .strip_prefix(self.top.as_str())
             .and_then(|r| r.strip_prefix('.'))
@@ -373,7 +373,7 @@ impl Model {
         }
     }
 
-    fn states(&self) -> Vec<(u32, Sort, String)> {
+    pub(crate) fn states(&self) -> Vec<(u32, Sort, String)> {
         self.nodes
             .iter()
             .filter_map(|(id, (s, n))| match n {
@@ -383,7 +383,7 @@ impl Model {
             .collect()
     }
 
-    fn output_ref(&self, port: &str) -> Option<i64> {
+    pub(crate) fn output_ref(&self, port: &str) -> Option<i64> {
         let full = match self.port_symbols.get(port) {
             Some(s) => s.clone(),
             None => format!("{}.{}", self.top, port),
@@ -399,7 +399,7 @@ impl Model {
 }
 
 /// True for the free input the netlist writes for an X or Z bit.
-fn is_x_input(name: &str) -> bool {
+pub(crate) fn is_x_input(name: &str) -> bool {
     match name.rfind("_x_") {
         Some(i) => {
             !name.contains('.')
@@ -414,13 +414,13 @@ fn is_flag_state(name: &str) -> bool {
     name.contains("svcc__ub")
 }
 
-struct Side<'a> {
-    m: &'a Model,
-    tag: char,
+pub(crate) struct Side<'a> {
+    pub(crate) m: &'a Model,
+    pub(crate) tag: char,
 }
 
 impl Side<'_> {
-    fn r(&self, r: i64, step: u32) -> Result<String, SvccError> {
+    pub(crate) fn r(&self, r: i64, step: u32) -> Result<String, SvccError> {
         let id = r.unsigned_abs();
         if r < 0 {
             self.m.width(r)?;
@@ -431,7 +431,7 @@ impl Side<'_> {
     }
 
     /// Defines every node of this side at `step`. `state0` gives the step-0 term of a state.
-    fn define_step(
+    pub(crate) fn define_step(
         &self,
         smt: &mut String,
         step: u32,
@@ -481,7 +481,7 @@ impl Side<'_> {
         Ok(())
     }
 
-    fn op(
+    pub(crate) fn op(
         &self,
         op: &str,
         args: &[i64],
@@ -557,7 +557,7 @@ impl Side<'_> {
 }
 
 /// Step-0 term of every state that has a constant initial value; error for any other kind.
-fn init_terms(m: &Model) -> Result<BTreeMap<u32, String>, SvccError> {
+pub(crate) fn init_terms(m: &Model) -> Result<BTreeMap<u32, String>, SvccError> {
     let mut out = BTreeMap::new();
     for (st, v) in &m.init {
         let term = match m.nodes.get(&(v.unsigned_abs() as u32)) {
@@ -581,10 +581,10 @@ fn init_terms(m: &Model) -> Result<BTreeMap<u32, String>, SvccError> {
     Ok(out)
 }
 
-struct Query {
-    smt: String,
+pub(crate) struct Query {
+    pub(crate) smt: String,
     /// `(name, term)` pairs printed when the query is satisfiable.
-    watch: Vec<(String, String)>,
+    pub(crate) watch: Vec<(String, String)>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -710,7 +710,7 @@ fn build_query(
 }
 
 /// Runs a query; on `sat` asks for the watched values and returns them as text.
-fn solve(q: &Query) -> (SmtVerdict, Vec<String>, u64, usize) {
+pub(crate) fn solve(q: &Query) -> (SmtVerdict, Vec<String>, u64, usize) {
     let t0 = Instant::now();
     let (v, _) = run_z3_stdin(&q.smt);
     let mut us = t0.elapsed().as_micros() as u64;
