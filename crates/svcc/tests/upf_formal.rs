@@ -272,7 +272,7 @@ add_pst_state TIM_POWER_GATED -pst SUBSYS_PST -state {ON_0V9  OFF}
 set_isolation ISO_TIM -domain PD_TIM \
     -isolation_supply_set SS_AON \
     -clamp_value 0 \
-    -elements {tim_irq tim_rdata}
+    -elements {u_timer/tim_irq u_timer/tim_rdata}
 set_isolation_control ISO_TIM -domain PD_TIM \
     -isolation_signal u_pmu/tim_iso_en_q \
     -isolation_sense high
@@ -345,7 +345,10 @@ fn strict_flow_a_systemc_apb_subsys_proves_2copy_isolation_and_retention() {
 fn missing_tim_rdata_isolation_leaks_on_apb_setup_phase_in_2copy_miter() {
     // Drop `tim_rdata` from ISO_TIM: during APB setup (`PENABLE == 0, PADDR == 0x10`),
     // `fabric_mux` forwards `tim_rdata` onto `PRDATA` even while `tim_iso_en == 1`!
-    let buggy_upf = APB_SUBSYS_UPF.replace("-elements {tim_irq tim_rdata}", "-elements {tim_irq}");
+    let buggy_upf = APB_SUBSYS_UPF.replace(
+        "-elements {u_timer/tim_irq u_timer/tim_rdata}",
+        "-elements {u_timer/tim_irq}",
+    );
     let rep = prove_upf_str(
         "apb_pmu_timer_subsys.h",
         APB_SC_SUBSYS,

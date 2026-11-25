@@ -40,7 +40,7 @@ add_pst_state TIM_POWER_GATED -pst SUBSYS_PST -state {ON_0V9  OFF}
 set_isolation ISO_TIM -domain PD_TIM \
     -isolation_supply_set SS_AON \
     -clamp_value 0 \
-    -elements {tim_irq tim_rdata}
+    -elements {u_timer/tim_irq u_timer/tim_rdata}
 set_isolation_control ISO_TIM -domain PD_TIM \
     -isolation_signal u_pmu/tim_iso_en_q \
     -isolation_sense high
