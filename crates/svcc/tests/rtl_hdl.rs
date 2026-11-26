@@ -123,6 +123,21 @@ fn undriven_output_is_an_error() {
 }
 
 #[test]
+fn non_ansi_output_redeclared_with_initializer_is_driven() {
+    // `output c; wire c = ~a;` declares one port whose net carries a continuous assignment.
+    // Quartus megafunction wrappers are written this way; the driver used to be dropped.
+    let code = convert("module m(a, c);\n  input a;\n  output c;\n  wire c = ~a;\nendmodule\n");
+    assert!(code.contains("c.write("), "port 'c' has no driver:\n{code}");
+}
+
+#[test]
+fn assignment_list_targets_are_independent() {
+    // `assign y = t, t = ~a;`: y must follow t, not t's value before this assignment ran.
+    let code = convert("module m(input logic [3:0] a, output logic [3:0] y);\n  logic [3:0] t;\n  assign y = t, t = ~a;\nendmodule\n");
+    assert!(code.contains("void assign_y()") && code.contains("void assign_t()"), "one process per target:\n{code}");
+}
+
+#[test]
 fn derived_clocks_fail_closed() {
     // A register on a clock made by combinational logic, by a blocking assignment in an
     // edge-triggered block, or by an edge on an expression would run one delta cycle after

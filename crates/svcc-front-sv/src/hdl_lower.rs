@@ -681,10 +681,14 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        // Net declaration assignments (`wire x = expr;`) are continuous assignments.
+        // Net declaration assignments (`wire x = expr;`) are continuous assignments. A
+        // non-ANSI output port redeclared as `wire x = expr;` is one port symbol that carries
+        // the initializer.
         for &sid in &inst.symbols {
             let sym = self.design.symbol(sid);
-            if let (SymbolKind::Net { .. }, Some((tree, node))) = (&sym.kind, sym.init_node) {
+            let net_like = matches!(sym.kind, SymbolKind::Net { .. })
+                || matches!(sym.kind, SymbolKind::Port { dir: PortDir::Output, .. });
+            if let (true, Some((tree, node))) = (net_like, sym.init_node) {
                 let Some(nm) = self.m.sym_names.get(&sid).cloned() else {
                     continue;
                 };
@@ -1807,16 +1811,35 @@ impl<'a> Lowerer<'a> {
 
     fn lower_cont_assign(&mut self, inst: InstanceId, item: &ElabItem) {
         let t = &self.trees[item.tree];
-        let mut ctx = Ctx::new(inst, &item.scope_prefix, &item.gen_consts);
-        let mut body = Vec::new();
-        for ch in t.children(item.node) {
+        // `assign a = x, b = y;` is a list of independent continuous assignments: each one
+        // becomes its own process. One process for the whole list would run them in written
+        // order, so a target read before it is assigned (`assign y = t, t = ~a;`) would see
+        // its old value, and the process would not wake when it changes.
+        let kids: Vec<NodeId> = t.children(item.node).collect();
+        for ch in kids {
+            let t = &self.trees[item.tree];
             if t.kind(ch) == SyntaxKind::BinaryExpr {
-                let kids: Vec<NodeId> = t
+                let parts: Vec<NodeId> = t
                     .children(ch)
                     .filter(|&c| t.kind(c) != SyntaxKind::Attribute)
                     .collect();
-                if kids.len() == 2 && own_toks(t, ch).first() == Some(&"=") {
-                    self.assignment(item.tree, kids[0], "=", Some(kids[1]), &mut ctx, &mut body);
+                if parts.len() == 2 && own_toks(t, ch).first() == Some(&"=") {
+                    let mut ctx = Ctx::new(inst, &item.scope_prefix, &item.gen_consts);
+                    let mut body = Vec::new();
+                    self.assignment(item.tree, parts[0], "=", Some(parts[1]), &mut ctx, &mut body);
+                    if body.is_empty() {
+                        continue;
+                    }
+                    let target = first_target(&body).unwrap_or_else(|| "net".into());
+                    let name = self.m.unique(&format!("assign_{target}"));
+                    self.m.processes.push(Process {
+                        name,
+                        kind: ProcKind::Comb,
+                        locals: ctx.decls,
+                        body,
+                        merged_from: 1,
+                        line: item.loc.line,
+                    });
                     continue;
                 }
             }
@@ -1827,19 +1850,6 @@ impl<'a> Lowerer<'a> {
                 );
             }
         }
-        if body.is_empty() {
-            return;
-        }
-        let target = first_target(&body).unwrap_or_else(|| "net".into());
-        let name = self.m.unique(&format!("assign_{target}"));
-        self.m.processes.push(Process {
-            name,
-            kind: ProcKind::Comb,
-            locals: ctx.decls,
-            body,
-            merged_from: 1,
-            line: item.loc.line,
-        });
     }
 
     fn lower_proc_block(&mut self, inst: InstanceId, item: &ElabItem) {
