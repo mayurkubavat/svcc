@@ -6,7 +6,7 @@ build-backend = "maturin"
 
 [project]
 name = "svcc"
-version = "0.1.2"
+version = "0.1.3"
 description = "SystemVerilog RTL to SystemC conversion with Z3 equivalence checks (Python bindings)"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -6,7 +6,7 @@ generated header with C++17 and SystemC evaluation rules, treats undefined behav
 failure, and proves the result equal to the SystemVerilog source with Z3. A second command
 simulates the generated SystemC against Verilator.
 
-**Status: 0.1.2, early release.** The RTL path is the part that has been checked on real
+**Status: 0.1.3, early release.** The RTL path is the part that has been checked on real
 designs. Read [What a result means](#what-a-result-means) and
 [Known limits](#known-limits) before relying on it.
 

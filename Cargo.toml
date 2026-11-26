@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.82"
 license = "Apache-2.0"
@@ -24,19 +24,19 @@ categories = ["development-tools", "compilers", "simulation"]
 
 [workspace.dependencies]
 # Pinned IEEE 1800-2023 SystemVerilog front-end & UVM design model (svlang 0.5.1 from crates.io)
-svlang = "0.5.1"
-svlang-model = "0.5.1"
-svlang-lint = "0.5.1"
+svlang = "0.6.2"
+svlang-model = "0.6.2"
+svlang-lint = "0.6.2"
 
 # Internal workspace crates
-svcc-ir = { path = "crates/svcc-ir", version = "0.1.2" }
-svcc-svlang = { path = "crates/svcc-svlang", version = "0.1.2" }
-svcc-front-sv = { path = "crates/svcc-front-sv", version = "0.1.2" }
-svcc-front-sc = { path = "crates/svcc-front-sc", version = "0.1.2" }
-svcc-passes = { path = "crates/svcc-passes", version = "0.1.2" }
-svcc-equiv = { path = "crates/svcc-equiv", version = "0.1.2" }
-svcc-emit-sc = { path = "crates/svcc-emit-sc", version = "0.1.2" }
-svcc-emit-sv = { path = "crates/svcc-emit-sv", version = "0.1.2" }
+svcc-ir = { path = "crates/svcc-ir", version = "0.1.3" }
+svcc-svlang = { path = "crates/svcc-svlang", version = "0.1.3" }
+svcc-front-sv = { path = "crates/svcc-front-sv", version = "0.1.3" }
+svcc-front-sc = { path = "crates/svcc-front-sc", version = "0.1.3" }
+svcc-passes = { path = "crates/svcc-passes", version = "0.1.3" }
+svcc-equiv = { path = "crates/svcc-equiv", version = "0.1.3" }
+svcc-emit-sc = { path = "crates/svcc-emit-sc", version = "0.1.3" }
+svcc-emit-sv = { path = "crates/svcc-emit-sv", version = "0.1.3" }
 
 # Serialization for IR snapshots, telemetry, and benchmark logs
 serde = { version = "1.0", features = ["derive"] }

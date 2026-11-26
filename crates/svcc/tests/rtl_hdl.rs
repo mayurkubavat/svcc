@@ -134,7 +134,10 @@ fn non_ansi_output_redeclared_with_initializer_is_driven() {
 fn assignment_list_targets_are_independent() {
     // `assign y = t, t = ~a;`: y must follow t, not t's value before this assignment ran.
     let code = convert("module m(input logic [3:0] a, output logic [3:0] y);\n  logic [3:0] t;\n  assign y = t, t = ~a;\nendmodule\n");
-    assert!(code.contains("void assign_y()") && code.contains("void assign_t()"), "one process per target:\n{code}");
+    assert!(
+        code.contains("void assign_y()") && code.contains("void assign_t()"),
+        "one process per target:\n{code}"
+    );
 }
 
 #[test]

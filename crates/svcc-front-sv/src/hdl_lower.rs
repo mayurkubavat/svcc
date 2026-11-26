@@ -687,7 +687,13 @@ impl<'a> Lowerer<'a> {
         for &sid in &inst.symbols {
             let sym = self.design.symbol(sid);
             let net_like = matches!(sym.kind, SymbolKind::Net { .. })
-                || matches!(sym.kind, SymbolKind::Port { dir: PortDir::Output, .. });
+                || matches!(
+                    sym.kind,
+                    SymbolKind::Port {
+                        dir: PortDir::Output,
+                        ..
+                    }
+                );
             if let (true, Some((tree, node))) = (net_like, sym.init_node) {
                 let Some(nm) = self.m.sym_names.get(&sid).cloned() else {
                     continue;
@@ -1826,7 +1832,14 @@ impl<'a> Lowerer<'a> {
                 if parts.len() == 2 && own_toks(t, ch).first() == Some(&"=") {
                     let mut ctx = Ctx::new(inst, &item.scope_prefix, &item.gen_consts);
                     let mut body = Vec::new();
-                    self.assignment(item.tree, parts[0], "=", Some(parts[1]), &mut ctx, &mut body);
+                    self.assignment(
+                        item.tree,
+                        parts[0],
+                        "=",
+                        Some(parts[1]),
+                        &mut ctx,
+                        &mut body,
+                    );
                     if body.is_empty() {
                         continue;
                     }

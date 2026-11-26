@@ -1,7 +1,17 @@
 # Changelog
 
-## Unreleased (0.1.3)
+## 0.1.3 (2026-11-26)
 
+- One SystemC process per target of a continuous-assignment list. `assign y = t, t = ~a;`
+  became one method that ran the assignments in written order, so `y` took the old value
+  of `t` (wrong SystemC), and rtl-prove passed it because it reads the RTL through the same
+  lowering. Found by co-simulating svcc's output for ChiBench designs and their
+  Manticore-vectorized versions against Verilator.
+- A non-ANSI output port redeclared with an initializer (`output c; wire c = ~a;`, as
+  Quartus megafunction wrappers write it) keeps its driver instead of being reported as
+  never driven.
+- svlang 0.6.2 (from 0.5.1): its netlist reads vectorized RTL that 0.5.1 refused as a
+  combinational loop, and its Btor2 writer has a zero start state option.
 - `rtl-prove` and `prove-sec` exit with code 2 when a check is only bounded (induction did not
   close and the bounded check from reset found no difference), and print `[BND ]` instead of
   `[PASS]`. Before, such a result exited 0. `--accept-bounded` restores the old exit code.

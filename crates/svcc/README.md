@@ -2,7 +2,7 @@
 
 SystemVerilog to SystemC conversion for RTL, with formal checks of the result.
 
-**Status: 0.1.2, early release.** The RTL conversion path is the part of `svcc` that has been
+**Status: 0.1.3, early release.** The RTL conversion path is the part of `svcc` that has been
 checked on real designs. Read "What is checked" and "Known limits" before relying on it.
 
 ## What it does
